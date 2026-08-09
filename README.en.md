@@ -1,4 +1,4 @@
-# zcode-plugin
+<h1 align="center">zcode-plugin</h1>
 
 <div align="center">
 
