@@ -1,0 +1,10 @@
+{
+  "name": "dev-workflow",
+  "version": "0.1.0",
+  "description": "Daily development workflow skills for ZCode: change-plan, debug, test-changed, review, commit-review, release-check and doc-gen.",
+  "author": {
+    "name": "JochenYang"
+  },
+  "license": "MIT",
+  "skills": "skills"
+}

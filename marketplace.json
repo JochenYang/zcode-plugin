@@ -10,6 +10,14 @@
       },
       "icon": "https://static.geluman.cn/icon/icon.png",
       "source": "./plugins/git-workflow"
+    },
+    {
+      "name": "dev-workflow",
+      "description": "Daily development workflow skills: change-plan, debug, test-changed, review, commit-review, release-check and doc-gen.",
+      "author": {
+        "name": "JochenYang"
+      },
+      "source": "./plugins/dev-workflow"
     }
   ]
 }

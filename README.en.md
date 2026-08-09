@@ -20,6 +20,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | Plugin | Version | Description |
 |---|---|---|
 | `plugins/git-workflow` | 0.1.1 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook validates commit format |
+| `plugins/dev-workflow` | 0.1.0 | 7 daily development workflow skills: planning, debugging, testing, review, commit review, release check, doc generation |
 
 ## Installation
 
@@ -51,6 +52,24 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 - `/gchangelog [--from <ref> --to <ref> | --count <n>] [--file <path>]` — generates a changelog grouped by version tag; with `--file` it merges into the file after a preview confirmation
 
 A hook validates the message format after each commit; non-compliant messages trigger a reminder in the session (never blocks the commit).
+
+## dev-workflow usage
+
+7 flow skills covering the daily development lifecycle. They fire automatically when appropriate, or can be picked manually from the 技能 group by typing `/`:
+
+| Skill | When | Output |
+|---|---|---|
+| `change-plan` | before a feature/refactor/complex fix | executable plan + Handoff contract (the acceptance contract later skills check against) |
+| `debug` | bug/test failure/build failure | reproduce → isolate → hypothesize → verify → minimal fix; supports diagnose/fix/verify intent |
+| `test-changed` | changes need verification | minimal valid test scope + evidence log + Anti-rationalization check (AR-1~10 SSOT) |
+| `review` | changes need review | P0–P3 findings with `path:line` and evidence level |
+| `commit-review` | before committing | READY/NOT READY + proposed branch name and commit message (no actual commit) |
+| `release-check` | before release/tag | GO/NO-GO/CONDITIONAL GO + blockers and unblock path (no actual release) |
+| `doc-gen` | writing/updating docs | API docs / CHANGELOG / README / user docs / migration guides, every claim traceable to code |
+
+Core mechanics: `change-plan` produces a Handoff contract (in-session acceptance contract, not persisted); `test-changed` is the SSOT for Anti-rationalization (AR-1~10) and Contract resolution (explicit-handoff → user-pinned → rebuilt-from-context → unavailable), referenced by the other skills; conclusions are hard-gated: AR `FAIL` → commit-review cannot be READY, release-check cannot be GO.
+
+Recommended lifecycle: `change-plan → implement → test-changed → review → commit-review → release-check → doc-gen`
 
 ## Developing a new plugin
 
