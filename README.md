@@ -1,5 +1,13 @@
 # zcode-plugin
 
+[中文](README.md) | [English](README.en.md)
+
+<p align="center">
+  <img src="https://img.shields.io/github/license/JochenYang/zcode-plugin" alt="License">
+  <img src="https://img.shields.io/github/repo-size/JochenYang/zcode-plugin" alt="Repo size">
+  <img src="https://img.shields.io/badge/plugin-v0.1.1-orange" alt="Plugin version">
+</p>
+
 个人 ZCode 插件市场。每个插件独立目录，结构遵循官方约定（`.zcode-plugin/plugin.json` + 组件目录）。
 
 ## 插件列表
