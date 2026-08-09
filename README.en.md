@@ -38,9 +38,8 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 
 ## Plugin icon
 
-- Icon file lives at `assets/git-workflow/icon.png` (128×128 PNG recommended)
-- Referenced by the `icon` field in `marketplace.json` (GitHub raw URL)
-- After replacing the icon you must push again for remote changes; the local marketplace just needs a panel refresh
+- The plugin icon is referenced by the `icon` field in `marketplace.json`: `https://static.geluman.cn/icon/icon.png`
+- To change it, replace the file on the CDN (a local marketplace just needs a panel refresh)
 
 ## git-workflow usage
 

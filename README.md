@@ -38,9 +38,8 @@
 
 ## 插件图标
 
-- 图标文件放在 `assets/git-workflow/icon.png`（建议 128×128 PNG）
-- `marketplace.json` 中通过 `icon` 字段引用（GitHub raw URL）
-- 换图标后需重新 push 才在远端生效；本地市场面板刷新即可
+- 插件图标由 `marketplace.json` 的 `icon` 字段引用：`https://static.geluman.cn/icon/icon.png`
+- 更换图标：替换 CDN 上的文件即可（本地市场面板刷新即可生效）
 
 ## git-workflow 用法
 

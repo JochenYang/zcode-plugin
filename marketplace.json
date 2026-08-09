@@ -8,7 +8,7 @@
       "author": {
         "name": "JochenYang"
       },
-      "icon": "https://raw.githubusercontent.com/JochenYang/zcode-plugin/main/assets/git-workflow/icon.png",
+      "icon": "https://static.geluman.cn/icon/icon.png",
       "source": "./plugins/git-workflow"
     }
   ]
