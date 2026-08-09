@@ -1,6 +1,10 @@
 # zcode-plugin
 
-[中文](README.md) | [English](README.en.md)
+<div align="center">
+
+[![中文](https://img.shields.io/badge/中文-简体中文-blue.svg)](README.md) [![English](https://img.shields.io/badge/English-English-blue.svg)](README.en.md)
+
+</div>
 
 <p align="center">
   <img src="https://img.shields.io/github/license/JochenYang/zcode-plugin" alt="License">
