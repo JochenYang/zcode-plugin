@@ -2,14 +2,15 @@
 
 <div align="center">
 
-[![中文](https://img.shields.io/badge/中文-简体中文-blue.svg)](README.md) [![English](https://img.shields.io/badge/English-English-blue.svg)](README.en.md)
+[中文](README.md) | [English](README.en.md)
 
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/github/license/JochenYang/zcode-plugin" alt="License">
-  <img src="https://img.shields.io/github/repo-size/JochenYang/zcode-plugin" alt="Repo size">
-  <img src="https://img.shields.io/badge/plugin-v0.1.1-orange" alt="Plugin version">
+  <a href="https://github.com/JochenYang/zcode-plugin"><img src="https://img.shields.io/badge/ZCode-插件-4A90D9?style=for-the-badge" alt="ZCode 插件"></a>
+  <a href="https://github.com/JochenYang/zcode-plugin/releases"><img src="https://img.shields.io/github/v/release/JochenYang/zcode-plugin?style=for-the-badge" alt="版本"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/JochenYang/zcode-plugin?style=for-the-badge" alt="许可证"></a>
+  <a href="https://github.com/JochenYang/zcode-plugin/stargazers"><img src="https://img.shields.io/github/stars/JochenYang/zcode-plugin?style=for-the-badge" alt="Star"></a>
 </p>
 
 个人 ZCode 插件市场。每个插件独立目录，结构遵循官方约定（`.zcode-plugin/plugin.json` + 组件目录）。

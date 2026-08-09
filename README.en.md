@@ -2,14 +2,15 @@
 
 <div align="center">
 
-[![中文](https://img.shields.io/badge/中文-简体中文-blue.svg)](README.md) [![English](https://img.shields.io/badge/English-English-blue.svg)](README.en.md)
+[中文](README.md) | [English](README.en.md)
 
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/github/license/JochenYang/zcode-plugin" alt="License">
-  <img src="https://img.shields.io/github/repo-size/JochenYang/zcode-plugin" alt="Repo size">
-  <img src="https://img.shields.io/badge/plugin-v0.1.1-orange" alt="Plugin version">
+  <a href="https://github.com/JochenYang/zcode-plugin"><img src="https://img.shields.io/badge/ZCode-Plugin-4A90D9?style=for-the-badge" alt="ZCode Plugin"></a>
+  <a href="https://github.com/JochenYang/zcode-plugin/releases"><img src="https://img.shields.io/github/v/release/JochenYang/zcode-plugin?style=for-the-badge" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/JochenYang/zcode-plugin?style=for-the-badge" alt="License"></a>
+  <a href="https://github.com/JochenYang/zcode-plugin/stargazers"><img src="https://img.shields.io/github/stars/JochenYang/zcode-plugin?style=for-the-badge" alt="Stars"></a>
 </p>
 
 Personal ZCode plugin marketplace. Each plugin lives in its own directory following the official convention (`.zcode-plugin/plugin.json` + component directories).
