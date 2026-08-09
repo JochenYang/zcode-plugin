@@ -17,6 +17,7 @@
       "author": {
         "name": "JochenYang"
       },
+      "icon": "https://static.geluman.cn/icon/dev-icon.png",
       "source": "./plugins/dev-workflow"
     }
   ]
