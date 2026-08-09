@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/check-commit.sh"
+            ],
+            "timeoutMs": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

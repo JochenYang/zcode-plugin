@@ -1,0 +1,15 @@
+{
+  "name": "zcode-plugin",
+  "description": "Personal ZCode plugin collection. Current plugins: git-workflow (conventional commit workflow).",
+  "plugins": [
+    {
+      "name": "git-workflow",
+      "description": "Conventional commit workflow: /gcommit generates spec-compliant commit messages; a PostToolUse hook validates every commit's format.",
+      "author": {
+        "name": "JochenYang"
+      },
+      "icon": "https://raw.githubusercontent.com/JochenYang/zcode-plugin/main/assets/git-workflow/icon.png",
+      "source": "./plugins/git-workflow"
+    }
+  ]
+}
