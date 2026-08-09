@@ -52,6 +52,10 @@
 
 提交后钩子会自动校验消息格式；不合规时在会话中给出提醒（不拦截提交）。
 
+## Subagents 备份
+
+`agents/` 目录是本机 ZCode 子智能体定义（`~/.zcode/agents`）的备份，16 个，随本机修改手动同步（`cp ~/.zcode/agents/*.md agents/`）。同名同职责版本也存在于 kimi-development-workflow 插件，本体以本目录为准。
+
 ## 开发新插件
 
 ```text
