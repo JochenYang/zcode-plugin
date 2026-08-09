@@ -73,7 +73,7 @@
 
 ## Subagents 备份
 
-`agents/` 目录是本机 ZCode 子智能体定义（`~/.zcode/agents`）的备份，16 个，随本机修改手动同步（`cp ~/.zcode/agents/*.md agents/`）。同名同职责版本也存在于 kimi-development-workflow 插件，本体以本目录为准。
+`agents/` 目录是本机 ZCode 子智能体定义（`~/.zcode/agents`）的备份，16 个，随本机修改手动同步（`cp ~/.zcode/agents/*.md agents/`）。
 
 ## 开发新插件
 
