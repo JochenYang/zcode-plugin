@@ -19,7 +19,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 
 | Plugin | Version | Description |
 |---|---|---|
-| `plugins/git-workflow` | 0.1.1 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook validates commit format |
+| `plugins/git-workflow` | 0.1.2 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook validates commit format |
 | `plugins/dev-workflow` | 0.1.0 | 7 daily development workflow skills: planning, debugging, testing, review, commit review, release check, doc generation |
 
 ## Installation
@@ -44,7 +44,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 
 ## git-workflow usage
 
-- `/gcommit` — analyzes staged/unstaged changes, generates a `<type>(<scope>): <subject>` message, commits after user confirmation
+- `/gcommit` — pre-commit readiness check (single responsibility / sensitive content / verification evidence / contract alignment), then analyzes staged/unstaged changes, generates a `<type>(<scope>): <subject>` message, commits after user confirmation
 - `/gcommit [scope]` — specify a scope (e.g. `auth`, `api`)
 - `/gcommit --amend` — amend the last commit
 - `/gcommit --no-add` — commit only what is already staged

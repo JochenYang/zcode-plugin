@@ -19,7 +19,7 @@
 
 | 插件 | 版本 | 说明 |
 |---|---|---|
-| `plugins/git-workflow` | 0.1.1 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子校验提交格式 |
+| `plugins/git-workflow` | 0.1.2 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子校验提交格式 |
 | `plugins/dev-workflow` | 0.1.0 | 日常开发工作流 7 个 skill：规划、调试、测试、审查、提交检查、发布检查、文档生成 |
 
 ## 安装
@@ -44,7 +44,7 @@
 
 ## git-workflow 用法
 
-- `/gcommit` — 分析暂存/未暂存变更，生成 `<type>(<scope>): <subject>` 格式提交消息，用户确认后提交
+- `/gcommit` — 提交前就绪检查（单一职责 / 敏感信息 / 验证证据 / 契约对照），再分析暂存/未暂存变更生成 `<type>(<scope>): <subject>` 格式提交消息，用户确认后提交
 - `/gcommit [scope]` — 指定 scope（如 `auth`、`api`）
 - `/gcommit --amend` — 修改上一次提交
 - `/gcommit --no-add` — 不自动 `git add`，只提交已暂存内容
