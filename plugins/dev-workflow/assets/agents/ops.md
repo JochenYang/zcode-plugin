@@ -10,7 +10,6 @@ tools:
   - Edit
   - FetchURL
 ---
-color: orange
 
 # Ops
 

@@ -9,7 +9,6 @@ tools:
   - Edit
   - FetchURL
 ---
-color: green
 
 # DBA
 

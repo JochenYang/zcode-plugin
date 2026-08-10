@@ -1,7 +1,6 @@
 ---
 name: "guard"
 description: "安全专项审查。用于认证、授权、密钥、PII、支付、注入、访问控制和凭证泄露风险"
-color: yellow
 tools:
   - Read
   - Grep

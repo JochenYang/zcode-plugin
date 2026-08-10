@@ -1,7 +1,6 @@
 ---
 name: "reviewer"
 description: "代码审查与质量门。用于发现正确性、性能、并发、边界条件、可维护性和测试缺口"
-color: yellow
 tools:
   - Read
   - Grep
