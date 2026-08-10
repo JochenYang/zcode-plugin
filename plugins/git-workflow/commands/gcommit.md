@@ -18,28 +18,20 @@ Workflow:
 4. Analyze the diff and choose the commit `type` — exactly one of: `feat` (new feature), `fix` (bug fix), `docs`, `style` (formatting only), `refactor`, `perf`, `test`, `chore`, `ci`, `build`, `revert`.
 5. Determine the `scope`: use `$1` when it is present and does not start with `-`, otherwise infer it from the changed module or file names (e.g. `auth`, `api`, `cli`). Omit it when the change is cross-cutting or no good scope exists.
 6. Generate the message following these rules:
-   - Subject: `<type>(<scope>): <subject>` — imperative mood, lowercase first letter, no trailing period, at most 50 characters.
-   - Blank line: exactly one empty line between subject and body. Without it git folds the body into the subject and `%b` comes out empty.
-   - Body: three labeled sections, each holding `- ` bullets wrapped at 72 characters. Keep each section to 1-2 bullets — one line per bullet. If a section has nothing meaningful to say, omit it rather than padding it with filler.
-     - `* Purpose`: one line on why this change is needed (the user value or problem it solves).
-     - `* Changes`: one bullet per meaningful change — what was added/modified/removed and where.
-     - `* Verification`: the real check that was run (`diff review`, `tests run`, `build`, `manual repro`) — never write `git add` or other non-checks.
+	   - Subject: `<type>(<scope>): <subject>` — imperative mood, lowercase first letter, no trailing period, at most 50 characters.
+	   - Blank line: exactly one empty line between subject and body. Without it git folds the body into the subject and `%b` comes out empty.
+	   - Body: write naturally, keep it short. Start with a one-line why if the subject alone does not make it clear. Then add `- ` bullets for what changed, one per meaningful change. Verification goes on the last line as a `- ` bullet naming the real check (`tests run`, `build`, `diff review`, `manual repro`). No forced section labels, no filler text. If the subject already says it all, omit the body entirely.
 7. Show the full message to the user and wait for explicit confirmation before committing.
 8. Commit with a quoted heredoc so the blank line and the bullet layout survive byte for byte:
-   ```bash
-   git commit -F - <<'MSG'
-   feat(auth): add token refresh
+	   ```bash
+	   git commit -F - <<'MSG'
+	   feat(auth): add token refresh
 
-   * Purpose
-   - access tokens expired mid-session and forced a re-login
-
-   * Changes
-   - add refresh call in src/auth/session.ts before each request
-   - store the refresh token in the existing secure store
-
-   * Verification
-   - tests run: pnpm test src/auth (12 passed)
-   MSG
-   ```
+	   access tokens expired mid-session and forced a re-login
+	   - add refresh call in src/auth/session.ts before each request
+	   - store the refresh token in the existing secure store
+	   - tests run: pnpm test src/auth (12 passed)
+	   MSG
+	   ```
    Append `--amend` to the `git commit` line when `$ARGUMENTS` contains `--amend`. Do not use repeated `-m` flags: each `-m` becomes one unwrapped paragraph, which silently destroys the bullet layout above.
 9. After committing, run `git log -1 --format=%B` and report the parsed subject and body so the user can confirm the formatting landed.
