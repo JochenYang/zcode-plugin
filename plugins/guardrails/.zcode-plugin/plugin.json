@@ -1,0 +1,9 @@
+{
+  "name": "guardrails",
+  "version": "0.1.0",
+  "description": "Deterministic safety hooks for ZCode: PreToolUse gates that block irreversible shell commands and hardcoded credentials, and route medium-risk operations to a confirmation prompt.",
+  "author": {
+    "name": "JochenYang"
+  },
+  "license": "MIT"
+}
