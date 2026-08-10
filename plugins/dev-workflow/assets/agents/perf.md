@@ -11,6 +11,7 @@ disallowedTools:
   - Write
   - Edit
 ---
+color: red
 
 # Perf
 

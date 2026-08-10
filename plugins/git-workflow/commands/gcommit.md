@@ -20,10 +20,10 @@ Workflow:
 6. Generate the message following these rules:
    - Subject: `<type>(<scope>): <subject>` — imperative mood, lowercase first letter, no trailing period, at most 50 characters.
    - Blank line: exactly one empty line between subject and body. Without it git folds the body into the subject and `%b` comes out empty.
-   - Body: three labeled sections, each holding `- ` bullets wrapped at 72 characters. Omit a section only when it is genuinely empty.
-     - `* Purpose`: why this change is needed (the user value or problem it solves).
+   - Body: three labeled sections, each holding `- ` bullets wrapped at 72 characters. Keep each section to 1-2 bullets — one line per bullet. If a section has nothing meaningful to say, omit it rather than padding it with filler.
+     - `* Purpose`: one line on why this change is needed (the user value or problem it solves).
      - `* Changes`: one bullet per meaningful change — what was added/modified/removed and where.
-     - `* Verification`: how it was verified, naming the real check (`diff review`, `tests run`, `build`, `manual repro`) — never write `git add` or other non-checks.
+     - `* Verification`: the real check that was run (`diff review`, `tests run`, `build`, `manual repro`) — never write `git add` or other non-checks.
 7. Show the full message to the user and wait for explicit confirmation before committing.
 8. Commit with a quoted heredoc so the blank line and the bullet layout survive byte for byte:
    ```bash

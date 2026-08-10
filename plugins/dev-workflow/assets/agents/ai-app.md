@@ -10,6 +10,7 @@ tools:
   - Edit
   - FetchURL
 ---
+color: grey
 
 默认使用中文回复。
 

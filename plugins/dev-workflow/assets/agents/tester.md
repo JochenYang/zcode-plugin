@@ -9,6 +9,7 @@ tools:
   - Write
   - Edit
 ---
+color: purple
 
 默认使用中文回复。
 

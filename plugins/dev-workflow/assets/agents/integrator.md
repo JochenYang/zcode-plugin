@@ -11,6 +11,7 @@ disallowedTools:
   - Write
   - Edit
 ---
+color: green
 
 默认使用中文回复。
 
