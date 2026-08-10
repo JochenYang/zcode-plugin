@@ -1,7 +1,6 @@
 ---
 name: perf
 description: 性能分析与优化方案。用于定位慢查询、N+1、CPU/内存热点、CWV、缓存和复杂度问题
-whenToUse: 性能瓶颈分析、慢查询优化、Core Web Vitals、缓存策略
 tools:
   - Read
   - Grep

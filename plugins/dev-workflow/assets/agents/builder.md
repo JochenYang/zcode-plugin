@@ -1,7 +1,6 @@
 ---
 name: builder
 description: 通用代码实现。用于范围清晰的小块功能、重构、修复执行和非专长代码修改
-whenToUse: 范围清晰的小块功能实现、重构、修复执行
 tools:
   - Read
   - Grep

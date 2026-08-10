@@ -1,7 +1,6 @@
 ---
 name: tester
 description: 测试与回归验证。用于 TDD、复现 bug、补测试、运行验证命令并报告结果
-whenToUse: 编写测试、运行验证、TDD 循环、回归验证
 tools:
   - Read
   - Grep

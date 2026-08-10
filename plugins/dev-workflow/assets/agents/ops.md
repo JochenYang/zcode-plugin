@@ -1,7 +1,6 @@
 ---
 name: ops
 description: 部署与基础设施实现。用于 CI/CD、Docker、Kubernetes、Terraform、监控、告警和回滚
-whenToUse: 部署配置、CI/CD 流水线、容器化、基础设施即代码
 tools:
   - Read
   - Grep

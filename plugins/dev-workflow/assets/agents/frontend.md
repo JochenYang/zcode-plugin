@@ -1,7 +1,6 @@
 ---
 name: frontend
 description: Web 前端实现。用于组件、页面、样式、状态管理、可访问性、响应式和构建配置
-whenToUse: Web 前端功能实现、组件开发、样式调整、状态管理、前端性能与构建
 tools:
   - Read
   - Grep

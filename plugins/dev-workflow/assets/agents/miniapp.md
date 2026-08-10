@@ -1,7 +1,6 @@
 ---
 name: miniapp
 description: 小程序实现。用于微信/支付宝/字节小程序与跨端框架开发
-whenToUse: 小程序功能实现、页面/组件、分包、性能优化、审核规范
 tools:
   - Read
   - Grep

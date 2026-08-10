@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|clear|compact)$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/session-context.sh"
+            ],
+            "timeoutMs": 5000,
+            "statusMessage": "Loading repo snapshot and handoff contract"
+          }
+        ]
+      },
+      {
+        "matcher": "^startup$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/sync-agents.sh"
+            ],
+            "timeoutMs": 10000,
+            "statusMessage": "Syncing subagents to ~/.zcode/agents"
+          }
+        ]
+      }
+    ]
+  }
+}

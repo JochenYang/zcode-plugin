@@ -1,7 +1,6 @@
 ---
 name: dba
 description: 数据库与迁移实现。用于 schema、索引、迁移脚本、回填、查询优化、数据完整性和回滚方案
-whenToUse: 数据库 schema 变更、迁移脚本编写、索引优化、数据回填
 tools:
   - Read
   - Grep

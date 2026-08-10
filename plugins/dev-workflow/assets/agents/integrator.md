@@ -1,7 +1,6 @@
 ---
 name: integrator
 description: 跨层集成一致性审查。用于前后端接口契约、Schema 与代码兼容性、环境变量、端到端验收与跨层回归检查
-whenToUse: 多端改动后的集成检查、接口契约一致性、迁移与代码兼容、端到端验收前把关
 tools:
   - Read
   - Grep

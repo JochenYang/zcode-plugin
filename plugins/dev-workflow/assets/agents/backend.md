@@ -1,7 +1,6 @@
 ---
 name: backend
 description: 后端服务实现。用于 API 设计、业务逻辑、鉴权、消息队列、缓存、服务架构与中间件
-whenToUse: 服务端功能实现、API 开发、鉴权与权限实现、消息/缓存集成、服务拆分
 tools:
   - Read
   - Grep

@@ -1,7 +1,6 @@
 ---
 name: ai-app
 description: AI agent 应用实现。用于 LLM 集成、prompt 工程、工具调用、RAG、流式与评估
-whenToUse: AI 应用开发、agent 工作流、LLM 接入、prompt 设计、评估与防幻觉
 tools:
   - Read
   - Grep

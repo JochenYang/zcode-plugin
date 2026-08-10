@@ -1,7 +1,6 @@
 ---
 name: mobile
 description: 移动端客户端实现。用于 iOS/Android 原生、React Native、Flutter 跨端开发与适配
-whenToUse: 移动端功能实现、跨端组件、原生交互、性能优化、设备适配
 tools:
   - Read
   - Grep

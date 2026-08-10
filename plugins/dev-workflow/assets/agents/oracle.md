@@ -1,7 +1,6 @@
 ---
 name: oracle
 description: 重大决策前的反方顾问。用于挑战架构选型、breaking change、技术栈切换和隐藏假设
-whenToUse: 架构决策前的反方审查、方案风险评估、second opinion
 tools:
   - Read
   - Grep
