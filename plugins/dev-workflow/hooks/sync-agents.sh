@@ -61,7 +61,7 @@ for f in "$src"/*.md; do
     target_hash="$(hash_of "$target")"
     if [ "$target_hash" = "$src_hash" ]; then
       :
-    elif [ "$target_hash" = "$(last_written "$name")" ]; then
+    elif [ ! -f "$state" ] || [ "$target_hash" = "$(last_written "$name")" ]; then
       cp "$f" "$target" 2>/dev/null && refreshed=$((refreshed + 1))
     else
       kept="${kept:+$kept, }$name"
