@@ -1,6 +1,6 @@
 {
   "name": "git-workflow",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Conventional commit workflow for ZCode: /gcommit creates spec-compliant commit messages, and a PostToolUse hook validates the message after each commit.",
   "author": {
     "name": "JochenYang"

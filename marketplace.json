@@ -4,7 +4,7 @@
   "plugins": [
     {
       "name": "git-workflow",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "description": "Conventional commit workflow: /gcommit generates spec-compliant commit messages, /gpr writes PR descriptions, /gchangelog builds changelogs; a PostToolUse hook checks the message after each commit.",
       "author": {
         "name": "JochenYang"
@@ -21,7 +21,7 @@
     },
     {
       "name": "dev-workflow",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "Daily development workflow: 7 flow skills (change-plan, debug, test-changed, review, commit-review, release-check, doc-gen), /handoff contract persistence, a SessionStart repo snapshot, and 16 specialist subagents auto-installed into ~/.zcode/agents.",
       "author": {
         "name": "JochenYang"
