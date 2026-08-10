@@ -1,0 +1,7 @@
+# Shell scripts must stay LF: hook scripts are executed by bash, and a CRLF
+# checkout breaks them under any non-MSYS bash (WSL, Linux CI, macOS).
+*.sh text eol=lf
+
+# Keep the rest normalised to LF in the repository.
+*.md text
+*.json text

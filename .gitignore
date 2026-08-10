@@ -9,3 +9,6 @@ Thumbs.db
 
 # 日志
 *.log
+
+# ZCode 会话状态（个人工作态，不共享）
+.zcode/handoff.md
