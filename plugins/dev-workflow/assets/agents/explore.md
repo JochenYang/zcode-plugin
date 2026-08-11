@@ -1,6 +1,7 @@
 ---
 name: "explore"
 description: "Fast AST-based code exploration. Finds files, symbols, call sites — does NOT analyze."
+color: yellow
 tools:
   - Read
   - Grep
