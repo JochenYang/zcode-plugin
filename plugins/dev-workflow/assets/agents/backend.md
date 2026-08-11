@@ -1,6 +1,7 @@
 ---
-name: backend
-description: 后端服务实现。用于 API 设计、业务逻辑、鉴权、消息队列、缓存、服务架构与中间件
+name: "backend"
+description: "后端服务实现。用于 API 设计、业务逻辑、鉴权、消息队列、缓存、服务架构与中间件"
+color: red
 tools:
   - Read
   - Grep
@@ -9,7 +10,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

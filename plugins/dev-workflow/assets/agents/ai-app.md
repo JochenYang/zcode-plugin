@@ -1,6 +1,7 @@
 ---
-name: ai-app
-description: AI agent 应用实现。用于 LLM 集成、prompt 工程、工具调用、RAG、流式与评估
+name: "ai-app"
+description: "AI agent 应用实现。用于 LLM 集成、prompt 工程、工具调用、RAG、流式与评估"
+color: red
 tools:
   - Read
   - Grep
@@ -9,7 +10,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

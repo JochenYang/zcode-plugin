@@ -1,6 +1,7 @@
 ---
-name: detective
-description: Bug 根因定位与复现分析。用于分析报错、追踪状态分叉并给出最小修复建议
+name: "detective"
+description: "Bug 根因定位与复现分析。用于分析报错、追踪状态分叉并给出最小修复建议"
+color: green
 tools:
   - Read
   - Grep
@@ -10,7 +11,9 @@ disallowedTools:
   - Bash
   - Write
   - Edit
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

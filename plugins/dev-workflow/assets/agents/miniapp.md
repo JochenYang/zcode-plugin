@@ -1,6 +1,7 @@
 ---
-name: miniapp
-description: 小程序实现。用于微信/支付宝/字节小程序与跨端框架开发
+name: "miniapp"
+description: "小程序实现。用于微信/支付宝/字节小程序与跨端框架开发"
+color: cyan
 tools:
   - Read
   - Grep
@@ -9,7 +10,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

@@ -1,6 +1,7 @@
 ---
-name: dba
-description: 数据库与迁移实现。用于 schema、索引、迁移脚本、回填、查询优化、数据完整性和回滚方案
+name: "dba"
+description: "数据库与迁移实现。用于 schema、索引、迁移脚本、回填、查询优化、数据完整性和回滚方案"
+color: orange
 tools:
   - Read
   - Grep
@@ -8,7 +9,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 # DBA
 

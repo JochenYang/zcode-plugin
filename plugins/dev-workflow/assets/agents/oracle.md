@@ -1,17 +1,20 @@
 ---
-name: oracle
-description: 重大决策前的反方顾问。用于挑战架构选型、breaking change、技术栈切换和隐藏假设
+name: "oracle"
+description: "重大决策前的反方顾问。用于挑战架构选型、breaking change、技术栈切换和隐藏假设"
+color: purple
 tools:
   - Read
   - Grep
   - Glob
-  - FetchURL
   - WebSearch
+  - FetchURL
 disallowedTools:
   - Bash
   - Write
   - Edit
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

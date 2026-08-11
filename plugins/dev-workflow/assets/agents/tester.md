@@ -1,6 +1,7 @@
 ---
-name: tester
-description: 测试与回归验证。用于 TDD、复现 bug、补测试、运行验证命令并报告结果
+name: "tester"
+description: "测试与回归验证。用于 TDD、复现 bug、补测试、运行验证命令并报告结果"
+color: pink
 tools:
   - Read
   - Grep
@@ -8,7 +9,9 @@ tools:
   - Bash
   - Write
   - Edit
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

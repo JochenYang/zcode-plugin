@@ -1,6 +1,7 @@
 ---
-name: integrator
-description: 跨层集成一致性审查。用于前后端接口契约、Schema 与代码兼容性、环境变量、端到端验收与跨层回归检查
+name: "integrator"
+description: "跨层集成一致性审查。用于前后端接口契约、Schema 与代码兼容性、环境变量、端到端验收与跨层回归检查"
+color: cyan
 tools:
   - Read
   - Grep
@@ -10,7 +11,9 @@ disallowedTools:
   - Bash
   - Write
   - Edit
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

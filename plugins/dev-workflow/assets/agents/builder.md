@@ -1,6 +1,7 @@
 ---
-name: builder
-description: 通用代码实现。用于范围清晰的小块功能、重构、修复执行和非专长代码修改
+name: "builder"
+description: "通用代码实现。用于范围清晰的小块功能、重构、修复执行和非专长代码修改"
+color: orange
 tools:
   - Read
   - Grep
@@ -9,7 +10,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

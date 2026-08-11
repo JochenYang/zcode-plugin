@@ -1,6 +1,7 @@
 ---
-name: frontend
-description: Web 前端实现。用于组件、页面、样式、状态管理、可访问性、响应式和构建配置
+name: "frontend"
+description: "Web 前端实现。用于组件、页面、样式、状态管理、可访问性、响应式和构建配置"
+color: green
 tools:
   - Read
   - Grep
@@ -9,7 +10,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 

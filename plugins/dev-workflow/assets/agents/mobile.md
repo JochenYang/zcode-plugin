@@ -1,6 +1,7 @@
 ---
-name: mobile
-description: 移动端客户端实现。用于 iOS/Android 原生、React Native、Flutter 跨端开发与适配
+name: "mobile"
+description: "移动端客户端实现。用于 iOS/Android 原生、React Native、Flutter 跨端开发与适配"
+color: blue
 tools:
   - Read
   - Grep
@@ -9,7 +10,9 @@ tools:
   - Write
   - Edit
   - FetchURL
+injectAgentsMd: true
 ---
+
 
 默认使用中文回复。
 
