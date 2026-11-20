@@ -4,12 +4,21 @@
 # Two tiers, both returned as exit-0 JSON so the model sees a reason instead of
 # an opaque process failure:
 #   deny — irreversible loss with no undo path (history rewrite, force push,
-#          recursive delete of a root-ish target, dropped tables, wiped disks).
+#          deleting a root-ish, system or credential target, dropped tables,
+#          wiped disks or drives).
 #   ask  — reversible or intentional-but-costly operations (publishing,
 #          deploying, rebasing, migrations) that the user should confirm once.
 #
-# Patterns are matched against the still-JSON-escaped command string: none of
-# them contain quotes or backslashes, so unescaping would buy nothing.
+# Delete verbs are judged by where their targets point, not by which flags or
+# spelling they use: rm, cmd's del/rd/rmdir and PowerShell's Remove-Item all run
+# through the same position check, so clearing a build directory passes silently
+# while anything outside the project is confirmed once. `git rm` is skipped: it
+# only touches tracked files inside the repository, so git itself refuses
+# anything that would escape it.
+#
+# Patterns are matched against the still-JSON-escaped command string, so a
+# Windows path arrives with doubled backslashes. Only the delete-target parser
+# unescapes, and it does so by squeezing the slashes in normalize_path.
 #
 # Escape hatch: put one ERE per line in .zcode/guardrails-allow (in the project
 # root) and any matching command is passed through untouched.
@@ -49,31 +58,66 @@ rule() {
   exit 0
 }
 
-# Normalise a path for prefix comparison: backslashes to slashes, and a Windows
-# drive letter to the /c/… form that ZCODE_PROJECT_DIR and Git Bash both use.
+# Normalise a path for prefix comparison: backslashes to slashes (the JSON
+# escaping doubles them), runs of slashes squeezed, and a Windows drive letter
+# to the /c/… form that ZCODE_PROJECT_DIR and Git Bash both use.
 normalize_path() {
   local p=${1//\\//}
+  p="$(printf '%s' "$p" | tr -s '/')"
   if [[ $p =~ ^([A-Za-z]):(/.*)?$ ]]; then
     p="/$(printf '%s' "${BASH_REMATCH[1]}" | tr 'A-Z' 'a-z')${BASH_REMATCH[2]}"
   fi
   printf '%s' "$p"
 }
 
-# Collect the non-option arguments of every rm in the command line. No shell
-# expansion happens here, so $VAR and $(…) targets stay opaque and are treated
-# as outside the project by the caller.
-rm_targets() {
+# Strip the quote characters a shell would have removed, including the escaped
+# form the JSON payload carries.
+unquote() {
+  local s=$1
+  s=${s#\\\"}; s=${s#\"}; s=${s#\'}
+  s=${s%\\\"}; s=${s%\"}; s=${s%\'}
+  printf '%s' "$s"
+}
+
+# Collect the non-option arguments of every delete verb in the command line:
+# rm, cmd's del/rd/rmdir and PowerShell's Remove-Item. No shell expansion
+# happens here, so $VAR and $(…) targets stay opaque and are treated as outside
+# the project by the caller.
+delete_targets() {
   local -a tokens
-  local t in_rm=0
+  local t u in_del=0 verb="" prev=""
   read -ra tokens <<< "$cmd"
   for t in "${tokens[@]}"; do
-    case $t in
-      rm|*/rm) in_rm=1; continue ;;
-      ';'|'&&'|'||'|'|'|'&') in_rm=0; continue ;;
+    u="$(unquote "$t")"
+    case $u in
+      ';'|'&&'|'||'|'|'|'&') in_del=0; prev="$u"; continue ;;
     esac
-    [ "$in_rm" = 1 ] || continue
-    case $t in -*) continue ;; esac
-    printf '%s\n' "$t"
+    # A delete verb opens a delete, unless it is git's own repo-scoped one.
+    case $u in
+      rm|*/rm|del|*/del|rd|*/rd|rmdir|*/rmdir|Remove-Item|remove-item)
+        case $prev in
+          git|*/git) in_del=0 ;;
+          *) in_del=1; verb=$u ;;
+        esac
+        prev="$u"
+        continue ;;
+    esac
+    if [ "$in_del" = 1 ]; then
+      case $u in
+        -*) : ;;   # rm flags and PowerShell parameters
+        *)
+          # cmd.exe writes its switches with a slash; rm never does.
+          case $verb in
+            del|rd|rmdir)
+              case $u in
+                /[A-Za-z]|/[A-Za-z][A-Za-z]|/[A-Za-z][A-Za-z][A-Za-z]|/[A-Za-z]:*) ;;
+                *) printf '%s\n' "$u" ;;
+              esac ;;
+            *) printf '%s\n' "$u" ;;
+          esac ;;
+      esac
+    fi
+    prev="$u"
   done
 }
 
@@ -81,19 +125,63 @@ C='(^|[[:space:];&|(])'   # start of a command within the shell line
 
 # ---------------------------------------------------------------- deny tier --
 
-# A recursive delete is judged by where it points, not by which flags it uses.
-# Inside the project it is everyday cleanup and passes silently; a root-ish or
-# system target is a deny; anything else outside the project is an ask further
-# down, because clearing ~/.cache or a sibling checkout is sometimes deliberate.
-if printf '%s' "$cmd" | grep -Eq "${C}rm([[:space:]]+-[A-Za-z]*[rR][A-Za-z]*|[[:space:]]+--recursive)"; then
-  rule deny "[[:space:]](/|~|\\\$HOME|\\*|\\.|\\.\\.)([[:space:]]|$)" \
-    'rm -r on a root-ish target (/, ~, ., .., *) deletes everything under it with no undo. Delete an explicit subpath instead, e.g. rm -rf ./build.'
-  rule deny "[[:space:]](~|\\\$HOME)?/(usr|etc|bin|sbin|lib|opt|boot|sys|proc|root|home|Users|Windows|Program Files)([[:space:]/]|$)" \
-    'rm -r targets a system directory. This is unrecoverable and would break the machine, not just the project.'
-  rule deny "[[:space:]](~|\\\$HOME)/(\\.ssh|\\.aws|\\.config|\\.zcode|\\.gnupg)" \
-    'rm -r targets a user credential or config directory. Deleting it loses keys and settings that are not in any repo.'
-fi
+# Delete targets are judged by position. A root-ish, drive, system or credential
+# target is unrecoverable; everything else is classified further down.
+project="$(normalize_path "${ZCODE_PROJECT_DIR:-$PWD}")"
+while IFS= read -r target; do
+  [ -n "$target" ] || continue
+  n="$(normalize_path "$target")"
 
+  case $n in
+    /)
+      emit deny "Deleting the filesystem root removes the whole machine. Delete an explicit subpath instead, e.g. rm -rf ./build."
+      exit 0 ;;
+    /[a-z]|/[a-z]/|/[a-z]/\*)
+      emit deny "Deleting an entire drive is unrecoverable and would take the operating system with it."
+      exit 0 ;;
+    '~'|'~/*'|'$HOME'|'$HOME/*'|'$env:USERPROFILE'|'$env:USERPROFILE/*')
+      emit deny "Deleting the home directory root (or everything in it) loses keys, settings and work that are not in any repo. Delete an explicit subpath instead."
+      exit 0 ;;
+    '*'|'*.*'|.|..)
+      emit deny "Deleting $target removes everything under the current directory with no undo path. Delete an explicit subpath instead."
+      exit 0 ;;
+    '~'/.ssh|'~'/.ssh/*|'~'/.aws|'~'/.aws/*|'~'/.gnupg|'~'/.gnupg/*|'~'/.config|'~'/.config/*|'~'/.zcode|'~'/.zcode/*|\
+    '$HOME'/.ssh|'$HOME'/.ssh/*|'$HOME'/.aws|'$HOME'/.aws/*|'$HOME'/.gnupg|'$HOME'/.gnupg/*|'$HOME'/.config|'$HOME'/.config/*|'$HOME'/.zcode|'$HOME'/.zcode/*)
+      emit deny "Deleting a user credential or config directory loses keys and settings that are not in any repo."
+      exit 0 ;;
+  esac
+
+  # Temp space and the project itself are everyday cleanup.
+  case $n in
+    /tmp|/tmp/*|/var/tmp|/var/tmp/*) continue ;;
+    "$project"|"$project"/*) continue ;;
+  esac
+
+  case $n in
+    /usr|/usr/*|/etc|/etc/*|/bin|/bin/*|/sbin|/sbin/*|/lib|/lib/*|/opt|/opt/*|\
+    /boot|/boot/*|/sys|/sys/*|/proc|/proc/*|/root|/root/*|/home|/home/*|\
+    /[Ww]indows|/[Ww]indows/*|/[Pp]rogram[[:space:]][Ff]iles|/[Pp]rogram[[:space:]][Ff]iles/*|\
+    /[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)|/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)/*|\
+    /[Uu]sers|/[Uu]sers/*|\
+    /[a-z]/[Ww]indows|/[a-z]/[Ww]indows/*|/[a-z]/[Pp]rogram[[:space:]][Ff]iles|/[a-z]/[Pp]rogram[[:space:]][Ff]iles/*|\
+    /[a-z]/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)|/[a-z]/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)/*|\
+    /[a-z]/[Uu]sers|/[a-z]/[Uu]sers/*)
+      emit deny "Deleting a system directory is unrecoverable and would break the machine, not just the project."
+      exit 0 ;;
+  esac
+
+  case $n in
+    ../*|*/../*|..)
+      emit ask "Deleting $target reaches outside the project through a relative path. Confirm the resolved target before deleting."
+      exit 0 ;;
+    '~'/*|'$'*)
+      emit ask "Deleting $target expands outside the project. Confirm the expanded path before deleting."
+      exit 0 ;;
+    /*)
+      emit ask "Deleting $target, which is outside the project directory. Confirm this is intended and not a mistyped path."
+      exit 0 ;;
+  esac
+done <<< "$(delete_targets)"
 
 rule deny "${C}git([[:space:]]+[^[:space:]]+)*[[:space:]]+push([[:space:]]+[^[:space:]]+)*[[:space:]]+(--force([[:space:]]|$)|-f([[:space:]]|$))" \
   'git push --force overwrites remote history and can destroy commits other people already pulled. Use --force-with-lease, which refuses when the remote moved.'
@@ -111,6 +199,7 @@ rule deny "(DROP|drop)[[:space:]]+(TABLE|DATABASE|SCHEMA|table|database|schema)"
 rule deny "(TRUNCATE|truncate)[[:space:]]+(TABLE|table)?" \
   'TRUNCATE empties the table without a transaction log in most engines, so the rows cannot be recovered.'
 
+# Disk-level destruction, in POSIX and in Windows spelling.
 rule deny "${C}(mkfs[A-Za-z0-9._]*|fdisk|parted)([[:space:]]|$)" \
   'Filesystem and partition tools destroy every byte on the target device.'
 rule deny "${C}dd[[:space:]]+([^[:space:]]+[[:space:]]+)*of=/dev/" \
@@ -119,29 +208,22 @@ rule deny ">[[:space:]]*/dev/(sd|nvme|hd|disk)" \
   'Redirecting output onto a raw block device corrupts the filesystem on it.'
 rule deny "${C}chmod[[:space:]]+(-[A-Za-z]+[[:space:]]+)*777[[:space:]]+/([[:space:]]|$)" \
   'chmod 777 / makes the entire filesystem world-writable and is not reversible by re-running chmod.'
+rule deny "${C}[Ff]ormat[[:space:]]+[A-Za-z]:" \
+  'format erases the target drive. Take a verified backup first, and prefer formatting only a scratch volume.'
+rule deny "${C}[Ff]ormat-[Vv]olume([[:space:]]|$)" \
+  'Format-Volume erases the target volume, including everything on it.'
+rule deny "${C}diskpart([[:space:]]|$)" \
+  'diskpart rewrites partition tables and can erase any attached disk. Do this deliberately, outside an agent session.'
+rule deny "${C}[Cc]lear-[Dd]isk([[:space:]]|$)" \
+  'Clear-Disk wipes the partition table and every byte of data on the target disk.'
+rule deny "${C}[Ii]nitialize-[Dd]isk([[:space:]]|$)" \
+  'Initialize-Disk overwrites the partition table of the target disk, making its current data unreachable.'
 
 # ----------------------------------------------------------------- ask tier --
 
-# Deleting outside the project is not automatically wrong — clearing ~/.cache or
-# a stale sibling checkout happens — but it is never routine, so it is confirmed
-# once. Anything resolving inside the project never reaches this point.
-project="$(normalize_path "${ZCODE_PROJECT_DIR:-$PWD}")"
-while IFS= read -r target; do
-  [ -n "$target" ] || continue
-  case $(normalize_path "$target") in
-    /tmp|/tmp/*|/var/tmp|/var/tmp/*) continue ;;
-    "$project"|"$project"/*) continue ;;
-    ../*|*/../*)
-      emit ask "rm reaches outside the project through a relative path ($target). Confirm the resolved target before deleting."
-      exit 0 ;;
-    /*)
-      emit ask "rm targets $target, which is outside the project directory. Confirm this is intended and not a mistyped path."
-      exit 0 ;;
-    '~'/*|'$'*)
-      emit ask "rm targets $target, which expands outside the project. Confirm the expanded path before deleting."
-      exit 0 ;;
-  esac
-done <<< "$(rm_targets)"
+# Deleting outside the project is not automatically wrong, but it is never
+# routine, so it is confirmed once. Anything resolving inside the project never
+# reaches this point — see the deny tier above.
 
 rule ask "${C}(sudo|doas)([[:space:]]|$)" \
   'Runs with root privileges, so mistakes reach outside the project. Confirm the exact command.'
@@ -188,9 +270,12 @@ rule ask "${C}(vercel|netlify|fly|railway|heroku)[[:space:]]+([^[:space:]]+[[:sp
 rule ask "${C}(aws|gcloud|az)[[:space:]]+[^[:space:]]+[[:space:]]+(delete|rm|destroy|terminate)" \
   'Deletes a cloud resource. Confirm the account, region and resource identifier.'
 
-rule ask "(>|>>|tee[[:space:]]+)[[:space:]]*[^[:space:];&|]*(\\.env($|[^.])|\\.env\\.(local|production|prod)|credentials|\\.netrc|\\.npmrc|\\.pypirc|id_rsa|id_ed25519|\\.pem($|[^A-Za-z]))" \
+# Windows registry keys are not in any repo and deletion is not undoable from
+# the shell.
+rule ask "${C}reg([[:space:]]+[^[:space:]]+)*[[:space:]]+delete([[:space:]]|$)" \
+  'Deletes a registry key. Confirm the hive and path, and export it first if it matters.'
+
+rule ask "(>|>>|tee[[:space:]]+)[[:space:]]*[^[:space:];&|]*(\.env($|[^.])|\.env\.(local|production|prod)|credentials|\.netrc|\.npmrc|\.pypirc|id_rsa|id_ed25519|\.pem($|[^A-Za-z]))" \
   'Writes to a credential file. Confirm the content is a placeholder and not a real secret, and that the file is git-ignored.'
 
 exit 0
-
-
