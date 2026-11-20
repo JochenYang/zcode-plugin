@@ -143,6 +143,17 @@ plugins/<plugin-name>/
 - hook 输出是严格 schema，**多一个键整体丢弃**；`async` 无效，钩子始终阻塞执行；跨平台优先 `type: "process"` + `args[]`，路径用 `${ZCODE_PLUGIN_ROOT}`
 - shell 脚本必须保持 LF（本仓库靠 `.gitattributes` 约束），CRLF 在非 MSYS bash 下会失败
 
+## 校验
+
+仓库自带两个零依赖检查（需要 Python 3.8+ 与 bash），改动插件后手动跑：
+
+```bash
+python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、引用、行尾、shell 语法
+python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，90 个用例
+```
+
+`check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。
+
 ## 参考
 
 - 官方插件文档：<https://zcode.z.ai/cn/docs/plugin>

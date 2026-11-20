@@ -143,6 +143,17 @@ Pitfalls worth writing down instead of rediscovering:
 - Hook output uses a strict schema — **one extra key discards the whole payload**. `async` has no effect, hooks always block. For cross-platform safety prefer `type: "process"` with `args[]` and `${ZCODE_PLUGIN_ROOT}` paths
 - Shell scripts must stay LF (enforced here by `.gitattributes`); CRLF fails under any non-MSYS bash
 
+## Checks
+
+Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them after changing a plugin:
+
+```bash
+python scripts/check-consistency.py             # versions, agent count, frontmatter, references, line endings, shell syntax
+python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 90 cases
+```
+
+`check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.
+
 ## References
 
 - Official plugin docs: <https://zcode.z.ai/cn/docs/plugin>

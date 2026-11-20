@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Consistency checks for this plugin marketplace.
+
+Catches the drift that a human reviewer keeps missing: a version bumped in one
+manifest but not the others, an agent count that no longer matches the prose,
+a frontmatter key ZCode does not recognise, a reference to a file that is not
+there, or a leftover mention of a mechanism that was removed.
+
+    python scripts/check-consistency.py [repo-root]
+
+Requires Python 3.8+. Exits non-zero when any check fails.
+"""
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FAILS = []
+
+# Frontmatter keys ZCode actually reads. An unknown key is silently dropped, so
+# the check is the only thing that notices.
+SKILL_KEYS = {"name", "description", "when_to_use", "license", "metadata"}
+AGENT_KEYS = {
+    "name", "description", "model", "thoughtLevel", "color", "permissionMode",
+    "maxTurns", "memory", "tools", "disallowedTools", "skills", "background",
+    "injectAgentsMd", "mcpServers",
+}
+# Mechanisms this repo removed on purpose; a mention means a stale reference.
+STALE_MARKERS = ["Anti-rationalization", "AR-1", "KIMI_SKILL_DIR", "git_conventions", "whenToUse"]
+
+
+def check(name, ok, detail=""):
+    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' — ' + detail) if detail else ''}")
+    if not ok:
+        FAILS.append(name)
+
+
+def read(path):
+    with open(os.path.join(ROOT, path), encoding="utf-8") as handle:
+        return handle.read()
+
+
+def load(path):
+    return json.loads(read(path))
+
+
+def check_json():
+    paths = ["marketplace.json"] + glob.glob("plugins/*/.zcode-plugin/plugin.json") \
+        + glob.glob("plugins/*/hooks/hooks.json")
+    bad = []
+    for path in paths:
+        try:
+            load(path)
+        except ValueError as exc:
+            bad.append(f"{path}: {exc}")
+    check("json parses", not bad, "; ".join(bad))
+
+
+def check_versions():
+    market = load("marketplace.json")
+    readmes = {name: read(name) for name in ("README.md", "README.en.md")}
+    for entry in market["plugins"]:
+        name, version = entry["name"], entry["version"]
+        manifest = load(f"plugins/{name}/.zcode-plugin/plugin.json")
+        check(f"{name}: manifest == marketplace", manifest["version"] == version,
+              f'{manifest["version"]} vs {version}')
+        for readme, text in readmes.items():
+            row = re.search(rf"`plugins/{name}`\s*\|\s*([0-9][^ ]*)\s*\|", text)
+            check(f"{name}: {readme} row == {version}",
+                  bool(row) and row.group(1) == version,
+                  row.group(1) if row else "row not found")
+
+
+def check_agent_count():
+    count = len(glob.glob(os.path.join(ROOT, "plugins/dev-workflow/assets/agents/*.md")))
+    market = load("marketplace.json")
+    entry = next(p for p in market["plugins"] if p["name"] == "dev-workflow")
+    sources = {
+        "plugin.json": load("plugins/dev-workflow/.zcode-plugin/plugin.json")["description"],
+        "marketplace.json": entry["description"],
+        "README.md": read("README.md"),
+        "README.en.md": read("README.en.md"),
+    }
+    for label, text in sources.items():
+        check(f"dev-workflow: {label} states {count} agents", f"{count} " in text)
+
+
+def frontmatter_keys(path):
+    text = open(path, encoding="utf-8").read()
+    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    if not match:
+        return None, ""
+    keys = [line.split(":")[0].strip()
+            for line in match.group(1).splitlines() if re.match(r"^[A-Za-z_]+:", line)]
+    return keys, match.group(1)
+
+
+def check_frontmatter():
+    bad = []
+    for path in glob.glob(os.path.join(ROOT, "plugins/dev-workflow/skills/*/SKILL.md")):
+        keys, front = frontmatter_keys(path)
+        owner = os.path.basename(os.path.dirname(path))
+        if keys is None:
+            bad.append(f"{owner}: no frontmatter")
+            continue
+        if set(keys) - SKILL_KEYS:
+            bad.append(f"{owner}: extra keys {sorted(set(keys) - SKILL_KEYS)}")
+        if "name" not in keys or "description" not in keys:
+            bad.append(f"{owner}: missing name/description")
+        desc = re.search(r"^description:\s*(.*)$", front, re.M)
+        if desc and len(desc.group(1)) > 1024:
+            bad.append(f"{owner}: description over 1024 chars")
+    check("skill frontmatter", not bad, "; ".join(bad))
+
+    bad = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "plugins/dev-workflow/assets/agents/*.md"))):
+        keys, _ = frontmatter_keys(path)
+        owner = os.path.basename(path)
+        if keys is None:
+            bad.append(f"{owner}: no frontmatter")
+            continue
+        if set(keys) - AGENT_KEYS:
+            bad.append(f"{owner}: extra keys {sorted(set(keys) - AGENT_KEYS)}")
+        if "name" not in keys or "description" not in keys:
+            bad.append(f"{owner}: missing name/description")
+    check("agent frontmatter", not bad, "; ".join(bad))
+
+
+def check_stale_markers():
+    hits = []
+    for path in glob.glob(os.path.join(ROOT, "**", "*"), recursive=True):
+        if not os.path.isfile(path) or ".git" in path or "node_modules" in path:
+            continue
+        if path.endswith((".png", ".ico", "check-consistency.py", "test-hooks.py", "agents-sync.md")):
+            continue
+        try:
+            text = open(path, encoding="utf-8").read()
+        except (UnicodeDecodeError, OSError):
+            continue
+        rel = os.path.relpath(path, ROOT)
+        for marker in STALE_MARKERS:
+            if marker in text:
+                hits.append(f"{rel}: {marker}")
+        # $ARGUMENTS is legitimate in git-workflow commands, not in skills.
+        if "$ARGUMENTS" in text and os.sep + "dev-workflow" in path:
+            hits.append(f"{rel}: $ARGUMENTS")
+    check("no stale references", not hits, "; ".join(hits))
+
+
+def check_line_endings():
+    crlf = [os.path.relpath(path, ROOT)
+            for path in glob.glob(os.path.join(ROOT, "plugins", "**", "*"), recursive=True)
+            if os.path.isfile(path) and b"\r\n" in open(path, "rb").read()]
+    check("no CRLF in plugins", not crlf, "; ".join(crlf))
+
+
+def check_shell_syntax():
+    bad = []
+    for path in glob.glob(os.path.join(ROOT, "plugins/*/hooks/*.sh")):
+        proc = subprocess.run(["bash", "-n", path], capture_output=True, text=True)
+        if proc.returncode != 0:
+            bad.append(f"{os.path.relpath(path, ROOT)}: {proc.stderr.strip()}")
+    check("hook shell syntax", not bad, "; ".join(bad))
+
+
+def check_skill_references():
+    """A skill may point at its own references/ or at another skill's."""
+    skill_dirs = glob.glob(os.path.join(ROOT, "plugins/dev-workflow/skills/*"))
+    missing = []
+    for path in glob.glob(os.path.join(ROOT, "plugins/dev-workflow/skills/*/SKILL.md")):
+        owner = os.path.basename(os.path.dirname(path))
+        for ref in re.findall(r"`references/([A-Za-z0-9._-]+\.md)`", open(path, encoding="utf-8").read()):
+            if not any(os.path.isfile(os.path.join(d, "references", ref)) for d in skill_dirs):
+                missing.append(f"{owner}: {ref}")
+    check("skill references resolve", not missing, "; ".join(missing))
+
+
+def main():
+    if not os.path.isfile(os.path.join(ROOT, "marketplace.json")):
+        print(f"not a marketplace root: {ROOT}")
+        return 2
+    for probe in (check_json, check_versions, check_agent_count, check_frontmatter,
+                  check_stale_markers, check_line_endings, check_shell_syntax,
+                  check_skill_references):
+        probe()
+    if FAILS:
+        print(f"\n{len(FAILS)} CHECK(S) FAILED: {', '.join(FAILS)}")
+        return 1
+    print("\nALL CHECKS PASSED")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
