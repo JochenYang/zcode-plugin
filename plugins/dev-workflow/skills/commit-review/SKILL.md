@@ -1,72 +1,54 @@
 ---
 name: commit-review
-description: 在提交前检查改动范围、验证证据、敏感信息和 Git 规范，并生成可供确认的分支与提交信息提案。
-when_to_use: 当用户准备提交代码、要求检查 staged changes、生成 commit message 或判断是否可以提交时。
+description: 提交前检查改动范围、验证证据、敏感信息与 Git 规范，生成可供确认的分支与提交信息提案，并给出 Testing / Risk / How to revert 三行结论。
+when_to_use: 准备提交代码、要 commit message、或判断能不能提交时使用。用户说「提交吧」「帮我写个 commit」「这些改动可以提交吗」「分几个提交好」「提交前看看有没有问题」时加载。
 ---
 
-请审查用户请求的范围（默认当前工作区与暂存区）是否适合形成一个提交，并给出提案；不要实际提交。
-
-Anti-rationalization **ID 释义以 `test-changed` 为 SSOT**（AR-1–AR-10）。本 Skill 结论连动：`FAIL` → **必须 NOT READY**。
+请审查用户指定的范围（默认当前工作区与暂存区）是否适合形成一个提交，并生成提案；不要实际提交。
 
 ## 流程
 
 1. 读取 AGENTS.md 中的 Git、测试和安全规则。
-2. **Contract resolution**（同会话、不落盘；可简版，通例同 `test-changed`）：
-   - 优先级：`explicit-handoff` → `user-pinned` → `rebuilt-from-context` → `unavailable`。
-   - 能还原则对照 Must-have / Out of scope，Alignment note：`matched` / `drift` / `n/a`。
-   - **无 plan 单独不强制 NOT READY**；`unavailable` 写入 Scope assessment。禁止未对照却声称 aligned。`rebuilt` 须注明未与 explicit Handoff 对照。
-3. 获取 `git status --short`、未暂存/已暂存 diff 与 untracked。
-4. 判断是否单一职责；指出应排除、拆分或补充的文件。
-5. 搜索疑似密钥、Token、Cookie、私钥、`.env`、生产地址、调试日志和临时文件。
-6. 检查生成物、lockfile、迁移、配置和公共 API 变化是否合理。
-7. 读取命令级测试证据；无则要求最短验证；口述≠L1（AR-6）。
-8. 按项目规则生成分支名与 commit message（subject：英文祈使、小写开头、无句号）。
-9. 若需 body：一段话 + `- ` bullet。先一行说明为什么改（subject 已说清则省略），再逐条列改动，最后一行写验证手段（`tests run` / `build` / `diff review` / `manual repro`）。不强制加标签、不写套话；subject 足够时整体省略 body。
-10. 项目有提交规范校验工具时使用它校验提案 message/branch/files：`ERROR` → NOT READY；`WARN` 列入 Blocking 或 Scope。不可用则写明，不得假装已机器校验。
-11. **Anti-rationalization**：检查 AR-1–AR-10。`FAIL` 或既有阻塞 → NOT READY；READY 还要求 AR `PASS`。
-12. 询问用户确认；不执行 `git add` / `git commit` / `git push`。
+2. **对照验收依据**：优先读项目内 `.devflow/<slug>.md`；其中有 `Plan:` 指针、或 `.devflow` 不存在但 `docs/plans/` 下有相关计划（Status 为 draft/active）时，以 `docs/plans/<slug>.md` 为准；其次是用户本轮明确写下的范围；再次从 diff 重建；都没有写 `unavailable`。能对照时给出 `matched` / `drift` / `n/a`，不能对照时不得声称 matched。
+3. 存在 `docs/plans/<slug>.md` 时：确认计划文件包含在本次提交内；Test plan 仍有 `pending` 条目、Work items 存在 `[~]`/`[?]`、或 Phase log 缺少该阶段的通过记录或该行没有状态自检证据时列入阻塞项或范围说明；Status 只能在 Work items 全部落定（`[x]`/`[–]`）且 Test plan 全部有通过证据时标 `done`。
+4. 获取 `git status --short`、未暂存/已暂存 diff 与 untracked。
+5. 判断是否单一职责；指出应排除、拆分或补充的文件。
+6. 搜索疑似密钥、Token、Cookie、私钥、`.env`、生产地址、调试日志和临时文件。
+7. 检查生成物、lockfile、迁移、配置和公共 API 变化是否合理。
+8. 读取命令级测试证据；无则要求最短验证。按改动内容定风险 tier（认证、支付、密钥、迁移、CI workflow、公共 API 与不可逆数据操作按 high）；敏感路径存在未关闭的安全 finding 时 NOT READY。自己说测过只是口述，不构成批准。
+9. 按项目规则生成分支名与 commit message（subject：英文祈使、小写开头、无句号）。
+10. 若需 body：保持简短自然——subject 已说清则整体省略；否则先一句说明为什么改，再用 2–4 条 bullet 列核心改动，最后一行写验证结果。写最终状态而不是过程；改动后重读一遍，确保描述仍与最终 diff 一致。
+11. 项目有提交规范校验工具时（git hook、校验脚本或 MCP 工具），用提案的 message/branch/files 调用它：`ERROR` → NOT READY；`WARN` 记入阻塞项或范围说明。不可用则写明未做机器校验，不假装已校验。
+12. **结案自查**：没有 plan 不单独构成 NOT READY；但命令绿了不等于验收满足、看起来合理不算证据、用户说测过了只是口述——这三条不满足时必须 NOT READY。
+13. 提出确认问题；不运行 `git add` / `git commit` / `git push`。
 
 ## 输出格式
 
-````markdown
-## Commit readiness
+```markdown
+## Readiness
 READY / NOT READY
 
-## Contract resolution
-source: explicit-handoff | user-pinned | rebuilt-from-context | unavailable
-- Goal / Must-have / Out of scope:（或 unavailable）
-- Alignment note: matched / drift / n/a
-
-## Anti-rationalization
-Result: PASS | FAIL
-Triggered: none | AR-n, …
-ID 标签速查：AR-1(命令绿≠验收) AR-2(历史≠当前) AR-3(小改不跳过) AR-4(工具不可用降级) AR-5(看似合理≠结案) AR-6(口述≠L1) AR-7(大方向≠aligned) AR-8(顺手小改记录) AR-9(部分≠全部) AR-10(AI自证需外部证据)；释义见 test-changed
-
 ## Blocking items
-
-## Scope assessment
-
-## Proposed branch
-`type/name`
+阻塞项；无则写 None
 
 ## Proposed commit
+分支：`type/name`
+
+提交信息：
 ```text
 type(scope): subject
 
-why this change, if the subject is not enough
-- what changed and where
-- tests run: pnpm test src/auth (3 passed)
+- reason or goal
+- core change
+- verification result
 ```
 
-## Changed files summary
+Testing: <命令与退出码>
+Risk: low | medium | high — 理由
+How to revert: <回滚方式>
 
-## Verification evidence
+## Scope
+改动文件概要、验收依据对照（source / alignment）、验证证据、约定检查结果
+```
 
-## Convention check
-校验工具: used / unavailable — summary
-
-## Confirmation
-是否按该范围准备提交？
-````
-
-跨多职责时优先给出拆分顺序与各提交主题。未经用户明确授权不得执行任何 Git 写操作。
+跨多职责时优先给拆分顺序与各提交主题。未经用户明确授权不得执行任何 Git 写操作。

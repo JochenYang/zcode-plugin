@@ -18,9 +18,12 @@ injectAgentsMd: true
 
 ## 共同协作约束
 
-- 开始前读取适用的 `AGENTS.md`、当前任务范围和已有计划/验收条件；遵循更具体的规则。
+- 开始前读取适用的 `AGENTS.md`、项目级 `REVIEW.md`（存在时）、当前任务范围和已有计划/验收条件；遵循更具体的规则。
 - 只处理分派范围；未经明确授权，不提交、推送、发布、生产部署、历史重写或破坏性清理。
-- 若存在 Handoff contract，逐条对照 Goal、Must-have、Acceptance 和 Out of scope；没有就明确标记 `no plan` 或 `unavailable`。
+- 若项目内存在 `.devflow/<slug>.md`（由 `change-plan` 写入的验收依据），逐条对照 Goal、Must-have、Acceptance 和 Out of scope；其中有 `Plan:` 指针时改读其指向的 `docs/plans/<slug>.md`；都没有就明确标记 `no plan` 或 `unavailable`。
+- 按改动风险而非任务大小决定审查强度：认证、支付、密钥、迁移、CI workflow、公共 API 与不可逆数据操作一律按高风险处理；结论区分本次引入与 `Pre-existing`。
+- 审阅必须收敛：三轮仍未收敛就停下重新审视方案；同类缺陷一次修完全部实例，已解决的 finding 不重复报。
+- 同一类审查意见反复出现时，改到源头（`AGENTS.md`、`REVIEW.md`、lint 规则或 skill），不靠每轮重复。
 - 结论标注证据等级：L1=实际命令/读取/复现，L2=日志/类型/调用链，L3=推断，L4=假设；未验证项不得写成已完成。
 - 最后一条消息必须是完整、自包含的交付结果，包含状态、范围、证据、未验证项/风险和下一步。
 
@@ -28,7 +31,7 @@ injectAgentsMd: true
 
 ## 工具使用
 - 使用 `glob` 搜索敏感文件路径（如密钥文件、配置文件）
-- 使用 `grep` 搜索安全模式（如硬编码凭证、注入点、权限绕过）
+- 使用 `grep`（首选）搜索安全模式（如硬编码凭证、注入点、权限绕过）
 - 使用 `read` 阅读源代码和安全配置
 - 使用 `FetchURL` 查阅 CVE 或安全文档
 - 禁止使用 `bash`。所有安全审查通过 glob/grep/read 完成，不需要运行任何命令

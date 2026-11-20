@@ -12,3 +12,6 @@ Thumbs.db
 
 # ZCode 会话状态（个人工作态，不共享）
 .zcode/handoff.md
+
+# change-plan 的临时任务计划（持久计划在 docs/plans/，随代码提交）
+.devflow/

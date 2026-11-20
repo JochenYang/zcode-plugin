@@ -1,28 +1,41 @@
 ---
 name: review
-description: 对当前代码改动进行只读、发现优先的工程审查，覆盖正确性、回归、安全、性能、数据一致性和测试缺口。
-when_to_use: 当用户要求 review、代码审查、检查当前改动、评估提交质量或寻找潜在问题时。
+description: 对代码改动做只读、发现优先的工程审查，覆盖正确性、回归、安全、性能、数据一致性与测试缺口，并给出四档结论。
+when_to_use: 要检查代码改动、找潜在问题、评估能不能合并时使用。用户说「帮我 review 一下」「看看这次改动有没有问题」「这段逻辑对不对」「提交前帮我看看」「有没有坑」时加载。范围可指定 staged、Git ref/range、文件路径或安全/测试/性能/并发等关注点。不用于：已经明确的单行修改。
 ---
 
-只读审查用户指定的范围（若未指定则审查当前工作区改动）。范围可指定 `staged`、Git ref/range、文件路径或安全、测试、性能、并发等关注点。
-
-Anti-rationalization **ID 释义以 `test-changed` 为 SSOT**（AR-1–AR-10）；本 Skill 附自足速查表，便于单独触发时不依赖 `test-changed` 在上下文中。
+只读审查用户指定的范围（若未指定则审查当前工作区改动）。参数可指定 `staged`、Git ref/range、文件路径或安全、测试、性能、并发等关注点。
 
 ## 范围确定
 
-1. 读取适用的 AGENTS.md 和项目开发规则。
-2. 解析范围：空=工作区，`staged`=暂存区，ref/range=对应提交，路径=对应文件/目录；纯流程/设计问题且无代码范围时声明为非 diff review。
+1. 读取适用的 AGENTS.md、项目级 `REVIEW.md`（存在时）和项目开发规则。
+2. 解析范围：空=工作区，`staged`=暂存区，ref/range=对应提交，路径=对应文件/目录；纯流程或设计问题且无代码范围时，声明为非 diff review。
 3. 同时检查未暂存、已暂存与 untracked，除非用户限定范围。
-4. **Contract resolution**（同会话、不落盘；通例同 `test-changed`）：
-   - 优先级：`explicit-handoff` → `user-pinned` → `rebuilt-from-context` → `unavailable`。
-   - 重建不编造 Acceptance；无 explicit/user-pinned 不得 `aligned`。`rebuilt` → 最多 `partial`/`rebuilt`；`unavailable` → `no plan`/`unavailable`，仍可做 diff 审查。
+4. **对照验收依据**：优先读项目内 `.devflow/<slug>.md`；其中有 `Plan:` 指针、或 `.devflow` 不存在但 `docs/plans/` 下有相关计划（Status 为 draft/active）时，以 `docs/plans/<slug>.md` 为准；其次是用户本轮明确写下的范围；再次从 diff 意图重建（缺的写 `unknown`）；都没有则只做 diff 审查，不得声称与计划一致。
 5. 阅读调用方、类型、配置、测试与错误处理，不只看 diff 表面。
-6. 核公共 API 与被删除/搬迁符号的调用方：用 Grep/Glob 全仓搜符号名、字符串引用与配置引用，覆盖动态形态（模板、配置驱动、反射式调用、跨语言引用）。搜索覆盖不到的形态写入 Unverified；不得据文本搜索为空断言「无调用方」。
-7. **Anti-rationalization**：适用 AR-1, AR-3, AR-4, AR-5, AR-7, AR-8, AR-9, AR-10（有测试主张时加 AR-2, AR-6）。`FAIL` → 不得把「无 Findings」暗示可合；无 L1 逐条对照时 alignment 不得 `aligned`；须有证据/范围相关 P2，或缺口写入 Residual risks 且不暗示可合。
+6. 需要时用文本搜索核实公共 API 调用方，记录搜索范围与 pattern，不假装已做机器分析。
+
+## 深度与收敛
+
+- 风险分级按改动内容，不按任务大小：认证、支付、密钥、迁移、CI workflow、公共 API 与不可逆数据操作按 high 走全量审查（必要时建议 `guard`）；文档、文案、开关后的增量改动按 low 只做必要检查。
+- 新增依赖或新抽象时，要求说明「为什么现有实现或平台原生能力不够」；答不上来就列为 finding。这类扩张是最常见的过度设计来源。
+- 每条 finding 标注 `introduced` 或 `pre-existing`（改动前就存在）；纯风格与诊断类标 `nit`，默认不计入阻塞项。
+- 收敛：记录本次是第几轮；第 3 轮仍未收敛就停止并建议重新审视方案。首轮之后只审新增 diff；同类缺陷报类别与全部实例；已解决的 finding 不重复报。
+- 发布前复核每条 finding（重新打开代码确认）；有条件时派独立子代理复核，复核不通过的条目直接丢弃。
+- 同一类审查意见反复出现时，改到源头：`AGENTS.md`、`REVIEW.md`、lint 规则或 skill。
+
+## 审查标准
+
+- 批准门槛：改动确实改善所触及系统的代码健康即可批准，不要求完美；让系统变差的改动不批准，除非是真紧急且写明跟进清理。
+- 结论按四档给出：`APPROVE`（可合并）、`APPROVE_WITH_COMMENTS`（仅剩非阻塞项）、`REQUEST_CHANGES`（仍有阻塞项）、`NEEDS_SPECIALIST`（安全、并发、迁移等超出本轮能力，转 `guard` 或专项审查）。
+- 需求或验收标准缺失时，停下索取，不拿风格检查冒充审查结论。
+- 高风险或 UI 改动要求行为证据：探针输出、可重复脚本、截图/录屏、迁移 dry-run；只有测试通过不算证据。脚本留在仓库，截图不能替代脚本。检查写法见 `change-plan` skill 的 `references/deterministic-checks.md`。
+- 注释只解释设计意图或非显然约束；用注释解释一个 workaround 却没有对应检查时列为 finding，建议改成 lint、类型、测试或 API 约束。
+- 被拒绝的 finding 记录原因，下一轮不再重复提。
 
 ## 审查重点
 
-按风险优先：正确性与失败路径；回归/兼容/公共 API；权限与注入/敏感信息/XSS；并发/事务/幂等/缓存/时区/字符集/数据一致；性能（N+1、无界、全表、热路径阻塞）；测试是否覆盖关键性质/边界/失败路径；可维护性与调试残留；相对契约的 Must-have 缺口、Out of scope 扩张、Acceptance 无证据。
+按风险优先：正确性与失败路径；回归/兼容/公共 API；权限与注入/敏感信息/XSS；并发/事务/幂等/缓存/时区/字符集/数据一致；性能（N+1、无界、全表、热路径阻塞）；测试是否覆盖关键性质/边界/失败路径；可维护性与调试残留；相对验收依据的 Must-have 缺口、Out of scope 扩张、Acceptance 无证据。
 
 ## 输出规则
 
@@ -33,45 +46,35 @@ Anti-rationalization **ID 释义以 `test-changed` 为 SSOT**（AR-1–AR-10）�
 - P2：中等边界/性能/错误处理/重要测试缺口。
 - P3：可维护性与非关键优化。
 
-无 L1/L2 验证证据时，不得把「无 Findings」写成「验收已满足」。无阻塞问题须写 `No blocking findings`。
+无 L1/L2 验证证据时，不得把「无 Findings」写成「验收已满足」。无阻塞问题须写 `No blocking findings`，结论用四档 verdict。不得把风格偏好伪装成功能缺陷。
 
 ## 输出格式
 
 ```markdown
 ## Findings
+round: N（本次是第几轮）
 
 ### P1 — title
-`path/to/file.ts:42`
+`path/to/file.ts:42` — introduced | pre-existing
 
-影响：...
-证据等级：L1/L2/L3/L4
-建议：...
+影响 / 证据等级 / 建议 / nit（如适用）
 
-## No blocking findings
-
-## Contract resolution
+## Basis
 source: explicit-handoff | user-pinned | rebuilt-from-context | unavailable
-confidence: L1/L2/L3/L4
-- Goal / Must-have / Out of scope / Acceptance:
-
-## Plan alignment
-aligned / partial / rebuilt / no plan / unavailable / not applicable
-- Must-have gaps / Out-of-scope expansions / Acceptance without evidence:
-
-## Anti-rationalization
-Result: PASS | FAIL
-Triggered: none | AR-n, …
-ID 标签速查：AR-1(命令绿≠验收) AR-2(历史≠当前) AR-3(小改不跳过) AR-4(工具不可用降级) AR-5(看似合理≠结案) AR-6(口述≠L1) AR-7(大方向≠aligned) AR-8(顺手小改记录) AR-9(部分≠全部) AR-10(AI自证需外部证据)；释义见 test-changed
+plan alignment: aligned | partial | rebuilt | no plan | unavailable / not applicable
+（Must-have 缺口 / Out of scope 扩张 / 无证据的 Acceptance）
 
 ## Search coverage
 symbol/caller grep: 已搜符号与范围 — 结论
 动态引用: 已检查 / 未覆盖 — 说明
 
-## Verified areas
+## Unverified
+未验证项与原因
 
-## Unverified items
-
-## Residual risks
+## Conclusion
+APPROVE / APPROVE_WITH_COMMENTS / REQUEST_CHANGES / NEEDS_SPECIALIST
+（无阻塞时写 No blocking findings；被拒绝的 finding 列出原因）
+（结案自查：无 L1/L2 证据不得声称验收已满足；看起来合理不算证据；用户说测过了只是口述）
 ```
 
-不要修改文件、提交、推送，或把风格偏好伪装成功能缺陷。
+不要修改文件、提交或推送。

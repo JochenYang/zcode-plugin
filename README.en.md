@@ -19,11 +19,11 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 
 | Plugin | Version | Description |
 |---|---|---|
-| `plugins/git-workflow` | 0.1.3 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
-| `plugins/dev-workflow` | 0.3.0 | Development flow: 7 skills (plan/debug/test/review/commit/release/docs) + `/handoff` contract persistence + a `SessionStart` repo snapshot + 16 specialist subagents auto-installed into `~/.zcode/agents` |
-| `plugins/guardrails` | 0.1.0 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
+| `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
+| `plugins/dev-workflow` | 0.4.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` |
+| `plugins/guardrails` | 0.1.1 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
 
-The four plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
+The three plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
 
 ## Installation
 
@@ -32,7 +32,7 @@ The four plugins are independent and can be enabled separately. `guardrails` blo
 1. Open ZCode **Settings → Plugins**, click **Add marketplace** (top-right), choose the **GitHub** source
 2. Enter the repo: `JochenYang/zcode-plugin` (public, no extra config needed)
 3. Enable whichever of `git-workflow` / `dev-workflow` / `guardrails` you want
-4. After enabling `dev-workflow`, the 16 subagents are automatically installed into `~/.zcode/agents` on the next session start
+4. After enabling `dev-workflow`, the 23 subagents are automatically installed into `~/.zcode/agents` on the next session start
 
 **Option 2: Local development directory**
 
@@ -59,22 +59,22 @@ The `PostToolUse` hook only runs when the Bash call really was a `git commit` an
 
 | Skill | When | Output |
 |---|---|---|
-| `change-plan` | before a feature/refactor/complex fix | executable plan + Handoff contract (the acceptance contract later skills check against) |
-| `debug` | bug/test failure/build failure | reproduce → isolate → hypothesize → verify → minimal fix; supports diagnose/fix/verify intent |
-| `test-changed` | changes need verification | minimal valid test scope + evidence log + Anti-rationalization check (AR-1~10 SSOT) |
-| `review` | changes need review | P0–P3 findings with `path:line` and evidence level |
-| `commit-review` | a batch needs splitting into several commits | READY/NOT READY + proposed branch and message (no actual commit) |
+| `change-plan` | before a feature/refactor/complex fix | executable plan + `.devflow/<slug>.md` (task-level acceptance basis); with a regression surface also `docs/plans/<slug>.md` (Work items / Phases gates / Test plan / Phase log) |
+| `debug` | bug/test failure/build failure | iron rule: no fix before the root cause is established; reproduce → gather evidence → falsifiable hypotheses → root cause → minimal fix → regression check, with `git bisect`, boundary logging and a three-strikes stop; details in `references/` |
+| `test-changed` | changes need verification | minimal valid test scope + evidence log + phase-gate verdict, writing Test plan results and Phase log back into the persistent plan |
+| `review` | changes need review | P0–P3 findings with `path:line`, `introduced`/`pre-existing` and evidence level, a four-way verdict, stops after three unconverged rounds |
+| `commit-review` | before committing | READY/NOT READY + proposed branch and message + Testing / Risk / How to revert (no actual commit) |
 | `release-check` | before release/tag | GO/NO-GO/CONDITIONAL GO + blockers and unblock path (no actual release) |
-| `doc-gen` | writing/updating docs | API docs / CHANGELOG / README / user docs / migration guides, every claim traceable to code |
+| `doc-gen` | writing/updating docs | API docs / CHANGELOG / README / user docs / migration guides / feature map, every claim traceable to code |
 
 Commands and hooks:
 
-- `/handoff [save|show|clear]` — persists the session Handoff contract to `.zcode/handoff.md` so the goal and acceptance criteria survive compaction and new sessions
-- The `SessionStart` hook (`startup` / `clear` / `compact`) injects the branch, uncommitted file count, last 3 commits and a `.zcode/handoff.md` summary, replacing the usual round of git calls at the start of a session
-- On `startup`, a second hook auto-syncs the 16 specialist subagents into `~/.zcode/agents` (ZCode never loads agents from inside a plugin, so they must be copied out; it installs missing files, refreshes files it previously wrote, and skips anything the user has edited by hand)
+- `/handoff [save|show|clear]` — persists the **session-level** contract to `.zcode/handoff.md` so the goal and acceptance criteria survive compaction and new sessions; the **task-level** acceptance basis is written into the project by `change-plan` under `.devflow/`, and the task plan wins when both exist
+- The `SessionStart` hook (`startup` / `clear` / `compact`) injects the branch, uncommitted file count, last 3 commits, the active plans under `.devflow/` and a `.zcode/handoff.md` summary, replacing the usual round of git calls at the start of a session
+- On `startup`, a second hook auto-syncs the 23 specialist subagents into `~/.zcode/agents` (ZCode never loads agents from inside a plugin, so they must be copied out; it installs missing files, refreshes files it previously wrote, and skips anything the user has edited by hand)
 - `/agents-sync [diff|export|install]` — installation is automatic, so this is only for: `diff` comparing local vs bundled agents, `export` pushing hand-edited local agents back into the repo, `install` forcing an overwrite
 
-Core mechanics: `change-plan` produces the Handoff contract and `/handoff save` persists it; `test-changed` is the SSOT for Anti-rationalization (AR-1~10) and Contract resolution (explicit-handoff → user-pinned → rebuilt-from-context → unavailable); conclusions are hard-gated: AR `FAIL` → commit-review cannot be READY, release-check cannot be GO.
+Core mechanics: `change-plan` writes the plan and acceptance criteria to `.devflow/<slug>.md` (plus `docs/plans/<slug>.md` when the change has a regression surface), and all five downstream skills plus every subagent check against it; persistent plans track progress through Work item state transitions and phase gates, and a Gate row may only be written by `test-changed` after the verification ran. Each of the five downstream skills (`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`) closes with the same self-check: green commands are not satisfied acceptance, plausible is not evidence, and "I tested it" is hearsay — if any of the three fails, `commit-review` cannot be READY and `release-check` cannot be GO.
 
 Recommended lifecycle: `change-plan → implement → test-changed → review → gcommit → release-check → doc-gen`
 
@@ -90,28 +90,29 @@ Two `PreToolUse` hooks — the only constraint in this collection that does not 
 - `git push --force` (`--force-with-lease` passes), `reset --hard`, `clean -fd`, `filter-branch`/`filter-repo`, remote branch deletion
 - `DROP TABLE/DATABASE/SCHEMA`, `TRUNCATE`
 - `mkfs*`/`fdisk`/`parted`, `dd of=/dev/*`, redirecting into a raw block device, `chmod 777 /`
+- Disk-level Windows commands: `format C:`, `Format-Volume`, `diskpart`, `Clear-Disk`, `Initialize-Disk`
 - Written text containing a real credential shape: AWS `AKIA…`, private key blocks, GitHub `ghp_`/`github_pat_`, GitLab `glpat-`, Slack `xox*`, Stripe `sk_live_`, Google `AIza…`, OpenAI `sk-…`
 
 **`ask` (turned into a confirmation prompt)** — reversible but costly:
 
-- `rm` reaching outside the project: an absolute path not under the project, a `../` escape, anything under `~/`, or an unexpanded variable (`/tmp` and `/var/tmp` pass)
+- A delete verb reaching outside the project: an absolute path not under the project, a `../` escape, anything under `~/`, or an unexpanded variable (`/tmp` and `/var/tmp` pass)
 - `git checkout .`/`restore .` (discards every local modification at once), `commit --amend`, `rebase` (`--continue`/`--abort`/`--skip` pass), pushes to `main`/`master`/`prod`, `git tag`
 - `sudo`, `curl … | sh`
-- `UPDATE`/`DELETE FROM` that may lack a WHERE clause, migration commands across ecosystems
+- `UPDATE`/`DELETE FROM` that may lack a WHERE clause, migration commands across ecosystems, `reg delete`
 - `npm/cargo/gem/twine publish`, `docker push`, `terraform apply|destroy`, `kubectl`, `helm`, `vercel --prod`, cloud CLI delete/terminate
 - Writes to `.env*` (`.env.example`/`.template`/`.sample` pass), `id_rsa`, `*.pem`, `.npmrc`, `credentials`, `secrets.*`
 - Secret-looking assignments (a 20+ character literal assigned to `password`/`secret`/`api_key`), JWTs
 
-Deletes are judged by **location**, not by command shape, so cleaning up inside the project never interrupts:
+Deletes are judged by **location**, not by command shape, so cleaning up inside the project never interrupts. `rm`, cmd's `del`/`rd`/`rmdir` and PowerShell's `Remove-Item` all run through the same position check:
 
 | Target | Verdict |
 |---|---|
 | Inside the project (relative path, or an absolute path under the project directory) | passes silently |
 | `/tmp`, `/var/tmp` | passes silently |
-| Outside the project (absolute path elsewhere, `../` escape, `~/…`, unexpanded variable) | `ask` |
-| Root-ish, system, or credential directories | `deny` |
+| Outside the project (absolute path elsewhere, `../` escape, `~/…`, `$env:…`, unexpanded variable) | `ask` |
+| Root-ish, a drive root (`C:\`, `C:/*`), system, or credential directories | `deny` |
 
-`rm -rf node_modules`, `rm -rf build dist`, `rm -rf src/generated` and `rm -rf /d/codes/<this-project>/build` all pass without a prompt; `rm -rf ../another-project` asks once.
+`rm -rf node_modules`, `del /s /q .\dist`, `Remove-Item -Recurse .\build` and `rm -rf /d/codes/<this-project>/build` all pass without a prompt; `rm -rf ../another-project` and `Remove-Item -Recurse D:\codes\other` ask once. `git rm` only touches tracked files inside the repository, so it is left to git and never judged here.
 
 Design notes:
 

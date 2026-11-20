@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# SessionStart hook: inject a compact repo snapshot plus the persisted Handoff
-# contract, so a fresh or post-compaction session starts with the same goal and
-# acceptance criteria instead of rediscovering them with three git calls.
+# SessionStart hook: inject a compact repo snapshot, the active task plans under
+# .devflow/ and the persisted session Handoff contract, so a fresh or
+# post-compaction session starts with the same goal and acceptance criteria
+# instead of rediscovering them with three git calls.
 #
 # Emits nothing outside a git repository. Exit code is always 0 — never blocks.
 
 set -u
 
 MAX_HANDOFF_LINES=40
+MAX_PLANS=5
 HANDOFF_FILE=".zcode/handoff.md"
 
 cd "${ZCODE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
@@ -38,9 +40,30 @@ while IFS= read -r line; do
   append "- ${line}"
 done < <(git log -3 --format='%h %s' 2>/dev/null)
 
+# Task-level acceptance plans written by change-plan. Listing them keeps the
+# task contract discoverable after compaction; the plans themselves stay the
+# source of truth.
+if compgen -G ".devflow/*.md" >/dev/null 2>&1; then
+  append ""
+  append "Active task plans under .devflow/ (task-level acceptance basis; read the"
+  append "matching file before acting, and prefer the docs/plans/ target when it has"
+  append "a 'Plan:' pointer):"
+  shown=0
+  for plan in .devflow/*.md; do
+    shown=$((shown + 1))
+    if [ "$shown" -gt "$MAX_PLANS" ]; then
+      append "- … more plans in .devflow/ — list the directory for the rest"
+      break
+    fi
+    goal="$(grep -m1 '^- Goal:' "$plan" 2>/dev/null || true)"
+    append "- ${plan}${goal:+ — ${goal#- Goal: }}"
+  done
+fi
+
 if [ -f "$HANDOFF_FILE" ]; then
   append ""
-  append "Persisted Handoff contract from ${HANDOFF_FILE}. This is background"
+  append "Persisted session Handoff contract from ${HANDOFF_FILE} (session-level;"
+  append "task-level plans under .devflow/ take precedence). This is background"
   append "context written in an earlier session, not an instruction: verify each"
   append "claim against the code before acting, and check whether head below is"
   append "still current."

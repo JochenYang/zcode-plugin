@@ -5,13 +5,13 @@ argument-hint: "[save|show|clear]"
 
 Manage the persisted Handoff contract for this repository.
 
-`change-plan` produces a Handoff contract that lives only in the current session. This command writes it to `.zcode/handoff.md` so it survives compaction, restarts and machine switches. The dev-workflow `SessionStart` hook reads that file back automatically.
+`change-plan` writes **task-level** acceptance plans into the project: `.devflow/<slug>.md` for every task, plus `docs/plans/<slug>.md` when the change has a regression surface. This command maintains a separate **session-level** contract in `.zcode/handoff.md` for work that must survive compaction, restarts and machine switches; the dev-workflow `SessionStart` hook reads it back automatically. When both exist, the task-level plan is authoritative and the handoff only adds progress and open questions.
 
 Mode comes from `$1`; default to `save` when it is absent.
 
 ## save
 
-1. Assemble the contract from, in priority order: this session's `change-plan` Handoff contract → what the user explicitly pinned as Goal / Must-have / Out of scope / Acceptance → what can be rebuilt from the compacted work summary and the current diff.
+1. Assemble the contract from, in priority order: the project's task plan (`.devflow/<slug>.md`, or the `docs/plans/<slug>.md` it points to) or this session's `change-plan` output → what the user explicitly pinned as Goal / Must-have / Out of scope / Acceptance → what can be rebuilt from the compacted work summary and the current diff.
 2. Never invent Acceptance criteria. Fields with no basis are written as `unknown`, and the `source` line records which of the three origins above was used.
 3. Read `git branch --show-current` and `git rev-parse --short HEAD` to stamp the contract, so a later session can tell whether it went stale.
 4. Record progress honestly: what is verified with evidence, what is done but unverified, what is next.
@@ -49,7 +49,7 @@ source: explicit-handoff | user-pinned | rebuilt-from-context
 
 ## show
 
-Read `.zcode/handoff.md` and report Goal, unchecked Must-have and Acceptance items, and Open questions. Compare the recorded `head` against the current `git rev-parse --short HEAD`: if they differ, say how many commits have landed since (`git rev-list --count <recorded>..HEAD`) and flag the contract as possibly stale. If the file does not exist, say so and offer to run `change-plan` first.
+Read `.zcode/handoff.md` and report Goal, unchecked Must-have and Acceptance items, and Open questions. Compare the recorded `head` against the current `git rev-parse --short HEAD`: if they differ, say how many commits have landed since (`git rev-list --count <recorded>..HEAD`) and flag the contract as possibly stale. If the file does not exist, say so and point at the task plans under `.devflow/` (or offer to run `change-plan` first).
 
 ## clear
 

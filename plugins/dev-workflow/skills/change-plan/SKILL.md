@@ -1,19 +1,35 @@
 ---
 name: change-plan
-description: 将一个开发需求转化为可执行、可验证的最小实现计划，明确范围、影响、依赖、风险和验收标准。
-when_to_use: 当用户提出新功能、重构、架构调整或复杂 bug 修复，但还没有明确实现边界和验证方案时。
+description: 把开发需求变成可执行、可验证的最小实现计划：范围、调用链、风险、验收标准与验证命令，并落盘为 .devflow 与 docs/plans 计划文件。
+when_to_use: 新功能、重构、架构调整或复杂 bug 修复前理清范围与验收标准；把已与模型确认的方案落地成可提交的持久计划。用户说「我想加个功能」「这个得重构一下」「先想想怎么做」「别急着写代码」「这个需求怎么拆」「把计划存下来」「把刚才的方案落地成文档」时使用。不用于：单行修复。
 ---
 
-请为用户当前请求的开发目标建立最小正确的实现计划。
+请为用户指定的开发目标（若未指定则使用用户当前请求）建立最小正确的实现计划。
 
 ## 与 Plan mode 的关系
 
 - Plan mode 控制当前会话是否直接进入实现以及如何与用户确认。
 - 本 Skill 规定计划本身应包含的工程信息和验收证据。
-- 在普通模式调用时，只输出计划，不修改文件，也不会自动切换到 Plan mode。
+- 在普通模式调用时，只输出计划与计划文件，不修改任何其他文件，也不会自动切换到 Plan mode。
 - 已处于 Plan mode 时，复用当前模式，不重复生成空泛计划；重点补齐范围、调用链、风险、验收和验证步骤。
 
-## 流程
+## 与 /handoff 的分工
+
+本插件有两条落盘通道，粒度不同，可以同时存在：
+
+- **任务级（本 Skill）**：`.devflow/<slug>.md` 与 `docs/plans/<slug>.md` 写在项目内，按任务 slug 命名，是下游 `test-changed` / `review` / `commit-review` / `release-check` / `doc-gen` 读取的权威验收依据。
+- **会话级（`/handoff` 命令）**：`.zcode/handoff.md` 记录当前会话的契约快照与进度，由 `SessionStart` hook 自动注入，用于换会话、换机器接续同一件事。
+
+两者冲突时以 `.devflow` / `docs/plans` 为准；`/handoff` 只补充「进度、未决问题」这类计划文件不承载的信息。会话级契约不替代本 Skill 的计划产物。下游 skill 报告里的 `source: explicit-handoff` 指的是本节的任务级计划，不是 `.zcode/handoff.md`。
+
+## 入口判断
+
+先判断用户处在哪种状态：
+
+1. **方案已确认**：用户已与模型规划好方案（对话中已达成一致，或 Plan mode 的计划刚被批准）。跳过「规划流程」，只补齐缺失的验收、回归面与验证命令，直接进入「落地计划」。不重述整个方案，不推翻已定决策；发现已确认方案有明显漏洞时先指出再落盘。
+2. **只有目标没有方案**：走「规划流程」。
+
+## 规划流程
 
 1. 读取当前项目结构、相关文档、AGENTS.md、package/build/test 配置和最近的调用方。
 2. 用一句话明确目标、非目标和成功标准；不要扩展用户没有提出的需求。
@@ -23,40 +39,31 @@ when_to_use: 当用户提出新功能、重构、架构调整或复杂 bug 修�
 6. 提出 1 个推荐方案；只有存在实质范围或风险差异时才列备选方案。
 7. 把实现拆成可独立验证的步骤，每一步写明预计变更和验证命令。
 8. 给出失败路径、回滚/恢复方式和残余风险。
-9. 在输出末尾固定「Handoff contract」，供**同会话**后续 `test-changed` / `review` / `commit-review` / `release-check` 对照；字段必须可直接勾选，不要写空泛描述。Handoff 是会话内验收契约，**不要求也不默认写入文件**；跨会话长任务交接可改用用户级 handoff 流程，不在本 Skill 职责内。
+9. 进入「落地计划」。
 
-## 输出格式
+## 落地计划
+
+两类产物，按任务寿命选择：
+
+- **临时 Handoff**：`.devflow/<slug>.md`。所有计划都写；同时把 `.devflow/` 加进 `.gitignore`。
+- **持久回归计划**：`docs/plans/<slug>.md`。改动有明确回归面（影响既有行为、需要回归测试）或用户要求存盘时写；它随代码一起提交，不进 `.gitignore`。写持久计划时在 `.devflow/<slug>.md` 加一行 `Plan: docs/plans/<slug>.md`，下游 Skill 以持久计划为准。
+
+slug 用 kebab-case 的任务名，两类文件共用同一个 slug。`.devflow/<slug>/` 目录用于存审查记录和长命令输出，随临时 Handoff 一起被 gitignore。
+
+### `.devflow/<slug>.md` 模板
+
+这是下游 `test-changed` / `review` / `commit-review` / `release-check` / `doc-gen` 读取的验收依据。会话压缩、换会话、跨工具都靠它传递，所以字段必须可直接勾选，不写空泛描述。
 
 ```markdown
-## Goal
+# <任务名>
 
-## Scope
-### Must-have
-### Nice-to-have
-### Out of scope
-
-## Current context
-
-## Recommended approach
-
-## Files and call chain
-
-## Implementation steps
-1. ...
-
-## Acceptance criteria
-- [ ] ...
-
-## Verification plan
-
-## Risks and rollback
-
-## Open decisions
-
-## Handoff contract
+- Plan: docs/plans/<slug>.md  （有持久计划时写此行，字段以持久计划为准）
 - Goal: ...
+- Why: ...（为什么要做，成功对谁有意义）
 - Must-have: ...
 - Out of scope: ...
+- Ruled out: ...（排除的方案与原因，避免下次重试）
+- Watch out: ...（已知坑、flaky 测试、环境限制）
 - Acceptance criteria:
   - [ ] ...
 - Verification commands:
@@ -64,4 +71,159 @@ when_to_use: 当用户提出新功能、重构、架构调整或复杂 bug 修�
 - Do not expand into: ...
 ```
 
-不要修改文件，不要执行提交。若已有明确计划，先指出与当前请求的差异，再给出最小补充计划。
+### `docs/plans/<slug>.md` 模板
+
+比 spec 轻：只保留可勾选、可执行、可回指的字段，不写叙述性段落。
+
+```markdown
+# <任务名>
+
+- Status: draft
+- Plan date: YYYY-MM-DD
+- Risk: low | medium | high
+
+> 状态列是唯一进度源：Gate 通过前必须逐行更新该阶段条目；禁止用「本轮完成度」之类的汇总段代替状态列。
+
+## Goal / Why
+一句话目标、动机与成功标准。
+
+## Scope
+- Must-have: ...
+- Out of scope: ...
+
+## Ruled out
+| 方案 | 为什么排除 |
+|---|---|
+| ... | ... |
+
+## Work items
+| # | 类目 | 内容 | 状态 |
+|---|------|------|------|
+| W1 | P0 | ... | [ ] |
+
+类目：P0 不做就走不通 · P1 静默失败或数据风险 · P2 清理与一致性 · OPT 可选（不做要写明理由）。
+
+状态流转（就地更新，不得跳级）：
+- `[ ]` 待办 → `[~]` 已改未审 → `[x]` 审查通过
+- `[?]` 审查不通过，已回退或待重做；`[–]` 本轮不做（写明理由）；`[!]` 待用户决定，阻塞当前阶段直到裁决后转 `[x]` / `[?]` / `[–]`
+
+## Phases
+| 阶段 | 包含条目 | Gate |
+|------|----------|------|
+| 1 | W1, W2 | 条目全 [x]，对应 Test plan 全 PASS |
+
+Work items 是唯一进度源；Phases 只定义顺序与 Gate，Gate 结论只记 Phase log。
+
+阶段闸门：任何条目处于 `[~]`、`[?]` 或 `[!]` 时不得开始下一阶段。Gate 通过 = 该阶段条目的验证项全 PASS 且 subagent 审查无阻塞发现；条目从 `[~]` 转 `[x]` 前必须回答五问——主张复核、最小性、新风险、反例、可检查性。任务小到只有一批时，Phases 只留一行。
+
+阶段拆分优先考虑这些切法，每个阶段结束时构建与已有测试必须通过：
+
+- **预备性测试先行**：先给既有行为补测试，再动高风险重构。
+- **先重构后改行为**：移动、改名、提取不改变行为；行为改动单独一批。
+- **纵向切片**：每个阶段交付一条端到端的可见行为，而不是横向铺一层。
+- **迁移用扩展/收缩**：扩展兼容 → 双路径 + 观测 → 回填 → 切换 → 清理，每步可单独回滚。
+- **配置与代码分开**：发布配置、开关、部署接线单独一批，回滚时机不同。
+
+## Affected behaviors
+| 行为 | 类型 | 位置 |
+|---|---|---|
+| ... | added / modified / removed | `path:line` |
+
+类型沿用 spec 增量的写法：`added` 新增行为，`modified` 改变既有行为，`removed` 删除既有行为。回归面按类型分别检查。
+
+## Test plan
+| # | 用例 | 输入/操作 | 预期 | 验证方式 | 结果 |
+|---|------|-----------|------|----------|------|
+| 1 | ... | ... | ... | `命令` 或手工步骤 | pending |
+
+（用例对应 Work item 时在编号列注明，如 `1 (W1)`。结果列只允许 `pending` / `PASS` / `FAIL` / `N/A（理由）`；P0/P1 条目至少映射一条用例，无法映射的并入 `## Deferred` 并写明为什么不可测。UI/交互用例优先附可重复脚本路径，截图只作补充。）
+
+## Verification commands
+- `...`
+
+## Deferred
+| 项 | 为什么本轮不做 | 何时该回来 |
+|---|---|---|
+| ... | ... | ... |
+
+刻意留下的简化在代码里标 `shortcut: <原因> / 触发条件 / 何时该回来`，并登记到这里。
+
+## Rollback
+回滚方式、数据注意点、已知坑与 flaky 测试。
+
+## Phase log
+| 阶段 | 日期 | 证据 | 结论 |
+|------|------|------|------|
+（Gate 行只能由 `test-changed` 在跑完验证后写入。写入前先确认该阶段 Work items 无 `[ ]`/`[~]`，把检查命令与输出记入证据列；实现方不得自行写 Gate 行。输出超过 10 行时存到 `.devflow/<slug>/` 并在证据列引用路径。）
+```
+
+### 计划自检（写盘前逐条过）
+
+- [ ] 必需段落齐全：Goal/Why、Scope、Ruled out、Work items、Phases、Affected behaviors、Test plan、Verification commands、Deferred、Rollback、Phase log
+- [ ] P0/P1 条目至少映射一条 Test plan 用例；每条 Acceptance 有编号映射
+- [ ] 初始状态一致：Work items 全 `[ ]`，Test plan 全 `pending`，Phase log 为空
+- [ ] 没有 `[~]`/`[?]`/`[!]` 却标 Gate 通过
+
+Status 生命周期：`draft`（已落盘未动工）→ `active`（实现中，首次改代码前由实现方改为 active）→ `done`（Work items 全 `[x]`/`[–]`、Test plan 全部有通过证据、subagent 审查记录已归档，随改动一起提交）→ `archived`（仅作历史保留）。Status 的推进只依据证据，不凭印象；本 Skill 负责创建 `draft`，实现阶段由执行方按本文件的状态规则回填。计划完成后保留在原处；需要清理时移到 `docs/plans/archive/YYYY-MM-DD-<slug>.md`，不删除历史。
+
+风险分级决定 review 深度：low = 文档、文案、开关后的增量；medium = 普通产品改动与缓存、自动更新、prompt 等敏感面；high = 认证、支付、密钥、迁移、CI workflow、公共 API、不可逆数据操作。分级按改动内容，不按任务大小。
+
+## 审查判据
+
+把「review 无阻塞发现」变成可机械检查的判据。
+
+- **阻塞发现** = P0 或 P1，且同时给出：位置（`path:line`）、触发条件、预期 vs 实际、可执行验证方式（命令、测试或探针）。缺任一项的发现降级为备注，不阻塞 Gate。
+- **P2** 只记录，不阻塞；**OPT** 不做必须写明理由。
+- 无法用测试、探针或命令复现的发现标 `[!]` 交用户决定，阻塞当前阶段直到裁决。
+- 审查者不得以「建议考虑」「看起来有问题」作为阻塞发现；此类只进备注。
+- 五问的通过标准：
+  1. **主张复核**：至少一条测试或命令的输出直接对应本条主张，并在 Phase log 引用。
+  2. **最小性**：每个新增文件、抽象或依赖能指回某个 W 条目；指不回的先删或登记 Deferred。
+  3. **新风险**：列出本次引入的风险，已消除的写消除方式，未消除的写 Deferred 触发条件。
+  4. **反例**：至少一条负向用例、边界用例或失败路径 PASS；没有反例的条目不得转 `[x]`。
+  5. **可检查性**：这条错误能不能变成确定性检查？能则写进 Test plan、类型、lint、依赖图或 CI，并在 Phase log 标 `check-level: design | lint | test | prose`。写法见本 skill 目录下的 `references/deterministic-checks.md`。
+
+### Gate 通过时强制回填
+
+Gate 标通过前必须：
+
+1. 把该阶段 Work items 从 `[~]` 改为 `[x]`；仍有 `[~]`/`[?]`/`[!]` 时 Gate 不得标通过。
+2. 把该阶段相关用例的「结果」列从 `pending` 改为 `PASS` / `FAIL` / `N/A（理由）`；`FAIL` 必须附失败输出。
+3. 该阶段仍有 `pending` 用例时，Gate 不得标通过。
+4. 在 Phase log 记录命令、关键输出、五问结论、`check-level` 和审查记录路径；Gate 行由 `test-changed` 写入，证据列必须含状态自检命令与输出；输出超过 10 行时存到 `.devflow/<slug>/` 并在证据列引用路径。
+5. 引用 subagent 审查记录，自审记录不计入 Gate 证据。
+
+## 审查执行方式（subagent 接口）
+
+审查由 subagent 在独立上下文执行；本 Skill 只定义接口与证据要求。
+
+- **传什么**：只传代码（diff 或文件列表）、需求与验收标准、Test plan、验证命令及其输出。不传生成时的推理、解释、对话历史或「我认为这里没问题」之类的引导。
+- **不传什么**：不传主 agent 的自评、不传未落盘的中间思路、不传可能诱导审查者附和的历史消息。
+- **审查者输出**：按「阻塞发现（P0/P1，带位置、触发条件、预期 vs 实际、验证方式）」/「非阻塞备注」/「五问结论与 check-level」三段返回；无法复现的发现标 `[!]`。
+- **证据落盘**：审查记录存 `.devflow/<slug>/review-<阶段>.md`，Phase log 引用该路径。
+- **风险分级对应审查深度**：
+  - `low`：1 个 subagent 审查即可。
+  - `medium`：1 个 subagent 审查，阻塞发现必须带可执行验证方式。
+  - `high`：至少 2 个 subagent 独立审查，或 1 个 subagent + 换模型交叉审查；两者结论冲突时按更严格的阻塞项处理，交用户裁决。
+- **主 agent 职责**：修复阻塞发现、复跑验证命令、把结果回填 Test plan 与 Phase log，并把 subagent 审查记录落盘到 `.devflow/<slug>/review-<阶段>.md`（审查者多为只读 agent，落盘由主 agent 完成）；不得在没有新证据的情况下把 `[?]` 直接改 `[x]`。
+
+## 输出格式
+
+```markdown
+## Goal and scope
+目标 / Must-have / Nice-to-have / Out of scope
+
+## Approach
+推荐方案与关键取舍（方案已确认时省略）
+
+## Files and steps
+相关文件与调用链；实现步骤，每步附验证命令
+
+## Acceptance
+- [ ] ...（每条注明对应 Test plan 编号，如 `(T3)`；无法映射的并入 Risks 并写明为什么不可测）
+
+## Risks
+风险、回滚方式、待定决策
+```
+
+除 `.devflow/<slug>.md`、`.devflow/<slug>/` 与 `docs/plans/<slug>.md` 外不要修改文件，不要执行提交。若已有明确计划，先指出与当前请求的差异，再给出最小补充计划。

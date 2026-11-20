@@ -4,7 +4,7 @@
   "plugins": [
     {
       "name": "git-workflow",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "description": "Conventional commit workflow: /gcommit generates spec-compliant commit messages, /gpr writes PR descriptions, /gchangelog builds changelogs; a PostToolUse hook checks the message after each commit.",
       "author": {
         "name": "JochenYang"
@@ -21,8 +21,8 @@
     },
     {
       "name": "dev-workflow",
-      "version": "0.3.6",
-      "description": "Daily development workflow: 7 flow skills (change-plan, debug, test-changed, review, commit-review, release-check, doc-gen), /handoff contract persistence, a SessionStart repo snapshot, and 16 specialist subagents auto-installed into ~/.zcode/agents.",
+      "version": "0.4.0",
+      "description": "Daily development workflow: 7 flow skills (change-plan, debug, test-changed, review, commit-review, release-check, doc-gen), task-level plan files under .devflow and docs/plans, /handoff session contract persistence, a SessionStart repo snapshot, and 23 specialist subagents auto-installed into ~/.zcode/agents.",
       "author": {
         "name": "JochenYang"
       },
@@ -39,8 +39,8 @@
     },
     {
       "name": "guardrails",
-      "version": "0.1.0",
-      "description": "Deterministic safety hooks: blocks irreversible shell commands and hardcoded credentials, routes publishing, deploys and migrations to a confirmation prompt.",
+      "version": "0.1.1",
+      "description": "Deterministic safety hooks: blocks irreversible shell commands (POSIX, cmd.exe and PowerShell) and hardcoded credentials, routes publishing, deploys and migrations to a confirmation prompt.",
       "author": {
         "name": "JochenYang"
       },

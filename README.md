@@ -19,11 +19,11 @@
 
 | 插件 | 版本 | 说明 |
 |---|---|---|
-| `plugins/git-workflow` | 0.1.3 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
-| `plugins/dev-workflow` | 0.3.0 | 日常开发流程：7 个 skill + `/handoff` 契约落盘 + `SessionStart` 仓库快照 + 16 个专项子智能体自动安装到 `~/.zcode/agents` |
-| `plugins/guardrails` | 0.1.0 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
+| `plugins/git-workflow` | 0.1.5 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
+| `plugins/dev-workflow` | 0.4.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
+| `plugins/guardrails` | 0.1.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
 
-四个插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
+三个插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
 ## 安装
 
@@ -32,7 +32,7 @@
 1. 打开 ZCode **设置 → 插件**，右上角「创建/添加」→ **添加插件市场**，选 **GitHub 源**
 2. 填仓库：`JochenYang/zcode-plugin`（公开仓库，无需额外配置）
 3. 在列表中按需**启用** `git-workflow` / `dev-workflow` / `guardrails`
-4. `dev-workflow` 启用后，下次会话启动时 16 个子智能体会自动安装到 `~/.zcode/agents`
+4. `dev-workflow` 启用后，下次会话启动时 23 个子智能体会自动安装到 `~/.zcode/agents`
 
 **方式二：本地开发目录**
 
@@ -59,22 +59,22 @@
 
 | Skill | 时机 | 产出 |
 |---|---|---|
-| `change-plan` | 新功能/重构/复杂修复前 | 可执行计划 + Handoff contract（后续 skill 对照的验收契约） |
-| `debug` | bug/测试失败/构建失败 | 复现→隔离→假设→验证→最小修复，支持 diagnose/fix/verify 意图 |
-| `test-changed` | 当前改动要验证 | 最小有效测试范围 + 证据记录 + Anti-rationalization 检查（AR-1~10 SSOT） |
-| `review` | 要审查改动 | P0–P3 分级发现，带 `path:line` 与证据等级 |
-| `commit-review` | 跨职责需拆分提交时 | READY/NOT READY + 分支名与提交消息提案（不实际提交） |
+| `change-plan` | 新功能/重构/复杂修复前 | 可执行计划 + `.devflow/<slug>.md`（任务级验收依据），有回归面时同时写 `docs/plans/<slug>.md`（Work items / Phases Gate / Test plan / Phase log） |
+| `debug` | bug/测试失败/构建失败 | 铁律：根因未明不提出修复；复现→取证→可证伪假设→根因→最小修复→回归验证，含 `git bisect`、跨层边界日志、连续 3 次失败即停；细则见 `references/` |
+| `test-changed` | 当前改动要验证 | 最小有效测试范围 + 证据记录 + 阶段 Gate 判定，并把 Test plan 结果与 Phase log 回写到持久计划 |
+| `review` | 要审查改动 | P0–P3 分级发现，带 `path:line`、`introduced`/`pre-existing` 与证据等级，四档 verdict，三轮未收敛即停 |
+| `commit-review` | 提交前 | READY/NOT READY + 分支名与提交消息提案 + Testing / Risk / How to revert 三行（不实际提交） |
 | `release-check` | 发版/打 tag 前 | GO/NO-GO/CONDITIONAL GO + 阻塞项与解除路径（不实际发布） |
-| `doc-gen` | 写/更新文档 | API 文档/CHANGELOG/README/用户文档/迁移指南，声明可回指代码 |
+| `doc-gen` | 写/更新文档 | API 文档/CHANGELOG/README/用户文档/迁移指南/feature map，声明可回指代码 |
 
 命令与钩子：
 
-- `/handoff [save|show|clear]` — 把会话内的 Handoff contract 落盘到 `.zcode/handoff.md`，跨压缩与跨会话保留目标和验收标准
-- `SessionStart` 钩子（`startup` / `clear` / `compact`）自动注入分支、未提交文件数、最近 3 条提交和 `.zcode/handoff.md` 摘要，省掉每次会话开头的多次 git 调用
-- `startup` 时另一条钩子自动同步 16 个专项子智能体到 `~/.zcode/agents`（ZCode 不加载插件目录内的 agent，必须复制出来；只装缺失、刷新它自己写过的文件，用户手改过的跳过）
+- `/handoff [save|show|clear]` — 把**会话级**契约落盘到 `.zcode/handoff.md`，跨压缩与跨会话保留目标和验收标准；任务级验收依据由 `change-plan` 写在项目内 `.devflow/`，两者并存时以任务级计划为准
+- `SessionStart` 钩子（`startup` / `clear` / `compact`）自动注入分支、未提交文件数、最近 3 条提交、`.devflow/` 下活跃计划与 `.zcode/handoff.md` 摘要，省掉每次会话开头的多次 git 调用
+- `startup` 时另一条钩子自动同步 23 个专项子智能体到 `~/.zcode/agents`（ZCode 不加载插件目录内的 agent，必须复制出来；只装缺失、刷新它自己写过的文件，用户手改过的跳过）
 - `/agents-sync [diff|export|install]` — 安装已是自动的，这里只用于：`diff` 对比本地与插件资产、`export` 把本地手改的 agent 推回仓库、`install` 强制覆盖重装
 
-核心机制：`change-plan` 产出 Handoff contract，`/handoff save` 负责落盘；`test-changed` 是 Anti-rationalization（AR-1~10）与 Contract resolution（explicit-handoff → user-pinned → rebuilt-from-context → unavailable）的 SSOT；结论硬性连动：AR `FAIL` → commit-review 不得 READY、release-check 不得 GO。
+核心机制：`change-plan` 把计划与验收标准落盘为 `.devflow/<slug>.md`（有回归面时加 `docs/plans/<slug>.md`），下游 5 个 skill 与全部子智能体都按它对照；持久计划用 Work items 状态流转与 Phases Gate 管进度，Gate 行只能由 `test-changed` 在跑完验证后写入。5 个下游 skill（`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`）结案前各做一次自查：命令绿了不等于验收满足、看起来合理不算证据、用户说测过了只是口述——任一条不满足，`commit-review` 不得 READY、`release-check` 不得 GO。
 
 推荐生命周期：`change-plan → 实现 → test-changed → review → gcommit → release-check → doc-gen`
 
@@ -90,28 +90,29 @@
 - `git push --force`（放行 `--force-with-lease`）、`reset --hard`、`clean -fd`、`filter-branch`/`filter-repo`、删除远程分支
 - `DROP TABLE/DATABASE/SCHEMA`、`TRUNCATE`
 - `mkfs*`/`fdisk`/`parted`、`dd of=/dev/*`、重定向到裸块设备、`chmod 777 /`
+- 磁盘级 Windows 命令：`format C:`、`Format-Volume`、`diskpart`、`Clear-Disk`、`Initialize-Disk`
 - 写入内容含真密钥格式：AWS `AKIA…`、私钥块、GitHub `ghp_`/`github_pat_`、GitLab `glpat-`、Slack `xox*`、Stripe `sk_live_`、Google `AIza…`、OpenAI `sk-…`
 
 **`ask`（转为确认弹窗）** — 可逆但代价高：
 
-- `rm` 越出项目目录：绝对路径不在项目下、`../` 越界、`~/` 下的路径、未展开的变量（`/tmp`、`/var/tmp` 放行）
+- 删除类动词越出项目目录：绝对路径不在项目下、`../` 越界、`~/` 下的路径、未展开的变量（`/tmp`、`/var/tmp` 放行）
 - `git checkout .`/`restore .`（一次丢弃全部本地修改）、`commit --amend`、`rebase`（放行 `--continue`/`--abort`/`--skip`）、push 到 `main`/`master`/`prod`、`git tag`
 - `sudo`、`curl … | sh`
-- 无 WHERE 风险的 `UPDATE`/`DELETE FROM`、各语言的 migrate 命令
+- 无 WHERE 风险的 `UPDATE`/`DELETE FROM`、各语言的 migrate 命令、`reg delete`
 - `npm/cargo/gem/twine publish`、`docker push`、`terraform apply|destroy`、`kubectl`、`helm`、`vercel --prod`、云 CLI 的 delete/terminate
 - 写入 `.env*`（放行 `.env.example`/`.template`/`.sample`）、`id_rsa`、`*.pem`、`.npmrc`、`credentials`、`secrets.*`
 - 疑似密钥赋值（20 字符以上字面量赋给 `password`/`secret`/`api_key` 等）、JWT
 
-删除判定按**位置**而非命令形态，所以项目内清理完全不打扰：
+删除判定按**位置**而非命令形态，所以项目内清理完全不打扰。`rm`、cmd 的 `del`/`rd`/`rmdir` 与 PowerShell 的 `Remove-Item` 走同一套位置检查：
 
 | 目标 | 判定 |
 |---|---|
 | 项目内（相对路径、或绝对路径落在项目目录下） | 静默放行 |
 | `/tmp`、`/var/tmp` | 静默放行 |
-| 项目外（绝对路径越界、`../` 越界、`~/…`、未展开变量） | `ask` |
-| 根级、系统目录、凭据目录 | `deny` |
+| 项目外（绝对路径越界、`../` 越界、`~/…`、`$env:…`、未展开变量） | `ask` |
+| 根级、盘根（`C:\`、`C:/*`）、系统目录、凭据目录 | `deny` |
 
-`rm -rf node_modules`、`rm -rf build dist`、`rm -rf src/generated`、`rm -rf /d/codes/<本项目>/build` 都不弹窗；`rm -rf ../another-project` 会问一次。
+`rm -rf node_modules`、`del /s /q .\dist`、`Remove-Item -Recurse .\build`、`rm -rf /d/codes/<本项目>/build` 都不弹窗；`rm -rf ../another-project`、`Remove-Item -Recurse D:\codes\other` 会问一次。`git rm` 只作用于仓库内已跟踪文件，交给 git 自己把关，不触发判定。
 
 设计要点：
 
