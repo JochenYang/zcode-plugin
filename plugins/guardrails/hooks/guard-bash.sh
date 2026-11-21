@@ -164,10 +164,41 @@ while IFS= read -r target; do
     /[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)|/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)/*|\
     /[Uu]sers|/[Uu]sers/*|\
     /[a-z]/[Ww]indows|/[a-z]/[Ww]indows/*|/[a-z]/[Pp]rogram[[:space:]][Ff]iles|/[a-z]/[Pp]rogram[[:space:]][Ff]iles/*|\
-    /[a-z]/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)|/[a-z]/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)/*|\
-    /[a-z]/[Uu]sers|/[a-z]/[Uu]sers/*)
+    /[a-z]/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)|/[a-z]/[Pp]rogram[[:space:]][Ff]iles[[:space:]]\([Xx]86\)/*)
       emit deny "Deleting a system directory is unrecoverable and would break the machine, not just the project."
       exit 0 ;;
+  esac
+
+  # A Windows profile root (C:\Users\<name>) and the credential/config dirs right
+  # under it are unrecoverable; anything deeper is an ordinary outside-the-project
+  # target and is confirmed instead of denied — regenerating plugin caches and
+  # cleaning AppData subdirs is legitimate work.
+  case $n in
+    /[a-z]/[Uu]sers|/[a-z]/[Uu]sers/*)
+      rest=${n#/[a-z]/[Uu]sers}
+      rest=${rest#/}
+      if [ -z "$rest" ]; then
+        emit deny "Deleting the whole Users directory is unrecoverable."
+        exit 0
+      fi
+      first=${rest%%/*}
+      second=${rest#*/}
+      second=${second%%/*}
+      if [ "$rest" = "$first" ]; then
+        emit deny "Deleting a user profile root loses settings, keys and work that are not in any repo."
+        exit 0
+      fi
+      case $first in
+        .ssh|.aws|.gnupg|.config|.zcode)
+          emit deny "Deleting a user credential or config directory loses keys and settings that are not in any repo."
+          exit 0 ;;
+      esac
+      case $second in
+        .ssh|.aws|.gnupg|.config|.zcode)
+          emit deny "Deleting a user credential or config directory loses keys and settings that are not in any repo."
+          exit 0 ;;
+      esac
+      ;;
   esac
 
   case $n in

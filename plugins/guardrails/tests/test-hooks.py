@@ -109,6 +109,13 @@ BASH_CASES = [
     ("Clear-Disk -Number 1", "deny"),
     ("Initialize-Disk -Number 1", "deny"),
     ("reg delete HKLM\\Software\\X /f", "ask"),
+    # Windows profile roots deny, deep paths under the own profile ask
+    ("rm -rf /c/Users", "deny"),
+    ("rm -rf /c/Users/Administrator", "deny"),
+    ("rm -rf C:\\Users\\Administrator\\.ssh", "deny"),
+    ("rm -rf C:\\Users\\Administrator\\.zcode\\cli\\plugins\\data", "deny"),  # .zcode holds credentials and plugin data
+    ("Remove-Item -Recurse -Force C:\\Users\\Administrator\\Documents", "ask"),
+    ("rm -rf /Users/admin/project", "deny"),
     ("rm -rf /c/Windows", "deny"),
     ("rm -rf C:\\Windows", "deny"),
     ("bash -c 'rm -rf ../x'", "ask"),
