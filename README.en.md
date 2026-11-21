@@ -21,9 +21,10 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
 | `plugins/dev-workflow` | 0.4.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` |
-| `plugins/guardrails` | 0.1.1 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
+| `plugins/guardrails` | 0.1.2 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
+| `plugins/websearch` | 0.1.5 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 
-The three plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
+The four plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
 
 ## Installation
 
@@ -143,6 +144,20 @@ Pitfalls worth writing down instead of rediscovering:
 - Hook output uses a strict schema — **one extra key discards the whole payload**. `async` has no effect, hooks always block. For cross-platform safety prefer `type: "process"` with `args[]` and `${ZCODE_PLUGIN_ROOT}` paths
 - Shell scripts must stay LF (enforced here by `.gitattributes`); CRLF fails under any non-MSYS bash
 
+## websearch
+
+A standalone search plugin with its own zero-dependency MCP server (`bin/server.mjs`, Node 18+ global fetch, no node_modules). It exposes `web_search` and `fetch_page`; the model sees them as `mcp__plugin_websearch_search__web_search` / `mcp__plugin_websearch_search__fetch_page`.
+
+- Engine chain `anysearch → exa → parallel → bing → searxng`, moving on when an engine fails or returns nothing; one deadline covers the whole call (20s default) and engines left unrun are reported in `skipped`
+- **Usable without any key**: empty key means the engine's free tier; when a quota runs out `attempts[].hint` says so. The current ZCode build has **no configuration form** on the plugin detail page, so keys and engine order live in `$ZCODE_PLUGIN_DATA/websearch.json` (i.e. `~/.zcode/cli/plugins/data/websearch@zcode-plugin/websearch.json`); the ambient `ANYSEARCH_API_KEY` / `EXA_API_KEY` / `PARALLEL_API_KEY` variables work too (the file wins)
+- Settings: engine order, disabled list, fallback/rotate, default limit, total timeout, Bing market, SearXNG instances and the three optional keys; the manifest also declares `userConfig`, so once ZCode grows a configuration form this plugin picks it up with no changes
+- The tool descriptions carry the routing rule: search first for anything current (weather, news, prices), and only call `fetch_page` for a URL you already have
+- The safety boundary lives in this plugin's own code: http/https only, loopback/private/link-local (including cloud metadata)/CGNAT/ULA refused, every redirect hop re-checked, 2 MB response ceiling, request timeouts — an MCP server is an ordinary local process with no host gatekeeper
+- Manual entry point: `/websearch <query> [--engine bing]`, the quickest way to check one engine
+- It neither conflicts with nor replaces the built-in `WebSearch`: that one relies on the model provider's server-side search and only exists for specific provider endpoints, while this plugin works under any provider
+
+Engine table, settings detail, safety boundary and known limits: `plugins/websearch/README.md`.
+
 ## Checks
 
 Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them after changing a plugin:
@@ -150,6 +165,7 @@ Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them a
 ```bash
 python scripts/check-consistency.py             # versions, agent count, frontmatter, references, line endings, shell syntax
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 90 cases
+python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
 ```
 
 `check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.

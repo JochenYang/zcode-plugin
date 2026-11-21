@@ -1,0 +1,92 @@
+{
+  "name": "websearch",
+  "version": "0.1.5",
+  "description": "Multi-engine web search for ZCode as a zero-dependency MCP server: AnySearch, Exa, Parallel, Bing and SearXNG chained with automatic fallback, plus a static page reader. Every engine works without a key. Configuration (engine order, per-engine keys) is websearch.json inside the plugin data folder — created automatically on first use, and the tools report its exact path, so just ask the model for the websearch config location.",
+  "author": {
+    "name": "JochenYang"
+  },
+  "license": "MIT",
+  "commands": "commands",
+  "mcpServers": {
+    "search": {
+      "command": "node",
+      "args": [
+        "${ZCODE_PLUGIN_ROOT}/bin/server.mjs"
+      ],
+      "env": {
+        "WEBSEARCH_ORDER": "${user_config.order}",
+        "WEBSEARCH_DISABLED": "${user_config.disabled}",
+        "WEBSEARCH_MODE": "${user_config.mode}",
+        "WEBSEARCH_LIMIT": "${user_config.limit}",
+        "WEBSEARCH_TIMEOUT_MS": "${user_config.timeout_ms}",
+        "WEBSEARCH_BING_MARKET": "${user_config.bing_market}",
+        "WEBSEARCH_SEARXNG": "${user_config.searxng_instances}",
+        "WEBSEARCH_ANYSEARCH_KEY": "${user_config.anysearch_key}",
+        "WEBSEARCH_EXA_KEY": "${user_config.exa_key}",
+        "WEBSEARCH_PARALLEL_KEY": "${user_config.parallel_key}"
+      }
+    }
+  },
+  "userConfig": {
+    "order": {
+      "type": "string",
+      "title": "引擎顺序",
+      "description": "按顺序尝试，逗号分隔。可用：anysearch / exa / parallel / bing / searxng",
+      "default": "anysearch,exa,parallel,bing,searxng"
+    },
+    "disabled": {
+      "type": "string",
+      "title": "禁用的引擎",
+      "description": "逗号分隔的引擎 id，例如 exa,searxng；留空表示都启用",
+      "default": ""
+    },
+    "mode": {
+      "type": "string",
+      "title": "尝试方式",
+      "description": "fallback = 每次从第一位开始；rotate = 每次把起始位后移一格，分散匿名额度",
+      "default": "fallback"
+    },
+    "limit": {
+      "type": "number",
+      "title": "默认结果条数",
+      "description": "1-10，工具调用未指定 limit 时使用",
+      "default": 10
+    },
+    "timeout_ms": {
+      "type": "number",
+      "title": "单次总超时（毫秒）",
+      "description": "一次调用覆盖整条链，5000-60000；每个引擎用剩余预算",
+      "default": 20000
+    },
+    "bing_market": {
+      "type": "string",
+      "title": "Bing 市场",
+      "description": "auto = 跟随查询语言；也可固定 zh 或 en",
+      "default": "auto"
+    },
+    "searxng_instances": {
+      "type": "string",
+      "title": "SearXNG 实例",
+      "description": "每行一个地址，需要实例开启 JSON API；留空则跳过该引擎",
+      "default": ""
+    },
+    "anysearch_key": {
+      "type": "string",
+      "title": "AnySearch Key（可选）",
+      "description": "留空走免费额度，填了就用你的 Key（Authorization: Bearer）。值保存在应用配置里，明文存储",
+      "default": ""
+    },
+    "exa_key": {
+      "type": "string",
+      "title": "Exa Key（可选）",
+      "description": "留空走匿名额度，填了就用你的 Key（Authorization: Bearer）。值保存在应用配置里，明文存储",
+      "default": ""
+    },
+    "parallel_key": {
+      "type": "string",
+      "title": "Parallel Key（可选）",
+      "description": "留空走匿名额度，填了就用你的 Key（x-api-key）。值保存在应用配置里，明文存储",
+      "default": ""
+    }
+  }
+}

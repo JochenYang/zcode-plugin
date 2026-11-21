@@ -151,9 +151,12 @@ def check_stale_markers():
 
 
 def check_line_endings():
+    binary_suffixes = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp")
     crlf = [os.path.relpath(path, ROOT)
             for path in glob.glob(os.path.join(ROOT, "plugins", "**", "*"), recursive=True)
-            if os.path.isfile(path) and b"\r\n" in open(path, "rb").read()]
+            if os.path.isfile(path)
+            and not path.endswith(binary_suffixes)
+            and b"\r\n" in open(path, "rb").read()]
     check("no CRLF in plugins", not crlf, "; ".join(crlf))
 
 

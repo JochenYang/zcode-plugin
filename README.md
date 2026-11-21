@@ -21,9 +21,10 @@
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
 | `plugins/dev-workflow` | 0.4.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
-| `plugins/guardrails` | 0.1.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
+| `plugins/guardrails` | 0.1.2 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
+| `plugins/websearch` | 0.1.5 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 
-三个插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
+四个插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
 ## 安装
 
@@ -143,6 +144,20 @@ plugins/<plugin-name>/
 - hook 输出是严格 schema，**多一个键整体丢弃**；`async` 无效，钩子始终阻塞执行；跨平台优先 `type: "process"` + `args[]`，路径用 `${ZCODE_PLUGIN_ROOT}`
 - shell 脚本必须保持 LF（本仓库靠 `.gitattributes` 约束），CRLF 在非 MSYS bash 下会失败
 
+## websearch
+
+独立的网页搜索插件，自带一个零依赖 MCP server（`bin/server.mjs`，Node 18+ 的全局 fetch，无 node_modules）。工具是 `web_search` 与 `fetch_page`，模型看到的完整名字为 `mcp__plugin_websearch_search__web_search` / `mcp__plugin_websearch_search__fetch_page`。
+
+- 引擎链 `anysearch → exa → parallel → bing → searxng`，失败或空结果自动换下一个；一次调用共用一个总预算（默认 20s），预算耗尽的引擎记入 `skipped`
+- **免 Key 可用**：不填 Key 走各引擎的免费额度；额度用完时 `attempts[].hint` 会提示。当前版本 ZCode 的插件详情页**没有配置表单**，Key 与引擎顺序等写在 `$ZCODE_PLUGIN_DATA/websearch.json`（即 `~/.zcode/cli/plugins/data/websearch@zcode-plugin/websearch.json`），也可用环境变量 `ANYSEARCH_API_KEY` / `EXA_API_KEY` / `PARALLEL_API_KEY`（文件优先）
+- 设置项：引擎顺序、禁用列表、fallback/rotate、默认条数、总超时、Bing 市场、SearXNG 实例、三个可选 Key；清单里也声明了 `userConfig`，等 ZCode 支持配置表单后无需改本插件即可用
+- 工具描述里写明了路由：需要最新信息/天气/新闻时先用 `web_search`，只有已知确切 URL 才用 `fetch_page`
+- 安全边界写在自己代码里：只允许 http/https、拒绝回环/内网/链路本地（含云元数据地址）/CGNAT/唯一本地地址、每跳重定向重新校验、响应上限 2 MB、请求超时——MCP server 是普通本地进程，没有宿主守门
+- 手动入口：`/websearch <query> [--engine bing]`，单引擎排查最快
+- 与内置 `WebSearch` 不冲突也不互相替代：内置那个走模型 provider 的服务端原生搜索，只在特定 provider 端点下存在；插件在任何 provider 下都可用
+
+引擎表、设置项细节、安全边界与已知限制见 `plugins/websearch/README.md`。
+
 ## 校验
 
 仓库自带两个零依赖检查（需要 Python 3.8+ 与 bash），改动插件后手动跑：
@@ -150,6 +165,7 @@ plugins/<plugin-name>/
 ```bash
 python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、引用、行尾、shell 语法
 python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，90 个用例
+python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
 ```
 
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。

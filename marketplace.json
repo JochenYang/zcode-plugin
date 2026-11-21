@@ -1,6 +1,6 @@
 {
   "name": "zcode-plugin",
-  "description": "Personal ZCode plugin collection: git-workflow (conventional commits), dev-workflow (development flow skills) and guardrails (safety hooks).",
+  "description": "Personal ZCode plugin collection: git-workflow (conventional commits), dev-workflow (development flow skills), guardrails (safety hooks) and websearch (keyless multi-engine search).",
   "plugins": [
     {
       "name": "git-workflow",
@@ -39,7 +39,7 @@
     },
     {
       "name": "guardrails",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Deterministic safety hooks: blocks irreversible shell commands (POSIX, cmd.exe and PowerShell) and hardcoded credentials, routes publishing, deploys and migrations to a confirmation prompt.",
       "author": {
         "name": "JochenYang"
@@ -53,6 +53,26 @@
       ],
       "icon": "https://static.geluman.cn/icon/guard-icon.png",
       "source": "./plugins/guardrails"
+    },
+    {
+      "name": "websearch",
+      "version": "0.1.5",
+      "description": "Multi-engine web search for ZCode as a zero-dependency MCP server: AnySearch, Exa, Parallel, Bing and SearXNG chained with automatic fallback, plus a static page reader. Every engine works without a key. Configuration (engine order, per-engine keys) is websearch.json inside the plugin data folder — created automatically on first use, and the tools report its exact path, so just ask the model for the websearch config location.",
+      "author": {
+        "name": "JochenYang"
+      },
+      "category": "productivity",
+      "tags": [
+        "search",
+        "web",
+        "mcp",
+        "research"
+      ],
+      "source": "./plugins/websearch",
+      "description_i18n": {
+        "zh-CN": "ZCode 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，另带静态网页正文读取；所有引擎免 Key 可用。配置（引擎顺序、各引擎 Key）写在插件数据目录的 websearch.json——首次使用自动生成，装好后直接问模型「websearch 配置在哪」即可拿到具体路径。"
+      },
+      "icon": "https://static.geluman.cn/icon/websearch.png"
     }
   ]
 }
