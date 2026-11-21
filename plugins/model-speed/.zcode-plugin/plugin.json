@@ -1,0 +1,53 @@
+{
+  "name": "model-speed",
+  "version": "0.1.0",
+  "description": "Show the current model's output speed (tokens/s) in the composer toolbar, scoped per session, using ZCode's built-in generation metrics. No API key, no network, no telemetry.",
+  "description_i18n": {
+    "en": "Show the current model's output speed (tokens/s) in the composer toolbar, scoped per session, using ZCode's built-in generation metrics. No API key, no network, no telemetry.",
+    "zh-CN": "在输入框工具栏显示当前模型的输出速度（tokens/s），按会话区分，数据来自 ZCode 内置生成指标。不需要 API Key、不发网络请求、无遥测。"
+  },
+  "author": {
+    "name": "JochenYang",
+    "url": "https://github.com/JochenYang"
+  },
+  "license": "MIT",
+  "keywords": [
+    "tps",
+    "tokens-per-second",
+    "model-speed",
+    "generator-speed",
+    "composer-status",
+    "extension"
+  ],
+  "extension": {
+    "engines": {
+      "zcode": "^1.3.0"
+    },
+    "main": "./bin/extension.mjs",
+    "activationEvents": [
+      "onAvailable"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "model-speed.show",
+          "title": {
+            "en-US": "Show model speed",
+            "zh-CN": "查看模型速度"
+          }
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      {
+        "id": "tps",
+        "icon": "gauge",
+        "target": {
+          "command": "model-speed.show"
+        }
+      }
+    ]
+  }
+}

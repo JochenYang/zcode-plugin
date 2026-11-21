@@ -23,6 +23,7 @@
 | `plugins/dev-workflow` | 0.4.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
 | `plugins/guardrails` | 0.1.2 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
 | `plugins/websearch` | 0.1.5 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
+| `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 
 四个插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
