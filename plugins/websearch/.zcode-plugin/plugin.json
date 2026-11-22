@@ -1,6 +1,6 @@
 {
   "name": "websearch",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Multi-engine web search for ZCode as a zero-dependency MCP server: AnySearch, Exa, Parallel, Bing and SearXNG chained with automatic fallback, plus a static page reader. Every engine works without a key. Configuration (engine order, per-engine keys) is websearch.json inside the plugin data folder — created automatically on first use, and the tools report its exact path, so just ask the model for the websearch config location.",
   "author": {
     "name": "JochenYang"

@@ -805,8 +805,8 @@ export const TOOLS = [
   {
     name: 'web_search',
     description:
-      `搜索公网网页。需要最新信息、天气、新闻、价格、版本、文档，或任何你无法凭记忆确认的事实时先用它；` +
-      `只有已经知道确切 URL 时才用 fetch_page。` +
+      `搜索公网网页。**如果内置的 WebSearch 工具可用，优先用它**——本工具是它不可用时的替代，中英文查询都一样。` +
+      `只在以下情况用本工具：工具列表里没有 WebSearch；用户用 /websearch 显式要求；或需要指定引擎、随后用 fetch_page 读正文。` +
       `按配置的引擎链依次尝试（anysearch / exa / parallel / bing / searxng），某个引擎失败或空结果时自动换下一个。` +
       `成功返回 { ok:true, engine, results:[{title,url,snippet,publishedAt}], attempts, skipped, elapsedMs }；` +
       `失败返回 { ok:false, errorCode, message, attempts, skipped, configPath }，message 可直接转述给用户。` +
@@ -836,7 +836,7 @@ export const TOOLS = [
   {
     name: 'fetch_page',
     description:
-      '读取单个公开 HTTP(S) 网页的正文文本——仅用于已经知道确切 URL 的场景；需要先找到 URL 时用 web_search。' +
+      '读取单个公开 HTTP(S) 网页的正文文本——仅用于已经知道确切 URL 的场景；需要先找到 URL 时先搜索（内置 WebSearch 可用则用它）。' +
       '返回 { ok:true, url, status, contentType, title, chars, truncated, text, contentIsUntrusted }；' +
       '失败返回 { ok:false, errorCode, message }。' +
       '只做静态取回，不执行页面脚本、不处理登录，也不处理站点内的交互；内网与保留地址会被拒绝。' +
