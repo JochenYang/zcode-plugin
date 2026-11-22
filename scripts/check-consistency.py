@@ -199,13 +199,30 @@ def check_skill_references():
     check("skill references resolve", not missing, "; ".join(missing))
 
 
+def check_marketplace_sources():
+    """ZCode reports an entry without `source` as plugin_marketplace_invalid
+    ("Plugin has no install source"), so the plugin is listed but cannot be
+    installed by anyone who adds the marketplace."""
+    bad = []
+    for entry in load("marketplace.json")["plugins"]:
+        name, source = entry["name"], entry.get("source")
+        if not isinstance(source, str) or not source.strip():
+            bad.append(f"{name}: no install source")
+            continue
+        if source.startswith("./"):
+            manifest = os.path.join(ROOT, source[2:], ".zcode-plugin", "plugin.json")
+            if not os.path.isfile(manifest):
+                bad.append(f"{name}: source {source} has no .zcode-plugin/plugin.json")
+    check("marketplace sources resolve", not bad, "; ".join(bad))
+
+
 def main():
     if not os.path.isfile(os.path.join(ROOT, "marketplace.json")):
         print(f"not a marketplace root: {ROOT}")
         return 2
-    for probe in (check_json, check_versions, check_agent_count, check_frontmatter,
-                  check_stale_markers, check_line_endings, check_shell_syntax,
-                  check_skill_references):
+    for probe in (check_json, check_versions, check_marketplace_sources,
+                  check_agent_count, check_frontmatter, check_stale_markers,
+                  check_line_endings, check_shell_syntax, check_skill_references):
         probe()
     if FAILS:
         print(f"\n{len(FAILS)} CHECK(S) FAILED: {', '.join(FAILS)}")

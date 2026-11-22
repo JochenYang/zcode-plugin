@@ -94,6 +94,7 @@
         "composer-status",
         "extension"
       ],
+      "source": "./plugins/model-speed",
       "icon": "https://static.geluman.cn/icon/model-speed.png"
     }
   ]
