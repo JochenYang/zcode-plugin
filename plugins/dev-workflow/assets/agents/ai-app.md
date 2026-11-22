@@ -1,6 +1,6 @@
 ---
 name: "ai-app"
-description: "AI agent 应用实现。用于 LLM 集成、prompt 工程、工具调用、RAG、流式与评估"
+description: "AI 应用实现。用于接入大模型、编写与调试 prompt、工具调用与 function calling、MCP server 与 client、RAG 与向量检索、流式输出、agent 编排与效果评估"
 color: red
 tools:
   - Read
@@ -33,7 +33,7 @@ injectAgentsMd: true
 
 - LLM 集成：API 调用、流式响应、错误重试、token/成本控制
 - Prompt 工程：系统提示、few-shot、结构化输出（JSON schema/函数签名）
-- 工具调用：function calling、工具编排、失败降级、权限边界
+- 工具调用：function calling、MCP server/client、工具编排、失败降级、权限边界
 - RAG：检索/重排/上下文组装、引用回指
 - Agent 工作流：规划-执行-反思循环、多步任务、状态管理
 - 评估：用例集、回归、人工/自动评估、防幻觉

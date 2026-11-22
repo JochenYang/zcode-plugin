@@ -1,6 +1,6 @@
 ---
 name: "detective"
-description: "Bug 根因定位与复现分析。用于分析报错、追踪状态分叉并给出最小修复建议"
+description: "Bug 根因定位（只读）。用于排查报错、异常、崩溃、白屏、数据不对、状态不一致和竞态：读代码与调用链，找到期望与实际第一次分叉的位置，给出最小修复建议；不执行命令、不改代码，跑命令复现交给 `tester`，修复落地交给 `builder` 或对应专才"
 color: green
 tools:
   - Read

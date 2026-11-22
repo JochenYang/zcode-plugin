@@ -1,6 +1,6 @@
 ---
 name: "backend"
-description: "后端服务实现。用于 API 设计、业务逻辑、鉴权、消息队列、缓存、服务架构与中间件"
+description: "后端服务实现。用于接口（API、Controller、Service）、业务逻辑、鉴权与会话、消息队列与异步任务、缓存、定时任务、服务架构与中间件；表结构、索引与迁移脚本交给 `dba`，部署与 CI 交给 `ops`"
 color: red
 tools:
   - Read

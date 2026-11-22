@@ -1,6 +1,6 @@
 ---
 name: "oracle"
-description: "重大决策前的反方顾问。用于挑战架构选型、breaking change、技术栈切换和隐藏假设"
+description: "重大决策前的反方顾问（只读）。用于技术选型、架构方案、数据模型变更、breaking change、技术栈或依赖替换拍板之前，以及需要 second opinion、挑战假设、评估方案风险时：给出有证据的反证、被忽略的假设和更小更可逆的替代方案，不替你做最终决策"
 color: purple
 tools:
   - Read

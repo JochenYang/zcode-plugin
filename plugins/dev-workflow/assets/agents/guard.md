@@ -1,6 +1,6 @@
 ---
 name: "guard"
-description: "安全专项审查。用于认证、授权、密钥、PII、支付、注入、访问控制、OWASP 风险与凭证泄露"
+description: "安全专项审查（只读）。安全面审查派这里，不要分给通用 agent：认证与授权、越权、密钥与凭据存储、PII 与脱敏、支付、注入与输入校验、依赖漏洞、文件路径与数据存储安全、OWASP 评估；只看安全，正确性与可维护性由 `reviewer` 负责，两者都要时并行各派一个"
 color: orange
 tools:
   - Read

@@ -1,6 +1,6 @@
 ---
 name: "ops"
-description: "部署与基础设施实现。用于 CI/CD、Docker、Kubernetes、Terraform、监控、告警和回滚"
+description: "部署与基础设施实现。用于 CI/CD 与 GitHub Actions、Dockerfile 与镜像、Kubernetes、Terraform 等基础设施即代码、环境配置、发布与回滚方案、监控告警；只产出变更方案、配置与命令，不创建 tag、不发布包、不部署生产；迁移脚本本身交给 `dba`"
 color: blue
 tools:
   - Read

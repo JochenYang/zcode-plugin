@@ -1,6 +1,6 @@
 ---
 name: "tester"
-description: "测试与回归验证。用于 TDD、复现 bug、补测试、运行验证命令并报告结果"
+description: "测试与回归验证。用于写测试、补测试、TDD 红绿循环、把 bug 复现成失败用例，以及跑测试、lint、类型检查和构建并如实报告结果；只找根因交给 `detective`，代码审查交给 `reviewer`"
 color: pink
 tools:
   - Read

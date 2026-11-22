@@ -1,6 +1,6 @@
 ---
 name: "reviewer"
-description: "代码审查与质量门。用于发现正确性、性能、并发、边界条件、可维护性和测试缺口"
+description: "代码审查与质量门（只读）。用于审查改动、评审 PR、增量审查和实现后的独立复核，发现正确性、性能、并发、边界条件、可维护性与测试缺口；安全专项交给 `guard`，前后端契约与跨层一致性交给 `integrator`"
 color: blue
 tools:
   - Read

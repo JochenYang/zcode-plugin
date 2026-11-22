@@ -20,7 +20,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | Plugin | Version | Description |
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
-| `plugins/dev-workflow` | 0.4.2 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` |
+| `plugins/dev-workflow` | 0.5.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
 | `plugins/guardrails` | 0.1.2 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
 | `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
@@ -34,7 +34,7 @@ The four plugins are independent and can be enabled separately. `guardrails` blo
 1. Open ZCode **Settings → Plugins**, click **Add marketplace** (top-right), choose the **GitHub** source
 2. Enter the repo: `JochenYang/zcode-plugin` (public, no extra config needed)
 3. Enable whichever of `git-workflow` / `dev-workflow` / `guardrails` you want
-4. After enabling `dev-workflow`, the 23 subagents are automatically installed into `~/.zcode/agents` on the next session start
+4. After enabling `dev-workflow`, the 22 subagents are automatically installed into `~/.zcode/agents` on the next session start
 
 **Option 2: Local development directory**
 
@@ -73,7 +73,7 @@ Commands and hooks:
 
 - `/handoff [save|show|clear]` — persists the **session-level** contract to `.zcode/handoff.md` so the goal and acceptance criteria survive compaction and new sessions; the **task-level** acceptance basis is written into the project by `change-plan` under `.devflow/`, and the task plan wins when both exist
 - The `SessionStart` hook (`startup` / `clear` / `compact`) injects the branch, uncommitted file count, last 3 commits, the active plans under `.devflow/` and a `.zcode/handoff.md` summary, replacing the usual round of git calls at the start of a session
-- On `startup`, a second hook auto-syncs the 23 specialist subagents into `~/.zcode/agents` (ZCode never loads agents from inside a plugin, so they must be copied out; it installs missing files, refreshes files it previously wrote, and skips anything the user has edited by hand)
+- On `startup`, a second hook auto-syncs the 22 specialist subagents into `~/.zcode/agents` (ZCode never loads agents from inside a plugin, so they must be copied out; it installs missing files, refreshes files it previously wrote, deletes files it previously wrote that the plugin no longer bundles, and skips anything the user has edited by hand). A subagent's `tools:` is a literal allow-list — a misspelled tool name means no such capability — and an agent that lists `WebFetch` also gets the host's read-only `mcp__web_reader__webReader`. A subagent's `description` is what the main model matches against when deciding whether to dispatch it — the listing carries only that plus its name and tools, and the separate trigger field Kimi reads does not exist in ZCode — so write it as role + trigger wording + hand-off to neighbouring agents + capability limits; the built-in `Explore` and `general-purpose` are not duplicated, code recon uses the built-in `Explore`
 - `/agents-sync [diff|export|install]` — installation is automatic, so this is only for: `diff` comparing local vs bundled agents, `export` pushing hand-edited local agents back into the repo, `install` forcing an overwrite
 
 Core mechanics: `change-plan` writes the plan and acceptance criteria to `.devflow/<slug>.md` (plus `docs/plans/<slug>.md` when the change has a regression surface), and all five downstream skills plus every subagent check against it; persistent plans track progress through Work item state transitions and phase gates, and a Gate row may only be written by `test-changed` after the verification ran. Each of the five downstream skills (`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`) closes with the same self-check: green commands are not satisfied acceptance, plausible is not evidence, and "I tested it" is hearsay — if any of the three fails, `commit-review` cannot be READY and `release-check` cannot be GO.
@@ -164,13 +164,13 @@ Engine table, settings detail, safety boundary and known limits: `plugins/websea
 Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them after changing a plugin:
 
 ```bash
-python scripts/check-consistency.py             # versions, agent count, frontmatter, references, line endings, shell syntax
+python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 90 cases
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
-python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, read legacy state
+python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
 ```
 
-`check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.
+`check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism, an agent description that hands off to an agent that does not exist or collides with a built-in type. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.
 
 ## References
 

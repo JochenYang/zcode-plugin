@@ -1,6 +1,6 @@
 ---
 name: "builder"
-description: "通用代码实现。用于范围清晰的小块功能、重构、修复执行和非专长代码修改；backend/frontend/mobile/miniapp/ai-app 与游戏设计各层由对应 agent 负责"
+description: "通用代码实现与落地执行。落在某一层的改动优先派对应专才（`backend`、`frontend`、`mobile`、`miniapp`、`ai-app`、`dba`、`ops`）；这里只接没有明确专长归属的活：脚本与工具、配置与依赖升级、重构、按方案修复，以及跨层或不属于任何一层的并行实现批次"
 color: orange
 tools:
   - Read

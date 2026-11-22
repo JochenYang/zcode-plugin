@@ -35,6 +35,15 @@ BUILTIN_TOOLS = {
     "Agent", "AskUserQuestion", "Bash", "Edit", "Glob", "Grep", "Read", "Skill",
     "TodoWrite", "WebFetch", "WebSearch", "Write",
 }
+# Agent types the runtime provides itself. A user agent whose name differs
+# from one of them only by case shows up as a near-duplicate in the listing
+# (the model picks between the two at random), and an unusual-cased
+# subagent_type then matches both and is rejected as ambiguous.
+BUILTIN_AGENTS = {"general-purpose", "Explore"}
+# The model is shown `- name: description (Tools: …)` and nothing else about
+# an agent, so the description is its only trigger; past this it stops being
+# scannable next to the others.
+AGENT_DESCRIPTION_LIMIT = 200
 # Mechanisms this repo removed on purpose; a mention means a stale reference.
 STALE_MARKERS = ["Anti-rationalization", "AR-1", "KIMI_SKILL_DIR", "git_conventions", "whenToUse"]
 
@@ -147,6 +156,41 @@ def check_frontmatter():
     check("agent frontmatter", not bad, "; ".join(bad))
 
 
+def check_agent_descriptions():
+    """Trigger wording lives in `description` alone: ZCode drops the Kimi-only key."""
+    builtin = {name.lower(): name for name in BUILTIN_AGENTS}
+    agents = {}
+    bad = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "plugins/dev-workflow/assets/agents/*.md"))):
+        stem = os.path.basename(path)[:-3]
+        front = frontmatter_keys(path)[1] or ""
+        name = re.search(r"^name:\s*(.*)$", front, re.M)
+        name = name.group(1).strip().strip("\"'") if name else ""
+        desc = re.search(r"^description:\s*(.*)$", front, re.M)
+        # The listing and subagent_type go by the frontmatter name, while the
+        # sync hook copies by file name: the two have to agree.
+        if name != stem:
+            bad.append(f"{stem}: name `{name}` differs from its file name")
+        if name in agents:
+            bad.append(f"{name}: two files claim this name ({agents[name][0]} and {stem})")
+        agents[name] = (stem, desc.group(1).strip().strip("\"'") if desc else "")
+    known = {agent.lower() for agent in agents} | set(builtin)
+    for name, (stem, desc) in agents.items():
+        if name.lower() in builtin:
+            bad.append(f"{stem}: collides with the built-in agent `{builtin[name.lower()]}`"
+                       " (names match ignoring case)")
+        if len(desc) > AGENT_DESCRIPTION_LIMIT:
+            bad.append(f"{stem}: description over {AGENT_DESCRIPTION_LIMIT} chars ({len(desc)})")
+        # Backticks in a description are reserved for agent names: a hand-off
+        # to an agent that was renamed or removed makes the model pass a
+        # subagent_type that does not exist. Tools such as `Read` keep their
+        # capital initial and are not taken for a hand-off.
+        for ref in re.findall(r"`([a-z][A-Za-z0-9-]*)`", desc):
+            if ref.lower() not in known:
+                bad.append(f"{stem}: hands off to unknown agent `{ref}`")
+    check("agent descriptions", not bad, "; ".join(bad))
+
+
 def check_stale_markers():
     hits = []
     for path in glob.glob(os.path.join(ROOT, "**", "*"), recursive=True):
@@ -221,8 +265,9 @@ def main():
         print(f"not a marketplace root: {ROOT}")
         return 2
     for probe in (check_json, check_versions, check_marketplace_sources,
-                  check_agent_count, check_frontmatter, check_stale_markers,
-                  check_line_endings, check_shell_syntax, check_skill_references):
+                  check_agent_count, check_frontmatter, check_agent_descriptions,
+                  check_stale_markers, check_line_endings, check_shell_syntax,
+                  check_skill_references):
         probe()
     if FAILS:
         print(f"\n{len(FAILS)} CHECK(S) FAILED: {', '.join(FAILS)}")

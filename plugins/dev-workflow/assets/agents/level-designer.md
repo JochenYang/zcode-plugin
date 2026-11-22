@@ -1,6 +1,6 @@
 ---
 name: "level-designer"
-description: "关卡设计。用于关卡结构、难度曲线、玩家引导、节奏设计与空间布局"
+description: "关卡设计。用于关卡结构、难度曲线、玩家引导、节奏设计与空间布局评审"
 color: pink
 tools:
   - Read

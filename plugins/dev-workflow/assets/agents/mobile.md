@@ -1,6 +1,6 @@
 ---
 name: "mobile"
-description: "移动端客户端实现。用于 iOS/Android 原生、React Native、Flutter 跨端开发与适配"
+description: "移动端 App 客户端实现。用于 iOS、Android 原生与 React Native、Flutter 等跨端框架的功能开发、平台适配、原生桥接与上架要点；H5 页面交给 `frontend`，小程序交给 `miniapp`"
 color: blue
 tools:
   - Read
