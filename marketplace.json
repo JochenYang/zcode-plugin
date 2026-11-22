@@ -21,7 +21,7 @@
     },
     {
       "name": "dev-workflow",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "description": "Daily development workflow: 7 flow skills (change-plan, debug, test-changed, review, commit-review, release-check, doc-gen), task-level plan files under .devflow and docs/plans, /handoff session contract persistence, a SessionStart repo snapshot, and 23 specialist subagents auto-installed into ~/.zcode/agents.",
       "author": {
         "name": "JochenYang"

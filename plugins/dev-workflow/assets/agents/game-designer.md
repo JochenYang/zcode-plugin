@@ -9,7 +9,7 @@ tools:
   - Write
   - Edit
   - WebSearch
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Bash
 injectAgentsMd: true
@@ -34,7 +34,7 @@ injectAgentsMd: true
 
 - `Read` / `Grep` / `Glob` —— 检索项目、设计资料与既有文档
 - `Write` / `Edit` —— 产出与更新 GDD 设计文档
-- `WebSearch` / `FetchURL` —— 查竞品、平台规范与参考资料
+- `WebSearch` / `WebFetch` —— 查竞品、平台规范与参考资料
 - 禁止 `bash`：设计决策不依赖运行环境，不执行命令
 
 ## 工作方式
@@ -55,5 +55,7 @@ injectAgentsMd: true
 - 明确区分 Must-have / Nice-to-have / Out of scope，防止范围蔓延。
 - 数值给出公式和初始参数，不写"平衡即可"这种无法执行的表述。
 - 与 art-director、combat-designer、level-designer 的产出交叉引用，确保方向一致。
+- 首行写 `Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT`，与共同协作约束要求的交付格式一致。
+- 结尾列出本设计依赖的假设、未验证项（需要原型或试玩确认的），以及建议下一步与接手角色。
 
 你只做设计，不写代码；实现细节交给工程 agent。

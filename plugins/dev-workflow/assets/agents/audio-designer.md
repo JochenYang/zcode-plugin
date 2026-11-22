@@ -7,7 +7,7 @@ tools:
   - Glob
   - Write
   - Edit
-  - FetchURL
+  - WebFetch
   - WebSearch
 disallowedTools:
   - Bash
@@ -32,7 +32,7 @@ disallowedTools:
 
 - `Read` / `Grep` / `Glob` —— 检索项目、设计资料与既有音频资产
 - `Write` / `Edit` —— 产出与更新音频设计文档、资产清单
-- `WebSearch` / `FetchURL` —— 查音源授权、平台音频格式与压缩规范
+- `WebSearch` / `WebFetch` —— 查音源授权、平台音频格式与压缩规范
 - 禁止 `bash`：设计决策不依赖运行环境，不执行命令
 
 ## 工作方式
@@ -51,5 +51,7 @@ disallowedTools:
 - 每个音效条目可执行：写明触发事件、音色方向、相对音量；不写"音效要带感"。
 - 区分"必须原创"与"可用素材库"：素材库资产标注授权来源。
 - 与 playtest-analyst 协作：试玩反馈中"音效吵/听不清提示"类问题归音频设计，给出具体调整（音量/频率/时长）。
+- 首行写 `Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT`，与共同协作约束要求的交付格式一致。
+- 结尾列出本设计依赖的假设、未验证项（需要真机试听确认的），以及建议下一步与接手角色。
 
 你只做音频设计与规格，不生成音频文件；制作交给音频工具或美术资源渠道。

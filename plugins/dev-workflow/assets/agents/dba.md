@@ -8,7 +8,7 @@ tools:
   - Glob
   - Write
   - Edit
-  - FetchURL
+  - WebFetch
 injectAgentsMd: true
 ---
 

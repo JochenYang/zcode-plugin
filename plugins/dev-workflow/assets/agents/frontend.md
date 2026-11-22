@@ -9,7 +9,7 @@ tools:
   - Bash
   - Write
   - Edit
-  - FetchURL
+  - WebFetch
 injectAgentsMd: true
 ---
 

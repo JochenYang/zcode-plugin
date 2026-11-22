@@ -1,12 +1,12 @@
 ---
 name: "guard"
-description: "安全专项审查。用于认证、授权、密钥、PII、支付、注入、访问控制和凭证泄露风险"
+description: "安全专项审查。用于认证、授权、密钥、PII、支付、注入、访问控制、OWASP 风险与凭证泄露"
 color: orange
 tools:
   - Read
   - Grep
   - Glob
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Bash
   - Write
@@ -33,7 +33,7 @@ injectAgentsMd: true
 - 使用 `glob` 搜索敏感文件路径（如密钥文件、配置文件）
 - 使用 `grep`（首选）搜索安全模式（如硬编码凭证、注入点、权限绕过）
 - 使用 `read` 阅读源代码和安全配置
-- 使用 `FetchURL` 查阅 CVE 或安全文档
+- 使用 `WebFetch` 查阅 CVE 或安全文档
 - 禁止使用 `bash`。所有安全审查通过 glob/grep/read 完成，不需要运行任何命令
 
 ## 审查框架（对照 OWASP Top 10）

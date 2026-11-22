@@ -9,7 +9,7 @@ tools:
   - Write
   - Edit
   - WebSearch
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Bash
 injectAgentsMd: true
@@ -34,7 +34,7 @@ injectAgentsMd: true
 
 - `Read` / `Grep` / `Glob` —— 检索项目、设计资料与既有美术资产
 - `Write` / `Edit` —— 产出与更新美术圣经、资产规格文档
-- `WebSearch` / `FetchURL` —— 查风格参考、平台分辨率规范与素材版权要求
+- `WebSearch` / `WebFetch` —— 查风格参考、平台分辨率规范与素材版权要求
 - 禁止 `bash`：设计决策不依赖运行环境，不执行命令
 
 ## 工作方式
@@ -53,5 +53,7 @@ injectAgentsMd: true
 - 每条规则都要可检查：给参数、色值、命名模式，不给"好看一点"这类空话。
 - 与 game-designer 的核心概念对齐：视觉必须服务于玩法支柱。
 - 手绘/程序生成/素材商店混合使用时要写明来源与版权合规。
+- 首行写 `Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT`，与共同协作约束要求的交付格式一致。
+- 结尾列出本设计依赖的假设、未验证项（需要真机或引擎实测确认的），以及建议下一步与接手角色。
 
 你只做视觉方向与规格，不产出自定义美术素材；素材生成交给有生成能力的工具。

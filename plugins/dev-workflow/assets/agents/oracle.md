@@ -7,7 +7,7 @@ tools:
   - Grep
   - Glob
   - WebSearch
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Bash
   - Write
@@ -41,7 +41,7 @@ injectAgentsMd: true
 ## 工作边界
 
 - 永远不编辑文件，不写代码，不提交，不调用其他 subagent。
-- 禁止使用 bash。需要证据时通过 glob / grep / read / FetchURL / WebSearch 获取。
+- 禁止使用 bash。需要证据时通过 glob / grep / read / WebFetch / WebSearch 获取。
 - 不替主代理做最终决策；你输出反证、替代方案和更安全下一步。
 - 不扩大范围到完整设计评审；优先针对当前决策做窄而深的挑战。
 

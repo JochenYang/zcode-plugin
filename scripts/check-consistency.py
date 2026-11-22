@@ -28,6 +28,13 @@ AGENT_KEYS = {
     "maxTurns", "memory", "tools", "disallowedTools", "skills", "background",
     "injectAgentsMd", "mcpServers",
 }
+# `tools:` is a literal allow-list at runtime: no alias resolution, no
+# intersection with real tools. A name that does not exist (FetchURL is Kimi's
+# name for WebFetch) silently removes that capability from the subagent.
+BUILTIN_TOOLS = {
+    "Agent", "AskUserQuestion", "Bash", "Edit", "Glob", "Grep", "Read", "Skill",
+    "TodoWrite", "WebFetch", "WebSearch", "Write",
+}
 # Mechanisms this repo removed on purpose; a mention means a stale reference.
 STALE_MARKERS = ["Anti-rationalization", "AR-1", "KIMI_SKILL_DIR", "git_conventions", "whenToUse"]
 
@@ -126,6 +133,17 @@ def check_frontmatter():
             bad.append(f"{owner}: extra keys {sorted(set(keys) - AGENT_KEYS)}")
         if "name" not in keys or "description" not in keys:
             bad.append(f"{owner}: missing name/description")
+        front = frontmatter_keys(path)[1]
+        for field in ("tools", "disallowedTools"):
+            listed = re.search(rf"^{field}:\n((?:  - \S+\n)+)", front, re.M)
+            if not listed:
+                continue
+            unknown = [name for name in re.findall(r"  - (\S+)", listed.group(1))
+                       if name not in BUILTIN_TOOLS and not name.startswith("mcp__")]
+            if unknown:
+                bad.append(f"{owner}: {field} has non-existent tool(s) {unknown}")
+        if "FetchURL" in open(path, encoding="utf-8").read():
+            bad.append(f"{owner}: mentions FetchURL (Kimi's name; ZCode's is WebFetch)")
     check("agent frontmatter", not bad, "; ".join(bad))
 
 

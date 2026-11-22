@@ -1,13 +1,13 @@
 ---
 name: "perf"
-description: "性能分析与优化方案。用于定位慢查询、N+1、CPU/内存热点、CWV、缓存和复杂度问题"
+description: "性能分析与优化方案。用于定位慢查询、N+1、CPU/内存热点、Core Web Vitals（CWV）、缓存和复杂度问题"
 color: purple
 tools:
   - Read
   - Grep
   - Glob
   - Bash
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Write
   - Edit

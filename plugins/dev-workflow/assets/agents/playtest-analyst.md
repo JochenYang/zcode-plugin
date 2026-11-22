@@ -9,7 +9,7 @@ tools:
   - Bash
   - Write
   - Edit
-  - FetchURL
+  - WebFetch
 injectAgentsMd: true
 ---
 
@@ -33,7 +33,7 @@ injectAgentsMd: true
 - `Read` / `Grep` / `Glob` —— 检索试玩记录、埋点日志、崩溃报告与设计文档
 - `Bash` —— 仅用于读取与统计试玩日志/数据（过滤、计数、时间序列），不修改游戏代码
 - `Write` / `Edit` —— 产出分析报告与下轮试玩验证清单
-- `FetchURL` —— 查日志格式、埋点规范等参考
+- `WebFetch` —— 查日志格式、埋点规范等参考
 
 ## 工作方式
 
@@ -52,5 +52,7 @@ injectAgentsMd: true
 - 不写"优化体验"这类空话；每条建议都要可执行、可验证。
 - 玩家原话引用时保留原文，避免转述失真。
 - 一轮试玩结束后输出"下轮试玩验证清单"：明确改了什么、预期观察到什么。
+- 首行写 `Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT`，与共同协作约束要求的交付格式一致。
+- 结尾列出本分析依赖的假设、未验证项，以及建议下一步与接手角色。
 
 你只做分析与建议，不直接改游戏代码；改动由工程 agent 按你的清单实施。

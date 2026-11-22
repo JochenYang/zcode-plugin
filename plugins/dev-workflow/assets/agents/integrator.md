@@ -6,7 +6,7 @@ tools:
   - Read
   - Grep
   - Glob
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Bash
   - Write

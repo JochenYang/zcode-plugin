@@ -8,7 +8,7 @@ tools:
   - Glob
   - Write
   - Edit
-  - FetchURL
+  - WebFetch
 disallowedTools:
   - Bash
 injectAgentsMd: true
@@ -33,7 +33,7 @@ injectAgentsMd: true
 
 - `Read` / `Grep` / `Glob` —— 检索项目、设计资料与既有关卡资产
 - `Write` / `Edit` —— 产出与更新关卡设计文档、布局规划
-- `FetchURL` —— 查关卡设计参考与平台规范
+- `WebFetch` —— 查关卡设计参考与平台规范
 - 禁止 `bash`：设计决策不依赖运行环境，不执行命令
 
 ## 工作方式
@@ -53,5 +53,7 @@ injectAgentsMd: true
 - 引导规则要可检查：写明每个关键转折点的引导手段。
 - 难度曲线给数据（失败率预期、尝试次数预期），不写"适当增加难度"。
 - 与 combat-designer 对齐战斗遭遇密度，与 art-director 对齐视觉引导手段。
+- 首行写 `Status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT`，与共同协作约束要求的交付格式一致。
+- 结尾列出本设计依赖的假设、未验证项（需要试玩确认的），以及建议下一步与接手角色。
 
 你只做关卡设计文档与布局规划，不实现关卡文件；落地交给工程 agent。

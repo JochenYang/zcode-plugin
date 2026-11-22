@@ -20,7 +20,7 @@
 | 插件 | 版本 | 说明 |
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
-| `plugins/dev-workflow` | 0.4.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
+| `plugins/dev-workflow` | 0.4.1 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
 | `plugins/guardrails` | 0.1.2 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
 | `plugins/websearch` | 0.1.6 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
@@ -73,7 +73,7 @@
 
 - `/handoff [save|show|clear]` — 把**会话级**契约落盘到 `.zcode/handoff.md`，跨压缩与跨会话保留目标和验收标准；任务级验收依据由 `change-plan` 写在项目内 `.devflow/`，两者并存时以任务级计划为准
 - `SessionStart` 钩子（`startup` / `clear` / `compact`）自动注入分支、未提交文件数、最近 3 条提交、`.devflow/` 下活跃计划与 `.zcode/handoff.md` 摘要，省掉每次会话开头的多次 git 调用
-- `startup` 时另一条钩子自动同步 23 个专项子智能体到 `~/.zcode/agents`（ZCode 不加载插件目录内的 agent，必须复制出来；只装缺失、刷新它自己写过的文件，用户手改过的跳过）
+- `startup` 时另一条钩子自动同步 23 个专项子智能体到 `~/.zcode/agents`（ZCode 不加载插件目录内的 agent，必须复制出来；只装缺失、刷新它自己写过的文件，用户手改过的跳过）。子智能体的 `tools:` 是字面白名单——写错工具名等于没有这项能力；列了 `WebFetch` 的 agent 会连带获得宿主附带的只读 `mcp__web_reader__webReader`
 - `/agents-sync [diff|export|install]` — 安装已是自动的，这里只用于：`diff` 对比本地与插件资产、`export` 把本地手改的 agent 推回仓库、`install` 强制覆盖重装
 
 核心机制：`change-plan` 把计划与验收标准落盘为 `.devflow/<slug>.md`（有回归面时加 `docs/plans/<slug>.md`），下游 5 个 skill 与全部子智能体都按它对照；持久计划用 Work items 状态流转与 Phases Gate 管进度，Gate 行只能由 `test-changed` 在跑完验证后写入。5 个下游 skill（`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`）结案前各做一次自查：命令绿了不等于验收满足、看起来合理不算证据、用户说测过了只是口述——任一条不满足，`commit-review` 不得 READY、`release-check` 不得 GO。
