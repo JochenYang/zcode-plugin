@@ -20,7 +20,7 @@
 | 插件 | 版本 | 说明 |
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
-| `plugins/dev-workflow` | 0.4.1 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
+| `plugins/dev-workflow` | 0.4.2 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents` |
 | `plugins/guardrails` | 0.1.2 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
 | `plugins/websearch` | 0.1.6 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
@@ -167,6 +167,7 @@ plugins/<plugin-name>/
 python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、引用、行尾、shell 语法
 python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，90 个用例
 python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
+python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、兼容旧 state
 ```
 
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。

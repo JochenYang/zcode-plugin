@@ -20,7 +20,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | Plugin | Version | Description |
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
-| `plugins/dev-workflow` | 0.4.1 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` |
+| `plugins/dev-workflow` | 0.4.2 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` |
 | `plugins/guardrails` | 0.1.2 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
 | `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
@@ -167,6 +167,7 @@ Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them a
 python scripts/check-consistency.py             # versions, agent count, frontmatter, references, line endings, shell syntax
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 90 cases
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
+python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, read legacy state
 ```
 
 `check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.

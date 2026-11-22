@@ -41,8 +41,19 @@ fi
 mkdir -p "$dest" 2>/dev/null || exit 0
 mkdir -p "$state_dir" 2>/dev/null || true
 
-hash_of() { sha1sum "$1" 2>/dev/null | cut -d' ' -f1; }
-last_written() { grep -F " $1" "$state" 2>/dev/null | head -1 | cut -d' ' -f1; }
+# Hash through stdin, never by path: GNU sha1sum escapes a file name that
+# contains a backslash with a leading "\" (and prints the name after the hash),
+# and ZCODE_PLUGIN_ROOT is a backslash path on Windows. Hashing by path made
+# every source hash start with "\" while every target hash did not, so the two
+# never matched and nothing was refreshed after the first install.
+hash_of() { sha1sum 2>/dev/null < "$1" | cut -d' ' -f1; }
+# State files written before 0.4.2 carry that leading backslash on every hash;
+# accept them so an existing install heals itself on the next start.
+last_written() {
+  local hash
+  hash="$(grep -F " $1" "$state" 2>/dev/null | head -1 | cut -d' ' -f1)"
+  printf '%s' "${hash#\\}"
+}
 
 added=0
 refreshed=0
