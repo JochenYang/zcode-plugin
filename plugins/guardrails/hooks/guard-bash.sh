@@ -9,6 +9,12 @@
 #   ask  — reversible or intentional-but-costly operations (publishing,
 #          deploying, rebasing, migrations) that the user should confirm once.
 #
+# The ask tier steps aside when the session runs in "yolo", the mode the UI
+# calls full access and promises not to confirm step by step: ZCode applies a
+# hook's ask on top of every permission mode, so without this the prompt would
+# outlive full access. deny never steps aside, and a command that contains both
+# is denied: every deny rule is evaluated before any ask is raised.
+#
 # Delete verbs are judged by where their targets point, not by which flags or
 # spelling they use: rm, cmd's del/rd/rmdir and PowerShell's Remove-Item all run
 # through the same position check, so clearing a build directory passes silently
@@ -34,6 +40,15 @@ cmd="$(printf '%s' "$payload" \
   | sed -e 's/^"command"[[:space:]]*:[[:space:]]*"//' -e 's/"$//')"
 [ -n "$cmd" ] || exit 0
 
+# Top-level permission_mode from the payload, taken as the first match. Text in
+# a command cannot forge it: its quotes arrive JSON-escaped. A nested key of the
+# same name inside tool_input would have to come from the host, which rejects
+# unknown keys for Bash and strips them for Write and Edit.
+mode="$(printf '%s' "$payload" \
+  | grep -oE '"permission_mode"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
+  | head -1 \
+  | sed -e 's/^"permission_mode"[[:space:]]*:[[:space:]]*"//' -e 's/"$//')"
+
 allow_file="${ZCODE_PROJECT_DIR:-.}/.zcode/guardrails-allow"
 if [ -f "$allow_file" ]; then
   while IFS= read -r pattern; do
@@ -44,6 +59,10 @@ fi
 
 emit() {
   local decision=$1 reason=$2
+  # yolo suppresses ask (see the header). Signal that instead of exiting: the
+  # delete-target loop must keep going, because a later target or a later rule
+  # may still be a deny.
+  [ "$decision" = ask ] && [ "$mode" = yolo ] && return 1
   reason=${reason//\\/\\\\}
   reason=${reason//\"/\\\"}
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":"%s"}}\n' \
@@ -126,8 +145,11 @@ C='(^|[[:space:];&|(])'   # start of a command within the shell line
 # ---------------------------------------------------------------- deny tier --
 
 # Delete targets are judged by position. A root-ish, drive, system or credential
-# target is unrecoverable; everything else is classified further down.
+# target is unrecoverable and denied at once. A target outside the project is
+# only remembered here: the deny rules below still have to run first, because
+# deny wins over ask in every mode.
 project="$(normalize_path "${ZCODE_PROJECT_DIR:-$PWD}")"
+outside_delete=""
 while IFS= read -r target; do
   [ -n "$target" ] || continue
   n="$(normalize_path "$target")"
@@ -203,14 +225,11 @@ while IFS= read -r target; do
 
   case $n in
     ../*|*/../*|..)
-      emit ask "Deleting $target reaches outside the project through a relative path. Confirm the resolved target before deleting."
-      exit 0 ;;
+      [ -n "$outside_delete" ] || outside_delete="Deleting $target reaches outside the project through a relative path. Confirm the resolved target before deleting." ;;
     '~'/*|'$'*)
-      emit ask "Deleting $target expands outside the project. Confirm the expanded path before deleting."
-      exit 0 ;;
+      [ -n "$outside_delete" ] || outside_delete="Deleting $target expands outside the project. Confirm the expanded path before deleting." ;;
     /*)
-      emit ask "Deleting $target, which is outside the project directory. Confirm this is intended and not a mistyped path."
-      exit 0 ;;
+      [ -n "$outside_delete" ] || outside_delete="Deleting $target, which is outside the project directory. Confirm this is intended and not a mistyped path." ;;
   esac
 done <<< "$(delete_targets)"
 
@@ -250,11 +269,19 @@ rule deny "${C}[Cc]lear-[Dd]isk([[:space:]]|$)" \
 rule deny "${C}[Ii]nitialize-[Dd]isk([[:space:]]|$)" \
   'Initialize-Disk overwrites the partition table of the target disk, making its current data unreachable.'
 
+# A delete reaching outside the project was remembered in the deny tier. It is
+# not automatically wrong, but it is never routine, so it is confirmed once —
+# and only here, after every deny rule has had its chance. Anything resolving
+# inside the project never reaches this point.
+if [ -n "$outside_delete" ]; then
+  emit ask "$outside_delete"
+  exit 0
+fi
+
 # ----------------------------------------------------------------- ask tier --
 
-# Deleting outside the project is not automatically wrong, but it is never
-# routine, so it is confirmed once. Anything resolving inside the project never
-# reaches this point — see the deny tier above.
+# Everything below runs after every deny rule, so an ask that yolo suppresses
+# may end the script here.
 
 rule ask "${C}(sudo|doas)([[:space:]]|$)" \
   'Runs with root privileges, so mistakes reach outside the project. Confirm the exact command.'

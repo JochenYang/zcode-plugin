@@ -6,6 +6,11 @@
 #   ask  — the target is a credential file, or the text assigns a long literal
 #          to a secret-looking name.
 #
+# The ask tier steps aside when the session runs in "yolo", the mode the UI
+# calls full access and promises not to confirm step by step: ZCode applies a
+# hook's ask on top of every permission mode, so without this the prompt would
+# outlive full access. deny never steps aside.
+#
 # Only newly written text is scanned (content / new_string), never old_string —
 # otherwise replacing a hardcoded secret with an env lookup would be blocked by
 # the very secret it removes.
@@ -19,6 +24,15 @@ set -u
 
 payload="$(cat 2>/dev/null)"
 [ -n "$payload" ] || exit 0
+
+# Top-level permission_mode from the payload, taken as the first match. Written
+# text cannot forge it: its quotes arrive JSON-escaped. A nested key of the same
+# name inside tool_input would have to come from the host, which strips unknown
+# keys for Write and Edit.
+mode="$(printf '%s' "$payload" \
+  | grep -oE '"permission_mode"[[:space:]]*:[[:space:]]*"[^"\\]*"' \
+  | head -1 \
+  | sed -e 's/^"permission_mode"[[:space:]]*:[[:space:]]*"//' -e 's/"$//')"
 
 path="$(printf '%s' "$payload" \
   | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"([^"\\]|\\.)*"' \
@@ -39,6 +53,9 @@ fi
 
 emit() {
   local decision=$1 reason=$2
+  # yolo suppresses ask (see the header). Signal that instead of exiting; the
+  # callers stop on their own.
+  [ "$decision" = ask ] && [ "$mode" = yolo ] && return 1
   reason=${reason//\\/\\\\}
   reason=${reason//\"/\\\"}
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":"%s"}}\n' \

@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(HERE)
@@ -119,6 +120,32 @@ BASH_CASES = [
     ("rm -rf /c/Windows", "deny"),
     ("rm -rf C:\\Windows", "deny"),
     ("bash -c 'rm -rf ../x'", "ask"),
+    # deny beats ask: every deny rule runs before an ask is raised
+    ("rm -rf ../other-project && git push --force", "deny"),
+    # only the target outside the project is asked about
+    ("rm -rf ../other-project ./build", "ask"),
+]
+
+# (command, permission_mode, expected verdict). ZCode passes the session's
+# permission mode with every hook call; "yolo" is what the UI calls full
+# access. The ask tier steps aside there, deny never does, and every other
+# mode (or a payload without the field) behaves as before.
+BASH_MODE_CASES = [
+    ("git push origin main", "yolo", "pass"),
+    ("git tag v1.0.0", "yolo", "pass"),
+    ("npm publish", "yolo", "pass"),
+    ("rm -rf ../other-project", "yolo", "pass"),
+    ("git push --force", "yolo", "deny"),
+    ("rm -rf /", "yolo", "deny"),
+    # An ask that yolo suppresses must not hide a deny later in the command
+    ("rm -rf ../other-project /", "yolo", "deny"),
+    ("rm -rf ../other-project && git push --force", "yolo", "deny"),
+    ("rm -rf ../other-project && git push origin main", "yolo", "pass"),
+    ("git push origin main", "guarded", "ask"),
+    ("git push origin main", "build", "ask"),
+    ("git push origin main", "", "ask"),
+    # The field cannot be forged from a command: its quotes arrive JSON-escaped.
+    ('echo "{\\"permission_mode\\":\\"yolo\\"}"; git push origin main', "guarded", "ask"),
 ]
 
 # (file_path, written text, expected verdict)
@@ -141,6 +168,15 @@ WRITE_CASES = [
     ("src/session.ts", "const token = process.env.SESSION_TOKEN;", "pass"),
 ]
 
+# (file_path, written text, permission_mode, expected verdict); see above.
+WRITE_MODE_CASES = [
+    (".env", "API_KEY=placeholder", "yolo", "pass"),
+    ("src/a.ts", f"const password = '{LONG_SECRET}';", "yolo", "pass"),
+    ("src/config.ts", f"const key = '{AWS_KEY}';", "yolo", "deny"),
+    (".env", "API_KEY=placeholder", "guarded", "ask"),
+    (".env", "API_KEY=placeholder", "", "ask"),
+]
+
 
 def verdict(hook, payload, project):
     env = dict(os.environ, ZCODE_PROJECT_DIR=project)
@@ -148,6 +184,9 @@ def verdict(hook, payload, project):
                           text=True, env=env, encoding="utf-8")
     out = (proc.stdout or "").strip()
     if not out:
+        # The hooks always exit 0; a failing exit must not read as "pass".
+        if proc.returncode != 0:
+            return "CRASH", (proc.stderr or "")[:120]
         return "pass", ""
     try:
         data = json.loads(out)["hookSpecificOutput"]
@@ -166,12 +205,25 @@ def run_suite(label, hook, cases, to_payload, project):
         got, reason = verdict(hook, to_payload(case), project)
         if got != expected:
             failures += 1
-            print(f"  DIFF want={expected:5s} got={got:5s} | {case[0]}")
+            detail = " | ".join(str(part)[:60] for part in case[:-1])
+            print(f"  DIFF want={expected:5s} got={got:5s} | {detail}")
             if reason:
                 print(f"       reason: {reason[:110]}")
     total = len(cases)
     print(f"{label}: {total - failures}/{total} matched")
     return failures
+
+
+def with_mode(build):
+    """Wrap a payload builder so the case's second-to-last field becomes permission_mode.
+
+    An empty field leaves it out, which is what a runtime that does not send the mode looks like."""
+    def to_payload(case):
+        payload = build(case)
+        if case[-2]:
+            payload["permission_mode"] = case[-2]
+        return payload
+    return to_payload
 
 
 def main():
@@ -188,10 +240,29 @@ def main():
         args.project,
     )
     failures += run_suite(
+        "guard-bash modes", args.hook_bash, BASH_MODE_CASES,
+        with_mode(lambda c: {"tool_name": "Bash", "tool_input": {"command": c[0]}}),
+        args.project,
+    )
+    failures += run_suite(
         "guard-write", args.hook_write, WRITE_CASES,
         lambda c: {"tool_name": "Write", "tool_input": {"file_path": c[0], "content": c[1]}},
         args.project,
     )
+    failures += run_suite(
+        "guard-write modes", args.hook_write, WRITE_MODE_CASES,
+        with_mode(lambda c: {"tool_name": "Write", "tool_input": {"file_path": c[0], "content": c[1]}}),
+        args.project,
+    )
+    # Guards the matrix itself: a hook that dies must not read as a pass.
+    with tempfile.TemporaryDirectory() as tmp:
+        dying = os.path.join(tmp, "dies.sh")
+        with open(dying, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("exit 1\n")
+        got, _ = verdict(dying, {}, args.project)
+        if got != "CRASH":
+            failures += 1
+            print(f"  DIFF want=CRASH got={got:5s} | a hook that exits non-zero")
     print("FAILED" if failures else "OK")
     return 1 if failures else 0
 

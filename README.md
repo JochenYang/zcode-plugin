@@ -21,7 +21,7 @@
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
 | `plugins/dev-workflow` | 0.5.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 22 个专项子智能体自动安装到 `~/.zcode/agents` |
-| `plugins/guardrails` | 0.1.2 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗 |
+| `plugins/guardrails` | 0.2.0 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.1.6 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 
@@ -105,6 +105,8 @@
 - 写入 `.env*`（放行 `.env.example`/`.template`/`.sample`）、`id_rsa`、`*.pem`、`.npmrc`、`credentials`、`secrets.*`
 - 疑似密钥赋值（20 字符以上字面量赋给 `password`/`secret`/`api_key` 等）、JWT
 
+确认级只在「本来就要确认」的模式下生效。ZCode 会把会话当前的权限模式传给钩子：处于**完全访问**（`yolo`）时，上面整段 `ask` 直接放行——否则即使开了完全访问，推送主分支、打 tag、发布这些照样弹窗，因为 ZCode 对钩子的确认是叠加在权限模式之上的；`deny` 在任何模式下都拦，而且**硬拦优先于确认**：一条命令或一次写入里同时有硬拦和确认级内容时直接拦，不会先弹确认再放行整条命令。自主模式（`guarded`）、默认模式，以及不传这个字段的旧版本，照旧询问。
+
 删除判定按**位置**而非命令形态，所以项目内清理完全不打扰。`rm`、cmd 的 `del`/`rd`/`rmdir` 与 PowerShell 的 `Remove-Item` 走同一套位置检查：
 
 | 目标 | 判定 |
@@ -165,7 +167,7 @@ plugins/<plugin-name>/
 
 ```bash
 python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、agent 描述、引用、行尾、shell 语法
-python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，90 个用例
+python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，116 个用例（含权限模式维度）
 python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
 python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、清理插件已下架的、兼容旧 state
 ```

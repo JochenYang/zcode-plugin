@@ -21,7 +21,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
 | `plugins/dev-workflow` | 0.5.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
-| `plugins/guardrails` | 0.1.2 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt |
+| `plugins/guardrails` | 0.2.0 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
 | `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
 
@@ -105,6 +105,8 @@ Two `PreToolUse` hooks — the only constraint in this collection that does not 
 - Writes to `.env*` (`.env.example`/`.template`/`.sample` pass), `id_rsa`, `*.pem`, `.npmrc`, `credentials`, `secrets.*`
 - Secret-looking assignments (a 20+ character literal assigned to `password`/`secret`/`api_key`), JWTs
 
+The `ask` tier only exists in modes that confirm at all. ZCode passes the session's permission mode to the hook: in **full access** (`yolo`) every `ask` above passes silently — otherwise pushes to the main branch, tags and publishing would keep prompting even with full access on, because ZCode applies a hook's confirmation on top of the permission mode — while `deny` holds in every mode, and **deny beats ask**: a command or a write that contains both is denied outright instead of asking first and then running the whole line. Autonomous mode (`guarded`), the default modes and older builds that do not send the field still ask.
+
 Deletes are judged by **location**, not by command shape, so cleaning up inside the project never interrupts. `rm`, cmd's `del`/`rd`/`rmdir` and PowerShell's `Remove-Item` all run through the same position check:
 
 | Target | Verdict |
@@ -165,7 +167,7 @@ Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them a
 
 ```bash
 python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax
-python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 90 cases
+python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 116 cases including the permission-mode dimension
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
 python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
 ```
