@@ -172,6 +172,15 @@ describe('statSweep', () => {
   });
 });
 
+// The watcher restarts its debounce on every event, and Windows can report a change to a
+// directory more than a second after the write (something else on the machine enumerating it).
+// So wait for the flush instead of guessing when it happened.
+async function untilDirty(db, atLeast, limitMs = 12_000) {
+  const deadline = Date.now() + limitMs;
+  while (dirtyCount(db) < atLeast && Date.now() < deadline) await sleep(100);
+  return dirtyCount(db);
+}
+
 describe('watch', () => {
   test('marks changed paths dirty after a 2 s debounce and stops on close()', async () => {
     const root = scratchDir('sync-watch');
@@ -179,17 +188,21 @@ describe('watch', () => {
     writeProject(root, { 'a.ts': SAMPLE, 'sub/b.ts': SAMPLE });
     const db = memDb();
     const w = watch(root, db);
-    fs.appendFileSync(path.join(root, 'a.ts'), '\n// edit\n');
-    writeProject(root, { 'sub/c.ts': SAMPLE });
-    await sleep(600);
-    assert.equal(dirtyCount(db), 0, 'debounce window still open');
-    await sleep(2200);
-    assert.deepEqual(takeDirty(db).map((d) => d.path).sort(), ['a.ts', 'sub/c.ts']);
+    try {
+      fs.appendFileSync(path.join(root, 'a.ts'), '\n// edit\n');
+      writeProject(root, { 'sub/c.ts': SAMPLE });
+      await sleep(600);
+      assert.equal(dirtyCount(db), 0, 'debounce window still open');
+      await untilDirty(db, 2);
+      assert.deepEqual(takeDirty(db).map((d) => d.path).sort(), ['a.ts', 'sub/c.ts']);
 
-    w.close();
-    fs.appendFileSync(path.join(root, 'sub/b.ts'), '\n// late edit\n');
-    await sleep(2400);
-    assert.equal(dirtyCount(db), 0, 'closed watcher marks nothing');
+      w.close();
+      fs.appendFileSync(path.join(root, 'sub/b.ts'), '\n// late edit\n');
+      await sleep(2400);
+      assert.equal(dirtyCount(db), 0, 'closed watcher marks nothing');
+    } finally {
+      w.close();
+    }
   });
 
   test('with specs, build output never reaches the dirty queue (a test run writes thousands of such files)', async () => {
@@ -198,17 +211,23 @@ describe('watch', () => {
     writeProject(root, { 'a.ts': SAMPLE });
     const db = memDb();
     const w = watch(root, db, { specs: await loadSpecs() });
-    // What a test/build run leaves behind: source maps, build info, snapshots, logs.
-    writeProject(root, {
-      'dist/a.js.map': '{"version":3}',
-      'tsconfig.tsbuildinfo': '{}',
-      '__snapshots__/a.test.ts.snap': 'x',
-      'out.log': 'x',
-      'b.ts': SAMPLE,
-    });
-    await sleep(2600);
-    assert.deepEqual(takeDirty(db).map((d) => d.path), ['b.ts'], 'only files a language pack claims are marked');
-    w.close();
+    try {
+      // What a test/build run leaves behind: source maps, build info, snapshots, logs.
+      writeProject(root, {
+        'dist/a.js.map': '{"version":3}',
+        'tsconfig.tsbuildinfo': '{}',
+        '__snapshots__/a.test.ts.snap': 'x',
+        'out.log': 'x',
+        'b.ts': SAMPLE,
+      });
+      await untilDirty(db, 1);
+      assert.deepEqual(takeDirty(db).map((d) => d.path), ['b.ts'], 'only files a language pack claims are marked');
+      // Every event has been flushed by now; nothing else may follow.
+      await sleep(2400);
+      assert.equal(dirtyCount(db), 0, 'build output is never marked, late events included');
+    } finally {
+      w.close();
+    }
   });
 
   test('ignores events under the index directory when it lives inside the root', async () => {
