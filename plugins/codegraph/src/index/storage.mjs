@@ -27,8 +27,9 @@ const USAGE_INTERVAL_MS = 60 * 60_000;
 const USAGE_FILE = 'used.at';
 const KEY = /^[0-9a-f]{16}$/;
 
-export function indexesDir() {
-  return path.join(dataDir(), 'indexes');
+/** The directory every index lives under. `data` is the plugin data directory; the extension names it explicitly instead of relying on the environment. */
+export function indexesDir(data = dataDir()) {
+  return path.join(data, 'indexes');
 }
 
 function mtimeOf(file) {
@@ -118,15 +119,16 @@ export function touchUsage(root, { now = Date.now() } = {}) {
 
 /**
  * Every index of the store, least recently used first.
- * @param {{ probe?: boolean }} [options]  `probe` (default) checks whether each project folder
- *   still exists, to tell an orphan from an index in use. It is a filesystem call per project
- *   and can wait a long time for a path on an unreachable network share, so the automatic
- *   sweep does without it: the age rule does not need the answer.
- * @returns {{ key: string, dir: string, root: string|null, state: string, files: number, symbols: number,
+ * @param {{ probe?: boolean, data?: string }} [options]  `probe` (default) checks whether each
+ *   project folder still exists, to tell an orphan from an index in use. It is a filesystem call
+ *   per project and can wait a long time for a path on an unreachable network share, so the
+ *   automatic sweep does without it: the age rule does not need the answer. `data` is the
+ *   plugin data directory to read (the extension names the one the host told it).
+ * @returns {{ key: string, dir: string, root: string|null, state: string, files: number, filesDone: number, symbols: number,
  *   bytes: number, lastUsedAt: number, inUse: boolean, orphan: boolean }[]}
  */
-export function listIndexes({ probe = true } = {}) {
-  const base = indexesDir();
+export function listIndexes({ probe = true, data = dataDir() } = {}) {
+  const base = indexesDir(data);
   let entries;
   try {
     entries = fs.readdirSync(base, { withFileTypes: true });
@@ -146,6 +148,8 @@ export function listIndexes({ probe = true } = {}) {
       root,
       state: typeof status?.state === 'string' ? status.state : 'unknown',
       files: Number(status?.filesTotal) || 0,
+      // How far a build got; equals `files` once the index is ready.
+      filesDone: Number(status?.filesDone) || 0,
       symbols: Number(status?.symbols) || 0,
       bytes: bytesOf(dir),
       lastUsedAt: lastUsedAt(dir, status),
@@ -208,12 +212,13 @@ export function planSweep(entries, { keep = [], maxIdleDays = 0, maxTotalBytes =
  * accepted, so a wrong path can never remove anything else.
  *
  * @param {string} dir
+ * @param {string} [data]  the plugin data directory the store is read from
  * @returns {boolean} false when nothing was removed: a file of the index is open elsewhere
  *   (Windows keeps an open file locked), the filesystem refused, or the directory is not empty
  *   after the retries. Only a path outside the store throws.
  */
-export function removeIndex(dir) {
-  if (path.dirname(path.resolve(dir)) !== path.resolve(indexesDir()) || !KEY.test(path.basename(dir))) {
+export function removeIndex(dir, data = dataDir()) {
+  if (path.dirname(path.resolve(dir)) !== path.resolve(indexesDir(data)) || !KEY.test(path.basename(dir))) {
     throw new Error(`removeIndex: ${dir} is not an index directory of this store`);
   }
   const options = { force: true, maxRetries: 3, retryDelay: 50 };
@@ -235,10 +240,11 @@ export function removeIndex(dir) {
  * removal: a session may have opened the project since the listing.
  *
  * @param {{ dir: string }} entry  from `listIndexes`
+ * @param {string} [data]  the plugin data directory the store is read from
  * @returns {boolean} false when the index is in use or could not be removed
  */
-export function removeListed(entry) {
-  return !lockHeld(path.join(entry.dir, 'lock')) && removeIndex(entry.dir);
+export function removeListed(entry, data = dataDir()) {
+  return !lockHeld(path.join(entry.dir, 'lock')) && removeIndex(entry.dir, data);
 }
 
 /**
@@ -249,13 +255,13 @@ export function removeListed(entry) {
  * @returns {{ removed: object[], busy: object[] }} indexes that were deleted, and those that
  *   were due but could not be deleted (`error` names the filesystem error, when there was one)
  */
-export function sweepIndexes({ keep = [], maxIdleDays = 0, maxTotalBytes = 0, now = Date.now(), probe = false, entries = listIndexes({ probe }) } = {}) {
+export function sweepIndexes({ keep = [], maxIdleDays = 0, maxTotalBytes = 0, now = Date.now(), probe = false, data = dataDir(), entries = listIndexes({ probe, data }) } = {}) {
   const { remove } = planSweep(entries, { keep, maxIdleDays, maxTotalBytes, now });
   const removed = [];
   const busy = [];
   for (const entry of remove) {
     try {
-      (removeListed(entry) ? removed : busy).push(entry);
+      (removeListed(entry, data) ? removed : busy).push(entry);
     } catch (err) {
       busy.push({ ...entry, error: err?.code ?? String(err?.message ?? err) });
     }

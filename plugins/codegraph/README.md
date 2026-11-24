@@ -45,6 +45,20 @@ ZCode 的本地代码图谱插件：一个零 npm 依赖的 MCP server，用随�
 - `/codegraph clean`：按上面的策略清理；`clean all`：除当前项目外全部删除；`clean current`：删掉当前项目的索引，下一次调用时重建（索引看起来不对时用它从头来过）；`clean <项目路径>`：删指定项目的。清理分两步：先列出会删什么，再由模型带着确认执行，所以命令一发出去就会完成，模型不会自作主张地清理。
 - `codegraph_status` 工具对应 `storage: true` 与 `clean` / `project` / `confirm` 参数。
 
+## 桌面端界面
+
+在 ZCode 桌面端（命令行会话里没有），插件另外带一个扩展，把上面这些事情做成能点的界面。**首次激活时 ZCode 会弹窗请你确认。**
+
+- **输入框状态位**（每个会话一项）：输入框工具栏里显示当前项目索引的状态——就绪时是文件数（`291 个文件`），构建中是百分比，出错时是 `出错`，项目自己的 `.zcode/codegraph.json` 关闭了索引时是 `未开启`；项目还没有索引时什么都不显示。悬停能看到符号数、大小、多久前建的、有没有改过但还没同步的文件。点它打开索引管理面板。有索引在构建时每 5 秒刷新一次，否则每 60 秒。
+- **侧边栏入口**：侧边栏的插件入口里有一项「代码图谱索引」，打开同一个面板。
+- **索引管理面板**：列出本机所有项目的索引——路径、状态、大小与文件数、上次使用，以及备注（当前会话、使用中、项目目录不存在、已到期）。
+  - **删除**分两步：先点「删除」，再点「确认删除」。打开着的会话的项目、正在被别的会话写入的索引不能在这里删（按钮置灰）；前者要去那个会话里用 `/codegraph clean current`。
+  - **清理到期索引**：按「闲置天数 / 总量上限」算出来会被删的那些（表里标着「已到期」），同样分两步。
+  - **清理策略**：闲置多少天后删除、总量上限（MB），`0` 表示不限。保存在插件设置里（`maxIdleDays` / `maxTotalMB`），下次会话打开时生效；`codegraph.json` 里写了的那一项在这里改不了，面板会说明去哪里改。
+- 面板跟着应用的主题（明 / 暗）和语言走，样式用的是 ZCode 自己给沙箱界面定的那一套，没有另写一套外观。宿主交给沙箱页面的变量里不含应用的组件色，所以卡片、主按钮、输入框用的是那套样式内置的颜色——ZCode 自带的可视化也是如此。
+
+状态位和面板只读本机的索引目录，不联网。项目的路径在一段时间内不应答（断开的网络盘、没插的移动硬盘）时，这一轮不显示它的状态位；面板里它的索引也不受「打开会话」的保护——被删了只是下次重建。
+
 ## 钩子
 
 三个 `type: "process"` 钩子（`hooks/hooks.json`，按约定自动加载，不需要在清单里声明）：
@@ -158,27 +172,35 @@ macOS/Linux  ~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json
 - **索引可能滞后几秒**：外部编辑（非 ZCode 工具）靠下一次查询前的 mtime 扫描补上；工具输出首行会标 `stale: N`。
 - **钩子依赖 PATH 里的 node**：见「安装要求」。
 - **每个会话一个 server 进程**：多个会话各自打开同一个 SQLite，写入走 pid 文件锁；拿不到锁的会话只读（查询照常，不同步）。
+- **界面入口用的是 ZCode 没有公开文档的扩展接口**：只在桌面端生效，接口按 4.0.10870 的打包代码核对过；清单里声明的 `engines.zcode ^1.3.0` 与已安装的 model-speed 同值，宿主是否满足没有直接证据。按宿主处理清单的方式，应用升级后扩展部分若不再合法会被标成无效并忽略，索引、工具、钩子是分开加载的（这是读打包代码得出的，没有实测过升级后的情形）。
+- **浅色主题下有几处官方样式不到 WCAG AA 的对比度**：用 ZCode 4.0.10870 的主题实测，状态徽章 2.04:1、错误色 2.81:1、次要文字 4.26:1（正文 9.93:1；深色主题下全部 ≥ 5:1）。它们是应用自带组件本来的样子，没有改动。
 
 ## 开发与验证
 
 ```bash
-node --check plugins/codegraph/bin/hook.mjs plugins/codegraph/bin/server.mjs
+node --check plugins/codegraph/bin/hook.mjs plugins/codegraph/bin/server.mjs plugins/codegraph/bin/extension.mjs
 node --test plugins/codegraph/tests/hooks/*.test.mjs     # 钩子：真实 spawn，含 Windows 管道路径
+node --test plugins/codegraph/tests/extension/           # 扩展逻辑，以及页面在无头浏览器里的检查（要 Chrome 或 Edge，没有则跳过后者）
 python scripts/check-consistency.py                      # 版本四处一致、行尾、市场 source
 ```
+
+面板的检查把页面放进 320 像素与桌面宽度的窗口里各走一遍（中英文、明暗两套主题），包括两个样式块的性质、类名、删除与清理的两步确认、焦点、加载中、空存储、出错后重试；把 `CODEGRAPH_PAGE` 指向另一份页面可以确认这些检查在页面被改坏时会失败。
 
 ## 目录
 
 ```text
 plugins/codegraph/
-├── .zcode-plugin/plugin.json   # 清单：mcpServers（含 CODEGRAPH_* env 映射）+ commands + userConfig
+├── .zcode-plugin/plugin.json   # 清单：mcpServers（含 CODEGRAPH_* env 映射）+ commands + userConfig + 桌面端的 extension / slots
 ├── bin/server.mjs              # MCP server 入口（Node ≥ 22.13 检查、--liftoff-only 保险）
 ├── bin/hook.mjs                # 钩子入口：session-start / post-tool
+├── bin/extension.mjs           # 桌面端扩展：输入框状态位、索引管理面板和它的四个工具
 ├── hooks/hooks.json            # SessionStart + UserPromptSubmit + PostToolUse，type: process
 ├── commands/codegraph.md       # /codegraph [refresh]
-├── src/                        # 路径、引擎、索引器、解析、存储、MCP、渲染
+├── src/                        # 路径、引擎、索引器、解析、存储、MCP、渲染；src/extension/ 是状态位与面板数据的纯逻辑
 ├── languages/*.mjs             # 语言包（每包一个文件，无中央清单）
 ├── grammars/                   # wasm、运行时、参考查询、许可文本
+├── ui/index.html               # 索引管理面板，全部内联：第一个 <style> 是 ZCode 沙箱样式表的逐条原文，第二个只放版式
+├── ui/design-system-zcode.md   # 面板对照的设计系统（ZCode 的主题契约与工具类）
 └── tests/                      # node --test，按 lane 分目录
 ```
 
@@ -186,4 +208,4 @@ plugins/codegraph/
 
 ## English summary
 
-codegraph is a local code-graph plugin for ZCode: a zero-dependency MCP server that indexes 35 language rows (33 symbol-extracting packs plus COBOL and Liquid at file level) with bundled tree-sitter wasm into SQLite under the plugin data folder, and exposes three tools — `codegraph_status`, `codegraph_lookup` (search / symbol / callers / callees / impact / outline) and `codegraph_map` — returning exact `file:line` ranges so the model reads only what it needs; the leading rows of a search also say who uses them (` · 12 uses in 4 files (3 in source)`, `~` when some of those links are by unique name). The index is built or refreshed silently when a session opens, so a new project is indexed without the model asking. Indexes live under the plugin data folder, one per project; when a session opens the store is tidied (indexes unused for `maxIdleDays` are deleted, as are the least recently used ones while the store is over `maxTotalMB`; each is rebuilt when its project is opened again), `/codegraph storage` lists them with size and last use, `/codegraph clean` removes them, and a project can switch indexing off or exclude paths with its own `.zcode/codegraph.json`. Three hooks (`SessionStart` for the status and guidance, `UserPromptSubmit` to announce an index that became ready mid-session, `PostToolUse` to append edited files to `dirty.log`) are accelerators only; the server's mtime scan keeps the index correct without them. Requirements: Node ≥ 22.13; the MCP side has ZCode's built-in Node fallback, the hooks resolve `node` from PATH only. No network, no telemetry, no project code execution. Configuration: `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json` (`autoIndex`, `minFilesToAutoIndex`, `maxFiles`, `exclude`, `languages`, `maxIdleDays`, `maxTotalMB`) with `CODEGRAPH_*` environment variables that only apply when the file leaves the field unset. Known limits: COBOL and Liquid are file-level, dynamic language features stay unresolved (`?`), the first build runs in the background.
+codegraph is a local code-graph plugin for ZCode: a zero-dependency MCP server that indexes 35 language rows (33 symbol-extracting packs plus COBOL and Liquid at file level) with bundled tree-sitter wasm into SQLite under the plugin data folder, and exposes three tools — `codegraph_status`, `codegraph_lookup` (search / symbol / callers / callees / impact / outline) and `codegraph_map` — returning exact `file:line` ranges so the model reads only what it needs; the leading rows of a search also say who uses them (` · 12 uses in 4 files (3 in source)`, `~` when some of those links are by unique name). The index is built or refreshed silently when a session opens, so a new project is indexed without the model asking. Indexes live under the plugin data folder, one per project; when a session opens the store is tidied (indexes unused for `maxIdleDays` are deleted, as are the least recently used ones while the store is over `maxTotalMB`; each is rebuilt when its project is opened again), `/codegraph storage` lists them with size and last use, `/codegraph clean` removes them, and a project can switch indexing off or exclude paths with its own `.zcode/codegraph.json`. Three hooks (`SessionStart` for the status and guidance, `UserPromptSubmit` to announce an index that became ready mid-session, `PostToolUse` to append edited files to `dirty.log`) are accelerators only; the server's mtime scan keeps the index correct without them. Requirements: Node ≥ 22.13; the MCP side has ZCode's built-in Node fallback, the hooks resolve `node` from PATH only. No network, no telemetry, no project code execution. Configuration: `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json` (`autoIndex`, `minFilesToAutoIndex`, `maxFiles`, `exclude`, `languages`, `maxIdleDays`, `maxTotalMB`) with `CODEGRAPH_*` environment variables that only apply when the file leaves the field unset. Known limits: COBOL and Liquid are file-level, dynamic language features stay unresolved (`?`), the first build runs in the background. In the ZCode desktop app an extension adds a status item in the composer toolbar (file count when the index is ready, the percentage while it builds, `error`, or `off` when the project switched indexing off) that opens an index management view: every index with state, size and last use; delete and clean-what-is-due each ask for a second press; the two policy limits can be changed there, and it follows the app's theme and language, drawn with ZCode's own sandbox stylesheet. It uses an interface ZCode has not documented (checked against 4.0.10870) and asks for confirmation the first time it is activated.

@@ -275,3 +275,26 @@ export function applyProjectConfig(config, project) {
   }
   return out;
 }
+
+/**
+ * What the user's file alone says about `keys`: no environment, no default. A key the file
+ * does not set, or sets to something invalid, is `undefined`. The extension asks this to tell
+ * a limit the file fixed from one the plugin configuration (`userConfig`) supplies through the
+ * environment, which only applies where the file is silent.
+ *
+ * @param {string[]} keys
+ * @param {{ file?: string, stderr?: { write: (s: string) => unknown } }} [options]
+ * @returns {Record<string, number|boolean|string[]|undefined>}
+ */
+export function fileSettings(keys, { file = configPath(), stderr = process.stderr } = {}) {
+  const warn = (message) => stderr.write(`codegraph: ${message}\n`);
+  const fromFile = readConfigFile(file, warn) ?? {};
+  const out = {};
+  for (const key of keys) {
+    const spec = FIELD_SPECS[key];
+    const value = fromFile[key];
+    const checked = spec && value !== undefined && value !== null ? spec.check(value) : { ok: false };
+    out[key] = checked.ok ? checked.value : undefined;
+  }
+  return out;
+}

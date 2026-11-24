@@ -173,3 +173,14 @@ grammar they belong to.
 
 Liquid: no tree-sitter grammar was found for it; the plugin treats it as
 `file-level` (no symbol extraction) and ships nothing for it.
+
+## 7. ZCode sandbox stylesheet (rules reproduced in `ui/index.html`)
+
+The first `<style>` block of `ui/index.html` (`id="zcode-contract"`) is a
+rule-for-rule copy of the stylesheet ZCode Desktop ships for UI rendered inside
+the app (ZCode Desktop 4.0.10870, `out/plugin-sandbox/visualize.css`), minus the
+rules this view does not use. It is there so that the plugin's index management
+view looks the way every other sandboxed view in ZCode looks; the rules are
+reproduced as the app wrote them and are not edited. ZCode's own terms apply to
+that block. The second `<style>` block (`id="codegraph-layout"`) is this
+plugin's own and contains layout only.

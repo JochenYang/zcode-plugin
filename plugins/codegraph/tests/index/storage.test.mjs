@@ -242,6 +242,17 @@ describe('sweepIndexes', () => {
     assert.throws(() => removeIndex(path.join(indexesDir(), 'not-a-key')), /is not an index directory of this store/);
     assert.equal(fs.existsSync(path.join(elsewhere, 'keep.txt')), true);
   });
+
+  test('the store can be named: an index of another data directory is not this store\'s, and removeIndex refuses it there', () => {
+    const other = scratchDir('storage-other-data');
+    dirs.push(other);
+    const dir = fakeIndex({ root: project() });
+    assert.equal(listIndexes({ probe: false }).length, 1, 'in the default store');
+    assert.deepEqual(listIndexes({ probe: false, data: other }), [], 'and in no other data directory');
+    assert.throws(() => removeIndex(dir, other), /is not an index directory of this store/);
+    assert.equal(fs.existsSync(dir), true, 'the refusal comes before anything is touched');
+    assert.equal(removeIndex(dir), true);
+  });
 });
 
 describe('removeIndex with a busy index', { skip: process.platform !== 'win32' ? 'only Windows refuses to delete an open file' : false }, () => {

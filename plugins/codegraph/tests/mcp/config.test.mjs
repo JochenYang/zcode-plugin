@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DEFAULT_CONFIG, applyProjectConfig, loadConfig, loadProjectConfig, projectConfigPath } from '../../src/config.mjs';
+import { DEFAULT_CONFIG, applyProjectConfig, fileSettings, loadConfig, loadProjectConfig, projectConfigPath } from '../../src/config.mjs';
 import { configPath } from '../../src/paths.mjs';
 
 const dirs = [];
@@ -313,5 +313,21 @@ describe('project settings', () => {
     assert.equal(config.autoIndexOffBy, 'project');
     assert.deepEqual(config.exclude, ['dist', 'vendor/']);
     assert.deepEqual(loadConfig({ file, env: {}, stderr: capture().stderr }).exclude, ['dist'], 'without a project nothing changes');
+  });
+});
+
+describe('fileSettings', () => {
+  test('what the user\'s file alone says: a valid value, undefined for an invalid one, for a key the file leaves out, and without a file', () => {
+    const file = tmpFile();
+    const out = capture();
+    fs.writeFileSync(file, JSON.stringify({ maxIdleDays: 30, maxTotalMB: -1, autoIndex: false }));
+    assert.deepEqual(fileSettings(['maxIdleDays', 'maxTotalMB', 'autoIndex'], { file, stderr: out.stderr }), { maxIdleDays: 30, maxTotalMB: undefined, autoIndex: false });
+    // An invalid value is not reported here: the server said so when it loaded the file, and a
+    // view that reads the file on every refresh must not say it again each time.
+    assert.deepEqual(out.lines, []);
+    // No environment and no default take part: only the file.
+    assert.deepEqual(fileSettings(['maxIdleDays', 'maxTotalMB'], { file, env: { CODEGRAPH_MAX_TOTAL_MB: '5' }, stderr: capture().stderr }), { maxIdleDays: 30, maxTotalMB: undefined });
+    const absent = path.join(path.dirname(file), 'none.json');
+    assert.deepEqual(fileSettings(['maxIdleDays'], { file: absent, stderr: capture().stderr }), { maxIdleDays: undefined });
   });
 });

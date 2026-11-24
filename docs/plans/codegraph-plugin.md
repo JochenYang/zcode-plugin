@@ -68,6 +68,8 @@
 | W23 | P1 | search 质量 v2（来自 W19 基线发现）：兜底每词一条谓词（词序无关）、≤2 字符的 ASCII 词须整词且该规则下推到 SQL 候选池、完全同名优先且源码先于测试/脚本、结果保持相关度顺序（不再按 path 重排）、非可调用 kind 的入边写作 `used by`；空结果的处理在 v2.1 改为锚定最长的两个词做部分匹配（子集重试对 4–5 个词的查询轮不到两词组合）；SessionStart 指南按**任务类型**触发并带「需求 → 操作」映射（写成「查名字」时模型直接用 `rg`）；顺带修带 `kind` 时 SQL 参数绑定错位。11-24 晚补修：「源码先于测试 / 脚本」的目录规则此前在**仓库根目录**下不生效（索引里的路径没有前导斜杠），`tests/`、`scripts/`、`spec/`、`e2e/`、`benchmarks/` 都被当成源码；现匹配前补斜杠，清单补 Go / pytest / Django / C# / 快照目录，每一项都有用例 | 主 agent | [x] |
 | W24 | P2 | search 结果的前 3 行带「谁依赖它」（` · 12 uses in 4 files (3 in source)`）；理由：定向的那一次调用就带上一片图谱，T20 的 13 个会话里模型在第一次编辑后从没回来查过 `callers` / `impact`。按唯一名字连上的引用让数字带 `~`；被引用超过 2000 处的符号只给总数（否则单词查询在 cindy 上多花 100–150 ms） | 主 agent | [x] |
 | W25 | P1 | 索引存储管理与按项目关闭（用户 11-24 晚：「都知道缺陷，为什么不去调研环境和同类做法再优化好；索引清理功能显示在哪里、ZCode 有没有扩展接口」）。同类做法：JetBrains 自动清 180 天没更新的目录、Cursor / Roo 都有「列出索引 + 删除」入口；ZCode 有未公开文档的扩展接口（输入框状态位、侧边栏入口、HTML 面板、通知、插件设置）。本轮做与界面无关的核心：`src/index/storage.mjs`（清单、最近使用、清理：孤儿 / 闲置 `maxIdleDays` / 总量 `maxTotalMB`，永不删当前项目与在用的索引）；会话开始时自动整理；`codegraph_status` 的 `storage` / `clean` / `project` / `confirm` 与 `/codegraph storage|clean`；项目根 `.zcode/codegraph.json` 只能收紧；状态文件丢失自愈；`autoIndex` 关闭时工具不再自动同步。审查 `review-7-store-management.md`（无阻塞；4 条 P2：孤儿不绕过闲置期、自动清理不探测远端路径、逐项隔离删除错误、补 `clean=current` 重建的端到端）。界面入口（状态位 + 面板）另开 | 主 agent | [x] |
+| W26 | P1 | 索引管理的界面入口（用户 11-24 晚：「把界面入口做好，一定要按照 Z Code 的官方主题、主题组件和 UI 风格设计，不能随意」）。`bin/extension.mjs`（输入框状态位 `composer.status`、侧边栏入口、命令、视图与四个工具）、`src/extension/describe.mjs`、`ui/index.html`（`#zcode-contract` = 应用沙箱样式表逐条原文，`#codegraph-layout` 只有版式）、清单的 `extension` / `slots`。共用进程里对项目路径先探测再同步调用；删除与清理两步确认；迟到的会话快照丢弃、绘制串行。审查 `review-8-ui-entry.md`（两轮，均无阻塞） | 主 agent | [x] |
+| W27 | P2 | 索引管理面板的视觉整理（用户 11-25 看过真实效果：「徽章还行，面板不好看」，明天再做）。截图里的问题：路径被画成整列宽的灰条（`.storage-path` 是纵向 flex，`<code>` 被拉伸）；列太挤导致词内断行（徽章「未索 / 引」、「291 个文 / 件」、「4 小时 / 前」、表头「上次使 / 用」）；长路径中间硬断；标题、统计、目录、表格、按钮、卡片全是小字、没有层级；ZCode 内部的草稿工作区（`zcode-cache/.zcode/workspace/draft-*`）作为「未索引」条目混在列表里。方案待用户定：A 保留表格只修断行与灰条；B（推荐）改成一行一个索引的列表，仍只用官方工具类。用户 11-25 另选定：索引目录那一行加「打开目录」按钮——宿主没有对外打开目录的能力，由扩展用 `child_process` 启动系统文件管理器（`explorer` / `open` / `xdg-open`），路径固定为插件数据目录。逐项清单在 `.devflow/codegraph-plugin/t20-progress.md` 顶部 | 主 agent | [!] |
 
 类目：P0 不做就走不通 · P1 静默失败或数据风险 · P2 清理与一致性 · OPT 可选（不做要写明理由）。
 
@@ -82,7 +84,7 @@
 | 0 契约与骨架 | W1–W5 | T1–T5 PASS；35 种语法全部可加载；子智能体审查无阻塞 |
 | 1 并行开发 | W6–W14 | T6–T15 PASS；每条 lane 的文件边界未被越界；子智能体审查无阻塞 |
 | 2 集成与验证 | W15–W19 | T16–T20 PASS（T20 由用户执行，未完成前不得标 done） |
-| 3 收尾 | W21、W22、W23、W24、W25（W20 视 W19 数据：未开启） | T21–T26 PASS；安装进 ZCode 跑通 |
+| 3 收尾 | W21、W22、W23、W24、W25、W26（W20 视 W19 数据：未开启） | T21–T27 PASS；安装进 ZCode 跑通 |
 
 ## Parallel lanes（阶段 1）
 
@@ -139,11 +141,12 @@
 | 24 (W21) | 会话开始即索引 | 真实进程只握手不发工具调用；真实 ZCode 会话 | 未索引项目的索引自己建好并能回答；建完后的第一条用户消息处注入就绪状态，且每个会话只注入一次；家目录与 `autoIndex: false` 不创建任何东西；握手后立刻发起的查询保持 3 s 上界 | `node --test plugins/codegraph/tests/e2e/warm-start.test.mjs plugins/codegraph/tests/hooks/`；`node .tmp/e2e/silent-start-guards.mjs` | PASS（2026-11-24：真实会话 `sess_adf11df9` 17:12:51 注入 building、17:15:49 就绪、17:16:07 注入 ready；1,661 文件项目握手后首查 3.16 s 返回；审查 `review-5-silent-start.md`） |
 | 25 (W24) | search 带依赖摘要 | 单元测试；真实索引输出 | 前 3 行带 `uses in N files (M in source)`，其余行与其它操作不受影响 | `node --test plugins/codegraph/tests/store/usage.test.mjs plugins/codegraph/tests/graph/ plugins/codegraph/tests/render/` | PASS（2026-11-24：491 项 485 过 0 失败 6 跳过；真实索引上统计语句 0.05–0.16 ms，带 usage 的前三行里 61–86% 完全由 import 连上；已安装副本经真实协议输出 ` · 3 uses in 2 files (1 in source)`。审查 `review-6-usage-summary.md` 三轮收敛：第二轮抓到 1 条本轮引入的 P1（清单里 `/e2e/` 被打错）并顺带查出一个更早的缺陷——仓库根目录下的 `tests/`、`scripts/` 从未被识别为测试 / 脚本，都已修。未做：没有再用真实会话验证模型行为） |
 | 26 (W25) | 索引存储管理与按项目关闭 | 单元测试（存储策略纯函数、真实目录、被占用索引）；真实服务进程端到端（握手后清理、预演与确认、删当前项目后重建、按项目关闭的三种情形）；变异验证 | 孤儿与闲置索引被删、当前项目与在用的索引永不删；`clean` 不带 `confirm` 只列不删；项目文件只能收紧；状态文件丢失后工具照常回答 | `node --test plugins/codegraph/tests/index/storage.test.mjs plugins/codegraph/tests/e2e/warm-start.test.mjs plugins/codegraph/tests/mcp/`；`node .tmp/e2e/storage-probe.mjs`；`node .tmp/e2e/project-off-probe.mjs` | PASS（2026-11-24 深夜：526 项 520 过 0 失败 6 跳过；三轮共 11 处变异都被抓住；已安装副本经真实协议验证清单、预演、确认清理、`clean=current` 后重建、按项目关闭的三种情形；审查 `review-7-store-management.md` 无阻塞。本机真实存储只读预演：两个索引 15 MB，下次会话开始不删任何东西。未做：界面入口；macOS / Linux 没有环境；真实会话里 `/codegraph storage` 的那次调用在等用户点授权弹窗） |
+| 27 (W26) | 界面入口 | 单元测试（状态位四种状态与长度上限、`viewData` 能过 JSON、视图工具的拒绝与成功、清单与注册项一致、不应答的路径、迟到的会话快照、刷新循环不产生未处理拒绝）；页面在无头 Chrome 里的检查（320 px 与 1280、中英文、明暗）；对页面 16 处、对扩展入口 6 处变异；官方样式块与应用样式表逐条比对 | 状态位按状态显示且不超宿主上限；面板里删除与清理都要第二次点击；打开会话的项目与在用的索引不能从面板删；页面只用官方工具类、自己的样式只有版式；改坏页面时检查失败 | `node --test plugins/codegraph/tests/extension/`；`node .tmp/page-mutate.mjs`；`node .tmp/zcode-ui/verbatim.mjs .tmp/zcode-ui/visualize.css` | PASS（2026-11-25：`node --test plugins/codegraph/tests/extension/` → 29 项全过，其中 4 项在无头 Chrome 里打开页面；全套 557 项 551 过 0 失败 6 跳过；`check-consistency.py` ALL CHECKS PASSED；selftest 15 断言、32 个语法、193 项许可检查；22 处变异全部被抓住；官方样式块 56 条规则与应用样式表逐条一致；用 ZCode 4.0.10870 的真实令牌实测对比度——浅色主题下官方的状态徽章 2.04:1、错误色 2.81:1、次要文字 4.26:1 不到 WCAG AA，深色主题全部 ≥ 5.76，没有改这些工具类。审查 `review-8-ui-entry.md` 第一轮无阻塞。已安装，缓存与市场副本与工作树一致。**未做：真实应用里的验证**——扩展要完全退出应用再打开才会加载，首次激活要用户点确认，这两步我做不了） |
 
 ## Verification commands
 
-- `node --check plugins/codegraph/bin/server.mjs plugins/codegraph/bin/hook.mjs plugins/codegraph/bin/selftest.mjs`
-- `node --test plugins/codegraph/tests/*.test.mjs plugins/codegraph/tests/*/*.test.mjs`
+- `node --check plugins/codegraph/bin/server.mjs plugins/codegraph/bin/hook.mjs plugins/codegraph/bin/selftest.mjs plugins/codegraph/bin/extension.mjs`
+- `node --test plugins/codegraph/tests/*.test.mjs plugins/codegraph/tests/*/*.test.mjs`（`tests/extension/page.test.mjs` 要 Chrome 或 Edge，没有则跳过）
 - `node plugins/codegraph/bin/selftest.mjs --self-test`
 - `node plugins/codegraph/bin/selftest.mjs --grammars`
 - `node plugins/codegraph/bin/selftest.mjs --licenses`
@@ -162,7 +165,6 @@
 | 向量检索、SCIP 后端、`explore`、前置注入 | 见 W20/W21 与 Ruled out | W19 数据出来后 |
 | search 无符号命中时回退查 `refs` | W23 先解决空结果与排序；模型 grep 的 `membershipKind`、`requirePersonalAccount` 是 `refs` 表里的引用名而非符号，回退能直接答「谁引用了它」 | W23 装进 ZCode 的开臂数据出来后 |
 | Bash 检索时由钩子提醒改用 codegraph | 多一个每条 Bash 都会起的 node 进程；先看 W23 的开臂是否已经把退回 grep 的比例降下来 | W23 开臂数据出来后 |
-| 索引管理的界面入口（输入框状态位显示索引状态与大小、侧边栏入口、列出各项目索引并可删除的面板） | ZCode 有扩展接口（`extension` + `slots["composer.status"]` / `sidePane.launcher` / `contributes.views`，HTML 面板走 MCP Apps），但没有公开文档，首次激活要用户在弹窗里确认，我这边没法点；文字入口 `/codegraph storage` / `clean` 已能用 | 用户确认要做之后 |
 | 文件变化后在后台立即增量同步（上游 codegraph 的做法：监听 + 2 秒去抖后直接重解析） | 现在是标脏后等下一次工具调用；T20 的会话里没有观察到「调用时等同步」成为问题 | 用户反馈首次调用变慢时 |
 
 ## Rollback

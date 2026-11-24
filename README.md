@@ -24,7 +24,7 @@
 | `plugins/guardrails` | 0.2.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
-| `plugins/codegraph` | 0.1.0 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；零遥测、零外联、不执行项目代码 |
+| `plugins/codegraph` | 0.1.0 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；桌面端另有输入框状态位与索引管理面板；零遥测、零外联、不执行项目代码 |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
@@ -177,9 +177,10 @@ plugins/<plugin-name>/
 - 之后的代码变更是**静默、惰性**更新的：文件监听（2 秒去抖）、`PostToolUse` 钩子、每次调用前的 mtime 扫描只把改过的文件标脏，真正重新解析发生在**下一次 codegraph 工具调用之前**（不到 200 个文件前台同步，更多则转后台构建）；没有工具调用就不会重新解析，也不会提醒模型
 - 三个钩子都是加速器：`SessionStart`（startup/resume/clear/compact/fork）注入 ≤ 120 token 的索引状态与「何时用图、何时用 Grep」指引；`UserPromptSubmit` 在索引于会话中途才建好时通知一次（每个会话一次）；`PostToolUse`（Edit/Write，含 ApplyPatch 别名）只在索引目录已存在时向 `dirty.log` 追加一行，绝不创建目录。没有钩子时 server 靠 mtime 扫描照样正确
 - 索引存储会自己整理：每次会话打开时删除超过 `maxIdleDays`（默认 90 天）没再用过的索引，并可在总量超过 `maxTotalMB` 时从最久没用的删起；项目目录暂时找不到不是删除理由，正在被别的会话写入的也不动。`/codegraph storage` 列出本机所有项目的索引（路径、状态、大小、上次使用），`/codegraph clean [all | current | <项目>]` 手动清理
+- 桌面端另有界面入口（ZCode 未公开文档的扩展接口，首次激活要确认）：输入框工具栏的状态位显示当前项目索引的状态（文件数 / 构建百分比 / 出错 / 未开启），点开是索引管理面板——列出本机所有索引，删除与清理到期索引都分两步，清理策略在这里改；跟随应用的主题与语言，样式用 ZCode 自己的沙箱样式表
 - **Node ≥ 22.13**。MCP 侧 ZCode 有内置 Node 回退（Electron 的 Node 22.22.1），**钩子只认 PATH**——PATH 里没有 `node` 时钩子静默失效，索引仍正确
 - 配置文件 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json`（`autoIndex` / `minFilesToAutoIndex` / `maxFiles` / `exclude` / `languages` / `maxIdleDays` / `maxTotalMB`），环境变量 `CODEGRAPH_*` 仅在配置文件未设置该项时生效；项目根的 `.zcode/codegraph.json` 可以只针对这个项目关闭索引或追加排除（只能收紧，不能放宽用户设置）；手动入口 `/codegraph [refresh | storage | clean …]`
-- 已知限制：COBOL 与 Liquid 只有文件级；`getattr`、动态 import、反射不连边；首次构建在后台、期间结果标 partial
+- 已知限制：COBOL 与 Liquid 只有文件级；`getattr`、动态 import、反射不连边；首次构建在后台、期间结果标 partial；浅色主题下状态徽章等几处官方样式的对比度不到 WCAG AA
 
 工具参数、配置键、语言表、隐私与限制见 `plugins/codegraph/README.md`。
 
@@ -196,6 +197,7 @@ node --test plugins/git-conventions/tests/*.test.mjs  # 提交信息钩子：认
 python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、清理插件已下架的、兼容旧 state
 python plugins/dev-workflow/tests/test-review-gate.py  # 多轮审查闸门脚本：八道闸门、字段交叉校验与不合法状态的退出码（需要 node）
 node --test plugins/codegraph/tests/hooks/*.test.mjs  # codegraph 钩子：真实 spawn，SessionStart 文案/schema、dirty.log 协议、hooks.json 字段
+node --test plugins/codegraph/tests/extension/       # codegraph 桌面端扩展：状态位、面板的工具，以及面板在无头浏览器里的检查（要 Chrome 或 Edge）
 ```
 
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法、agent 描述把任务交给一个不存在的 agent 或与内置类型撞名。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。

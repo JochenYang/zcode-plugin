@@ -347,3 +347,42 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 - `tests/contract.test.mjs`：对 `languages/*.mjs` 每个包跑同一套断言：`sample.<ext>` 的符号/import/调用点与 `expected.json` 一致、`broken.<ext>` 不抛错且有 ERROR 节点、扩展名无冲突、`id` 等于文件名。`CODEGRAPH_CONTRACT_LANGS=python,ruby` 只跑指定包（并行开发用）。
 - `expected.json`：`{ "symbols": [{ "kind", "name", "line", "endLine", "qual"?, "doc"?, "exported"? }], "imports": [{ "spec", "line" }], "calls": [{ "name", "line" }], "refs": [{ "kind"?, "name", "line", "symbol" }] }`。`symbols`/`imports`/`calls` 是**精确多重集**（多一个少一个都失败）；`qual`/`doc`/`exported` 写了才比对；`refs` 是**必须存在的子集**（`symbol` 为所属符号名或 null），用来锁住单行定义的归属。
 - 多文件解析用例放 `tests/fixtures/projects/<name>/`，测试里用临时目录建库。
+
+## 14. 桌面端扩展（`bin/extension.mjs`、`src/extension/describe.mjs`、`ui/index.html`）
+
+只在 ZCode 桌面端加载（清单的 `extension` 与 `slots`）。接口没有公开文档，以下按 4.0.10870 的打包代码核对；宿主对不认识的清单字段与越界的调用报 `not-declared` / `invalid-input`，不会崩溃。`tests/extension/extension.test.mjs` 把清单里的 id 和代码里注册的 id 钉在一起。
+
+**运行环境**：所有插件的扩展代码跑在同一个进程里，所以扩展里**不做**插件数据目录以外路径的同步文件调用。要碰项目路径，先用 `probe(path, timeout)` 问一次（异步 `stat`，默认 1500 ms）：答 `'there'` / `'missing'` 才继续走同步的 `resolveProjectRoot` / `projectKey` / `loadProjectConfig`——与 server 是同一套函数，项目键才一致；答 `'unknown'` 的这一轮跳过（`stat` 同步抛错也算 `unknown`）。拿不到应答的后果只有两个：那个会话这一轮没有状态位，那个项目的索引这一轮不受「打开会话」保护（删了下次重建）。插件自己的数据目录（索引清单、`status.json`、`codegraph.json`、删除）在本地盘，同步读写；清理时每删一个让出一次事件循环。刷新循环里的异常一律接住并记日志，这个进程里不能有未处理的拒绝。`activate` 返回 `{ dispose }`，停掉刷新循环（刷新正在等宿主时调用也成立）。
+
+两条已知的残余：探测只说明那一刻路径应答了，探测通过后路径被拔掉，随后的同步调用仍可能等到系统超时（本机无法复现）；读取代次只丢弃「比之后开始的读取更旧」的应答，宿主若对晚于某次变更事件发起的读取仍给出不含该事件的旧快照，那个会话会被当作已关闭，直到下一次读取（空闲时 60 s），期间它的索引同样不受保护。
+
+**状态位**：槽位 `composer.status`，条目 `codegraph.status`，点击执行命令 `codegraph.storage`。每个打开的会话一项，`ctx.slots.update(id, { text, tooltip, visible }, { sessionId })`，宿主要求 `text ≤ 40`、`tooltip ≤ 200` 字符。
+
+| 索引状态 | `text` | 悬停的第三行 |
+|---|---|---|
+| `ready` | `compact(filesTotal)` 个文件（`291 个文件`、`1.8k 个文件`） | `291 个文件 · 2748 个符号 · 7.6 MB · 2 分钟前`，有改过未同步的文件再加 ` · 3 个文件在索引之后改过` |
+| `building` | 百分比（已建 / 总数，封顶 100） | `正在索引 100 / 700 个文件，建完之前结果是部分的` |
+| `error` | `出错` | `索引出错：<error 或 reason，压成一行>` |
+| 没有索引或 `empty`，且项目文件关了 `autoIndex` | `未开启` | `这个项目关闭了索引（.zcode/codegraph.json）` |
+| 其它（没有索引、`empty`、家目录或盘根） | 不显示 | — |
+
+悬停共四行：标题、项目根（`/` 分隔）、状态行、「点击管理本机上的索引」；超出 200 字符时截断并以 `…` 结尾。语言随宿主的 `locale`（`zh*` 为中文）。刷新间隔：有会话的索引在构建时 5 s，否则 60 s。
+
+会话列表有两条顺序规则。读取代次（`reads`）：一次读取的应答如果在更新的读取开始之后才到，直接丢弃——宿主的应答可能比中途到来的变更事件旧。绘制串行（`paintOnce`），并且写状态位前复核该会话仍在列表里：否则一次还在等路径应答的绘制，会把刚关闭的会话的状态位重新画出来。
+
+**面板**：视图 `codegraph.storage`，入口 `ui/index.html`，`scope: "app"`。页面在沙箱 iframe 里，用 `window.zcode.callTool(<名字>, <参数>)` 调下面四个工具。`run` 返回的对象被宿主 JSON 序列化后成为页面的 `structuredContent`，**返回值里不能有函数**（`viewData` 把依赖数字的文案都先算成字符串）；`run` 抛错时页面收到 `isError`。工具永不抛错。
+
+| 工具 | 参数 | 返回 |
+|---|---|---|
+| `list` | — | `{ ok: true, data }` |
+| `remove` | `{ key }`（索引目录名，16 位十六进制） | 成功 `{ ok: true, message, data }`；被拒 `{ ok: false, message }`：没给 `key`、本机没有这个索引、是打开着的会话的项目、正在被写入 |
+| `clean` | — | 同上；到期的逐个删，删不掉的在 `message` 里说明。到期的一个都没删掉时 `ok: false` |
+| `policy` | `{ maxIdleDays?, maxTotalMB? }`（≥ 0 的整数） | 写进插件设置（`ctx.settings.update`，键即 `userConfig` 的同名项），返回新的快照；非法值 `{ ok: false, message }` |
+
+改动成功但快照恰好读不到时，应答是 `{ ok: true, message }`、不带 `data`；页面据此再读一次 `list`，读不到才报错。
+
+`data` 来自 `viewData(entries, policy, { current, locale, now, storeDir, due })`：`{ locale, storeDir, totals: { projects, size, due, dueSize }, policy: { maxIdleDays, maxTotalMB, fixedByFile: { maxIdleDays, maxTotalMB } }, rows: [{ key, path, state, stateLabel, files, filesText, size, used, notes, removable, due, blocked }], text }`。`removable` 是扩展允许不允许：打开着的会话的项目与在用的索引为 `false`，`blocked` 为 `current` 或 `in-use`；`due` 只说明「清理到期索引」会带走它。策略的来源同 §12：`codegraph.json` 里写了的项 `fixedByFile` 为 `true`，页面把那一项置灰。`text` 是页面用到的全部文案，值都是字符串。
+
+**页面**（`ui/index.html`）有两个 `<style>`。`#zcode-contract` 是 ZCode 沙箱样式表（`out/plugin-sandbox/visualize.css`）的逐条原文：不改，应用升级后整块重抄。`#codegraph-layout` 只有版式属性和档位内的间距。页面用到的类名只能是契约里的工具类，或自己的 `storage-*`；动态文本一律 `textContent`，拼进选择器的 `key` 先过 `CSS.escape`。主题：宿主只通过 `zcode.hostContext.styles.variables` 交出变量，页面自己写到根元素上，并监听 `zcode:globals` 跟随明暗切换。交出来的只有 `--color-*`、`--font-*`、圆角这类变量（宿主的 schema 会剥掉 `--gen-ui-*`），所以契约里的卡片色、主按钮色、悬停色、输入框边框色用的是契约内置的回退值——ZCode 自带的可视化也是这样。删除与清理都是两步（先问，再确认），`Escape` 撤回，焦点跟着走。别名运行时的 `zcode.connecting` 在首次访问后恒为 `true`，不能拿它等连接。
+
+**检查**（`tests/extension/`）：`page.test.mjs` 用无头 Chrome 或 Edge 打开页面（没有浏览器就跳过），应答由真实的 `viewData` 生成；检查两个样式块的性质、类名、320 px 与桌面宽度下不横向溢出、每个控件有名称、加载中、空存储、出错后重试、两步确认与焦点、明暗切换。`CODEGRAPH_PAGE=<另一份页面>` 用来确认这些检查在页面被改坏时会失败。

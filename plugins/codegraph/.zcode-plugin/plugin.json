@@ -24,6 +24,57 @@
       }
     }
   },
+  "extension": {
+    "engines": {
+      "zcode": "^1.3.0"
+    },
+    "main": "./bin/extension.mjs",
+    "activationEvents": [
+      "onAvailable"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "codegraph.storage",
+          "title": {
+            "en-US": "Manage code graph indexes",
+            "zh-CN": "管理代码图谱索引"
+          }
+        }
+      ],
+      "views": [
+        {
+          "id": "codegraph.storage",
+          "title": {
+            "en-US": "Code graph indexes",
+            "zh-CN": "代码图谱索引"
+          },
+          "icon": "database",
+          "scope": "app"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      {
+        "id": "codegraph.status",
+        "icon": "database",
+        "target": {
+          "command": "codegraph.storage"
+        }
+      }
+    ],
+    "sidePane.launcher": [
+      {
+        "id": "codegraph.storage",
+        "icon": "database",
+        "target": {
+          "view": "codegraph.storage"
+        }
+      }
+    ]
+  },
   "userConfig": {
     "autoIndex": {
       "type": "boolean",

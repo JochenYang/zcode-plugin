@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="en" data-zcode-design>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code graph index</title>
+<style id="zcode-contract">
+/* =====================================================================================
+   ZCode's own theme contract and utilities, copied rule for rule from the stylesheet the
+   app ships for its sandboxed views (ZCode Desktop 4.0.10870, out/plugin-sandbox/visualize.css,
+   kept in sync with the visualize skill the app bundles).
+
+   Do not edit a rule in this block: when ZCode changes, copy again. tests/extension/page.test.mjs
+   checks that no rule of this block but the contract itself declares a colour, and that the
+   view's own block (the second <style>) declares layout only. Tokens are listed in
+   design-system-zcode.md.
+   ===================================================================================== */
+:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: var(--gen-ui-card, light-dark(#ffffff, #2b2b2b));
+  --card-border: var(--gen-ui-card-border, var(--border));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --gen-ui-primary, light-dark(#000000, #ffffff)
+  );
+  --content-accent: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --gen-ui-primary-foreground,
+    light-dark(rgb(255 255 255), rgb(0 0 0))
+  );
+  --secondary: var(
+    --gen-ui-secondary,
+    light-dark(rgb(230 230 230), rgb(54 54 54))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --gen-ui-input-border-focused,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--content-accent);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: var(--font-size-base);
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: var(--font-text-sm-size, calc(var(--font-size-base) - 2px));
+  --font-size-h1: var(--font-heading-md-size, calc(var(--font-size-base) + 4px));
+  --font-size-h2: var(--font-heading-sm-size, calc(var(--font-size-base) + 2px));
+  --font-size-h3: var(--font-heading-xs-size, var(--font-size-base));
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --icon-size: 16px;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --corner-shape: round;
+  --radius-sm: var(--border-radius-sm, 4px);
+  --radius-md: var(--border-radius-md, 6px);
+  --radius-lg: var(--border-radius-lg, 8px);
+  --radius-xl: var(--border-radius-xl, 12px);
+  --radius-2xl: var(--radius-xl);
+  --control-radius: var(--radius-lg);
+  --input-bg: var(--gen-ui-input, light-dark(#ffffff, #2b2b2b));
+  --input-bg-focused: var(--gen-ui-input-focused, var(--input-bg));
+  --input-border: var(--gen-ui-input-border, var(--input));
+  --input-border-hover: var(--gen-ui-input-border-hover, var(--border));
+  --input-border-focused: var(--gen-ui-input-border-focused, var(--ring));
+  --placeholder: var(--gen-ui-foreground-subtlest, var(--muted-foreground));
+  --hover: var(--gen-ui-hover, var(--muted));
+  --selected: var(--gen-ui-selected, var(--muted));
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--content-accent);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: var(--visualize-paint-gutter, 0px);
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner-shape);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-xl);
+  corner-shape: var(--corner-shape);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+:is(.card, .widget) {
+  --control-radius: var(--radius-lg);
+}
+:is(.card, .widget) :is(.card, .widget) {
+  border-radius: var(--radius-lg);
+  --control-radius: var(--radius-md);
+}
+:is(.card, .widget) :is(.card, .widget) :is(.card, .widget) {
+  border-radius: var(--radius-md);
+  --control-radius: var(--radius-sm);
+}
+:is(.card, .widget) :is(.card, .widget) :is(.card, .widget) :is(.card, .widget) {
+  border-radius: var(--radius-sm);
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.nav-link,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+.btn,
+.nav-link {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--gen-ui-border, var(--input));
+  border-radius: var(--control-radius);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background: transparent;
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:not(:disabled):hover,
+.nav-link:not(:disabled):not([aria-disabled="true"]):hover {
+  border-color: var(--gen-ui-border-hover, var(--border));
+  background: color-mix(in srgb, var(--input-bg) 50%, transparent);
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  background-clip: padding-box;
+}
+
+.btn-primary:not(:disabled):hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  border-color: transparent;
+  color: var(--foreground);
+  background: var(--hover);
+}
+
+.btn:is(.btn-xs, .btn-sm, .btn-lg) {
+  line-height: 1;
+  padding-block: 2px;
+}
+.btn-xs {
+  min-height: 20px;
+}
+.btn-sm {
+  min-height: 24px;
+}
+.btn-lg {
+  min-height: 32px;
+  padding-inline: 10px;
+}
+
+.btn:disabled,
+.nav-link:disabled,
+.nav-link[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input-border);
+  border-radius: var(--control-radius);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background: var(--input-bg);
+}
+
+.form-control::placeholder {
+  color: var(--placeholder);
+}
+
+.form-control:focus-visible {
+  border-color: var(--input-border-focused);
+  background-color: var(--input-bg-focused);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.form-control:not(:disabled):not(:focus-visible):hover {
+  border-color: var(--input-border-hover);
+}
+.form-control.form-control-sm, .form-select.form-select-sm {
+  min-height: 28px;
+}
+
+</style>
+<style id="codegraph-layout">
+/* =====================================================================================
+   Layout of this view. Placement and spacing only, on the host's scale (2, 3, 4, 6, 8, 10,
+   12 px); no colour, type, border or radius of its own: those come from the block above.
+   ===================================================================================== */
+
+html > body {
+  padding: var(--visualize-paint-gutter, 12px);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.storage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.storage-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.storage-dir {
+  overflow-wrap: anywhere;
+}
+
+.storage-message:not(:empty) {
+  margin-block-start: 6px;
+}
+
+.storage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.storage-path {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.storage-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.storage-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.storage-confirm-hint {
+  max-width: 240px;
+  margin-block-start: 6px;
+}
+
+.storage-due {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.storage-policy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.storage-policy-actions {
+  justify-content: flex-end;
+}
+</style>
+</head>
+<body>
+<main id="codegraph-storage" class="storage" aria-busy="true">
+  <header class="storage-head">
+    <h2 id="storage-title"></h2>
+    <p id="storage-total" class="text-small text-muted"></p>
+    <p id="storage-dir" class="storage-dir text-small" hidden><span id="storage-dir-label" class="text-muted"></span> <code id="storage-dir-value"></code></p>
+    <p id="storage-error" class="storage-message text-destructive" role="alert"></p>
+    <p id="storage-status" class="storage-message" role="status" aria-live="polite"></p>
+    <button type="button" class="btn btn-sm" id="storage-retry" data-action="refresh" hidden></button>
+  </header>
+
+  <section class="storage-section" aria-labelledby="storage-title">
+    <div class="table-responsive" id="storage-table" hidden>
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col" id="col-project"></th>
+            <th scope="col" id="col-state"></th>
+            <th scope="col" id="col-size"></th>
+            <th scope="col" id="col-used"></th>
+            <th scope="col" id="col-actions"></th>
+          </tr>
+        </thead>
+        <tbody id="storage-rows"></tbody>
+      </table>
+    </div>
+    <p id="storage-empty" class="text-muted" hidden></p>
+  </section>
+
+  <div class="viz-row" id="storage-actions" hidden>
+    <p id="storage-due" class="storage-due text-small"></p>
+    <button type="button" class="btn btn-sm" id="storage-clean" data-action="clean"></button>
+    <button type="button" class="btn btn-sm" id="storage-confirm-clean" data-action="confirm-clean" hidden></button>
+    <button type="button" class="btn btn-ghost btn-sm" id="storage-cancel-clean" data-action="cancel" hidden></button>
+    <button type="button" class="btn btn-ghost btn-sm" id="storage-refresh" data-action="refresh"></button>
+  </div>
+
+  <form class="card storage-policy" id="policy-form" aria-labelledby="policy-title" hidden>
+    <h3 id="policy-title"></h3>
+    <div class="viz-controls">
+      <label class="form-label" for="policy-idle">
+        <span id="policy-idle-label"></span>
+        <input id="policy-idle" class="form-control form-control-sm" type="number" min="0" step="1" inputmode="numeric" aria-describedby="policy-note" required>
+      </label>
+      <label class="form-label" for="policy-quota">
+        <span id="policy-quota-label"></span>
+        <input id="policy-quota" class="form-control form-control-sm" type="number" min="0" step="1" inputmode="numeric" aria-describedby="policy-note" required>
+      </label>
+    </div>
+    <p id="policy-note" class="text-small text-muted" hidden></p>
+    <div class="viz-row storage-policy-actions">
+      <button type="submit" class="btn btn-primary btn-sm" id="policy-save"></button>
+    </div>
+  </form>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // The host's alias runtime; absent when the page is opened outside ZCode.
+  const zcode = window.zcode;
+
+  // ---------------------------------------------------------------- theme
+
+  // The host hands over the app's live tokens (`--color-*`, `--font-*`, radii) but applies
+  // nothing itself. Each one goes on the root, where the contract above picks it up, and the
+  // same happens again whenever the host reports a change (a theme switch).
+  function applyHostTheme() {
+    const variables = zcode?.hostContext?.styles?.variables;
+    if (variables) {
+      for (const [name, value] of Object.entries(variables)) {
+        if (value !== undefined && value !== null && value !== '') document.documentElement.style.setProperty(name, String(value));
+      }
+    }
+    const theme = zcode?.theme;
+    if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  }
+  window.addEventListener('zcode:globals', applyHostTheme);
+  applyHostTheme();
+
+  // ---------------------------------------------------------------- copy
+
+  // The first answer brings every line of the interface in the user's language. These few are
+  // what the page can say before that answer arrives, or when it never does.
+  const BOOT = {
+    zh: { title: '代码图谱索引', loading: '正在读取索引目录…', failed: '没有成功：', noHost: '这个页面要在 ZCode 里面打开。' },
+    en: { title: 'Code graph index', loading: 'Reading the index store…', failed: 'It did not work: ', noHost: 'This page runs inside ZCode.' },
+  };
+  const isZh = (locale) => String(locale || '').toLowerCase().startsWith('zh');
+  const boot = BOOT[isZh(zcode?.locale || navigator.language) ? 'zh' : 'en'];
+  document.documentElement.lang = boot === BOOT.zh ? 'zh-CN' : 'en';
+
+  // ---------------------------------------------------------------- state
+
+  const byId = (id) => document.getElementById(id);
+  const main = byId('codegraph-storage');
+  const el = {
+    title: byId('storage-title'),
+    total: byId('storage-total'),
+    dir: byId('storage-dir'),
+    dirLabel: byId('storage-dir-label'),
+    dirValue: byId('storage-dir-value'),
+    error: byId('storage-error'),
+    status: byId('storage-status'),
+    retry: byId('storage-retry'),
+    table: byId('storage-table'),
+    rows: byId('storage-rows'),
+    empty: byId('storage-empty'),
+    actions: byId('storage-actions'),
+    due: byId('storage-due'),
+    clean: byId('storage-clean'),
+    confirmClean: byId('storage-confirm-clean'),
+    cancelClean: byId('storage-cancel-clean'),
+    refresh: byId('storage-refresh'),
+    form: byId('policy-form'),
+    policyTitle: byId('policy-title'),
+    idle: byId('policy-idle'),
+    idleLabel: byId('policy-idle-label'),
+    quota: byId('policy-quota'),
+    quotaLabel: byId('policy-quota-label'),
+    note: byId('policy-note'),
+    save: byId('policy-save'),
+    columns: {
+      project: byId('col-project'),
+      state: byId('col-state'),
+      size: byId('col-size'),
+      used: byId('col-used'),
+      actions: byId('col-actions'),
+    },
+  };
+
+  // The last snapshot from the extension (CONTRACTS.md §14.3): rows, totals, the policy and
+  // every line of copy. Null until the first answer.
+  let view = null;
+  let text = boot;
+  let busy = false;
+  // The destructive action that is one press away: { key } for one index, { clean: true } for
+  // everything due. Nothing is removed by the press that asks for it.
+  let pending = null;
+
+  const make = (tag, className, content) => {
+    const item = document.createElement(tag);
+    if (className) item.className = className;
+    if (content !== undefined) item.textContent = String(content);
+    return item;
+  };
+  const button = (action, className, label) => {
+    const item = make('button', className, label);
+    item.type = 'button';
+    item.dataset.action = action;
+    return item;
+  };
+  // Keys come from the extension as 16 hexadecimal characters; escaping one keeps a malformed
+  // key from turning into a selector.
+  const rowButton = (key, action) => el.rows.querySelector(`tr[data-key="${CSS.escape(key)}"] button[data-action="${action}"]`);
+
+  function setBusy(value) {
+    busy = value;
+    main.setAttribute('aria-busy', String(value));
+  }
+
+  // The status line says what the last action did, in the error colour when it did not work.
+  function say(message, failed = false) {
+    el.status.textContent = message;
+    el.status.classList.toggle('text-destructive', failed);
+  }
+
+  function showError(message) {
+    el.error.textContent = message;
+    el.retry.hidden = false;
+  }
+  const hideError = () => {
+    el.error.textContent = '';
+    el.retry.hidden = true;
+  };
+
+  // ---------------------------------------------------------------- host calls
+
+  const firstText = (result) => (Array.isArray(result?.content) && result.content[0]?.text) || '';
+
+  // A tool of this view (bin/extension.mjs). It answers `{ ok, message, data }` and never
+  // throws; a failure on the way arrives as `isError`.
+  async function call(name, args) {
+    if (!zcode) throw new Error(boot.noHost);
+    const result = await zcode.callTool(name, args);
+    const data = result?.structuredContent;
+    if (result?.isError || !data || typeof data !== 'object') throw new Error(firstText(result) || boot.noHost);
+    return data;
+  }
+
+  // ---------------------------------------------------------------- focus
+
+  // Where focus is before the table is redrawn, so that it can return to the same place, or to
+  // the next row when that one is gone. A page that was never entered by keyboard keeps no
+  // focus of its own: `anchor` then names nothing and this does nothing.
+  function focusAnchor() {
+    const active = document.activeElement;
+    if (active === document.body) return {};
+    const row = active?.closest?.('tr[data-key]');
+    return row ? { key: row.dataset.key, index: [...el.rows.children].indexOf(row) } : { id: active.id };
+  }
+
+  function restoreFocus(anchor) {
+    if (document.activeElement !== document.body || (!anchor.key && !anchor.id)) return;
+    const rows = [...el.rows.children];
+    for (const row of (anchor.key ? [anchor.index, anchor.index - 1, 0] : []).map((i) => rows[i]).filter(Boolean)) {
+      const target = row.querySelector('button[data-action="delete"]:not(:disabled)');
+      if (target) {
+        target.focus();
+        return;
+      }
+    }
+    const target = anchor.id ? byId(anchor.id) : null;
+    if (target && !target.disabled && !target.hidden) target.focus();
+    else if (!el.refresh.hidden) el.refresh.focus();
+  }
+
+  // ---------------------------------------------------------------- rendering
+
+  function renderRow(row) {
+    const tr = make('tr');
+    tr.dataset.key = row.key;
+
+    const project = make('td');
+    const path = make('div', 'storage-path');
+    path.append(make('code', '', row.path));
+    if (row.notes.length > 0) {
+      const notes = make('ul', 'storage-notes text-small text-muted');
+      notes.setAttribute('role', 'list');
+      for (const note of row.notes) notes.append(make('li', '', note));
+      path.append(notes);
+    }
+    project.append(path);
+
+    // "Error" reads as text in the error colour; the other states are badges.
+    const state = make('td');
+    state.append(make('span', row.state === 'error' ? 'text-destructive' : 'viz-badge', row.stateLabel));
+
+    const size = make('td');
+    size.append(make('span', 'tabular-nums', row.size));
+    if (row.filesText) size.append(make('div', 'text-small text-muted', row.filesText));
+
+    const actions = make('td');
+    const buttons = make('div', 'storage-row-actions text-nowrap');
+    if (pending?.key === row.key) {
+      buttons.append(button('confirm-delete', 'btn btn-sm', text.confirmDelete), button('cancel', 'btn btn-ghost btn-sm', text.cancel));
+      actions.append(make('p', 'storage-confirm-hint text-small text-muted', text.confirmHint));
+    } else {
+      // One that cannot be removed keeps its button, disabled; the notes above say why.
+      const remove = button('delete', 'btn btn-sm', text.delete);
+      if (!row.removable) {
+        remove.disabled = true;
+        remove.title = text.blocked[row.blocked] ?? '';
+      }
+      buttons.append(remove);
+    }
+    actions.append(buttons);
+    if (busy) for (const item of buttons.querySelectorAll('button')) item.disabled = true;
+
+    tr.append(project, state, size, make('td', 'tabular-nums', row.used), actions);
+    return tr;
+  }
+
+  function render() {
+    if (!view) return;
+    text = view.text;
+    document.documentElement.lang = view.locale === 'zh' ? 'zh-CN' : 'en';
+    document.title = text.title;
+
+    el.title.textContent = text.title;
+    el.total.textContent = text.total;
+    el.dir.hidden = !view.storeDir;
+    el.dirLabel.textContent = text.storeLabel;
+    el.dirValue.textContent = view.storeDir ?? '';
+
+    for (const [name, cell] of Object.entries(el.columns)) cell.textContent = text.columns[name];
+    el.rows.replaceChildren(...view.rows.map(renderRow));
+    el.table.hidden = view.rows.length === 0;
+    el.empty.hidden = view.rows.length > 0;
+    el.empty.textContent = text.empty;
+
+    el.due.hidden = view.totals.due === 0;
+    el.due.textContent = text.due;
+
+    el.idleLabel.textContent = text.idleLabel;
+    el.quotaLabel.textContent = text.quotaLabel;
+    el.idle.value = String(view.policy.maxIdleDays);
+    el.quota.value = String(view.policy.maxTotalMB);
+    // A limit the user's file fixed cannot be changed from here; the note says where it can.
+    const fixed = view.policy.fixedByFile;
+    el.note.hidden = !(fixed.maxIdleDays || fixed.maxTotalMB);
+    el.note.textContent = text.fixedByFile;
+
+    el.clean.textContent = text.clean;
+    el.confirmClean.textContent = text.confirmClean;
+    el.cancelClean.textContent = text.cancel;
+    el.refresh.textContent = text.refresh;
+    el.retry.textContent = text.refresh;
+    el.policyTitle.textContent = text.policyHeading;
+    el.save.textContent = text.save;
+    el.actions.hidden = false;
+    el.form.hidden = false;
+
+    syncControls();
+  }
+
+  // What can be used right now.
+  function syncControls() {
+    if (!view) return;
+    const fixed = view.policy.fixedByFile;
+    const cleanPending = pending?.clean === true;
+    el.clean.hidden = cleanPending;
+    el.confirmClean.hidden = !cleanPending;
+    el.cancelClean.hidden = !cleanPending;
+    el.clean.disabled = busy || view.totals.due === 0;
+    el.confirmClean.disabled = busy;
+    el.cancelClean.disabled = busy;
+    el.refresh.disabled = busy;
+    el.retry.disabled = busy;
+    el.idle.disabled = busy || fixed.maxIdleDays;
+    el.quota.disabled = busy || fixed.maxTotalMB;
+    el.save.disabled = busy || (fixed.maxIdleDays && fixed.maxTotalMB);
+  }
+
+  // ---------------------------------------------------------------- actions
+
+  // Reading the store: the controls go dark while the answer is on its way.
+  async function load() {
+    const anchor = focusAnchor();
+    setBusy(true);
+    say(boot.loading);
+    render();
+    try {
+      const result = await call('list');
+      if (!result.data) throw new Error(result.message || boot.noHost);
+      view = result.data;
+      hideError();
+      say('');
+    } catch (err) {
+      say('');
+      showError(`${boot.failed}${err?.message ?? err}`);
+    }
+    setBusy(false);
+    render();
+    restoreFocus(anchor);
+  }
+
+  // Remove one index, clean what is due, or save the policy. The answer carries the store as
+  // it is now, so the page never changes a row on its own.
+  async function act(name, args) {
+    const anchor = focusAnchor();
+    setBusy(true);
+    render();
+    try {
+      const result = await call(name, args);
+      say(result.message ?? '', result.ok === false);
+      if (result.ok !== false) hideError();
+      // The store changed, but its new state did not come along: read it here, so that the
+      // controls do not come back for a moment with the question still on screen.
+      if (result.data) view = result.data;
+      else if (result.ok !== false) view = (await call('list')).data ?? view;
+    } catch (err) {
+      showError(`${boot.failed}${err?.message ?? err}`);
+    }
+    pending = null;
+    setBusy(false);
+    render();
+    restoreFocus(anchor);
+  }
+
+  main.addEventListener('click', (event) => {
+    const target = event.target.closest('button[data-action]');
+    if (!target || busy) return;
+    const row = target.closest('tr[data-key]');
+    switch (target.dataset.action) {
+      case 'delete':
+        pending = { key: row.dataset.key };
+        render();
+        rowButton(row.dataset.key, 'confirm-delete')?.focus();
+        break;
+      case 'confirm-delete':
+        act('remove', { key: row.dataset.key });
+        break;
+      case 'cancel': {
+        const key = row?.dataset.key;
+        pending = null;
+        render();
+        (key ? rowButton(key, 'delete') : el.clean).focus();
+        break;
+      }
+      case 'clean':
+        pending = { clean: true };
+        render();
+        el.confirmClean.focus();
+        break;
+      case 'confirm-clean':
+        act('clean', {});
+        break;
+      case 'refresh':
+        load();
+        break;
+    }
+  });
+
+  main.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !pending) return;
+    event.preventDefault();
+    main.querySelector(pending.key ? `tr[data-key="${CSS.escape(pending.key)}"] button[data-action="cancel"]` : '#storage-cancel-clean')?.click();
+  });
+
+  // Enter in a field saves; an invalid value is reported by the field itself.
+  el.form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (busy) return;
+    const args = {};
+    for (const [input, key] of [[el.idle, 'maxIdleDays'], [el.quota, 'maxTotalMB']]) {
+      if (!input.disabled) args[key] = input.valueAsNumber;
+    }
+    if (Object.keys(args).length > 0) act('policy', args);
+  });
+
+  el.title.textContent = boot.title;
+  load();
+})();
+</script>
+</body>
+</html>
