@@ -2,6 +2,7 @@
 # checkout breaks them under any non-MSYS bash (WSL, Linux CI, macOS).
 *.sh text eol=lf
 
-# Keep the rest normalised to LF in the repository.
-*.md text
-*.json text
+# Every other text file is LF in the working tree as well, not only in the
+# index: scripts/check-consistency.py rejects CRLF anywhere under plugins/,
+# and a checkout with core.autocrlf=true would otherwise produce exactly that.
+* text=auto eol=lf

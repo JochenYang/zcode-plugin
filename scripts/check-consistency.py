@@ -64,8 +64,13 @@ def load(path):
 
 
 def check_json():
-    paths = ["marketplace.json"] + glob.glob("plugins/*/.zcode-plugin/plugin.json") \
-        + glob.glob("plugins/*/hooks/hooks.json")
+    # Glob under ROOT, not under the working directory: the script takes a
+    # repo-root argument and must behave the same wherever it is run from.
+    paths = ["marketplace.json"] \
+        + [os.path.relpath(p, ROOT)
+           for p in glob.glob(os.path.join(ROOT, "plugins/*/.zcode-plugin/plugin.json"))] \
+        + [os.path.relpath(p, ROOT)
+           for p in glob.glob(os.path.join(ROOT, "plugins/*/hooks/hooks.json"))]
     bad = []
     for path in paths:
         try:
@@ -232,14 +237,24 @@ def check_shell_syntax():
 
 
 def check_skill_references():
-    """A skill may point at its own references/ or at another skill's."""
-    skill_dirs = glob.glob(os.path.join(ROOT, "plugins/dev-workflow/skills/*"))
+    """A skill may point at its own references/ or scripts/, or at another skill's.
+
+    SKILL.md and the reference documents it hands out are both scanned: the
+    review protocol names the gate script as well."""
+    skills_root = os.path.join(ROOT, "plugins/dev-workflow/skills")
+    skill_dirs = glob.glob(os.path.join(skills_root, "*"))
     missing = []
-    for path in glob.glob(os.path.join(ROOT, "plugins/dev-workflow/skills/*/SKILL.md")):
-        owner = os.path.basename(os.path.dirname(path))
-        for ref in re.findall(r"`references/([A-Za-z0-9._-]+\.md)`", open(path, encoding="utf-8").read()):
+    docs = glob.glob(os.path.join(skills_root, "*", "SKILL.md")) \
+        + glob.glob(os.path.join(skills_root, "*", "references", "*.md"))
+    for path in docs:
+        owner = os.path.relpath(path, skills_root).split(os.sep)[0]
+        text = open(path, encoding="utf-8").read()
+        for ref in re.findall(r"`[^`\n]*references/([A-Za-z0-9._-]+\.md)`", text):
             if not any(os.path.isfile(os.path.join(d, "references", ref)) for d in skill_dirs):
                 missing.append(f"{owner}: {ref}")
+        for script in re.findall(r"scripts/([A-Za-z0-9._-]+\.(?:mjs|cjs|js|py|sh))", text):
+            if not any(os.path.isfile(os.path.join(d, "scripts", script)) for d in skill_dirs):
+                missing.append(f"{owner}: {script}")
     check("skill references resolve", not missing, "; ".join(missing))
 
 

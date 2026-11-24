@@ -20,7 +20,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | Plugin | Version | Description |
 |---|---|---|
 | `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
-| `plugins/dev-workflow` | 0.5.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
+| `plugins/dev-workflow` | 0.6.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + a gated multi-round review protocol + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
 | `plugins/guardrails` | 0.2.0 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
 | `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
@@ -64,7 +64,7 @@ The `PostToolUse` hook only runs when the Bash call really was a `git commit` an
 | `change-plan` | before a feature/refactor/complex fix | executable plan + `.devflow/<slug>.md` (task-level acceptance basis); with a regression surface also `docs/plans/<slug>.md` (Work items / Phases gates / Test plan / Phase log) |
 | `debug` | bug/test failure/build failure | iron rule: no fix before the root cause is established; reproduce → gather evidence → falsifiable hypotheses → root cause → minimal fix → regression check, with `git bisect`, boundary logging and a three-strikes stop; details in `references/` |
 | `test-changed` | changes need verification | minimal valid test scope + evidence log + phase-gate verdict, writing Test plan results and Phase log back into the persistent plan |
-| `review` | changes need review | P0–P3 findings with `path:line`, `introduced`/`pre-existing` and evidence level, a four-way verdict, stops after three unconverged rounds |
+| `review` | changes need review | P0–P3 findings with `path:line`, `introduced`/`pre-existing` and evidence level, a four-way verdict, stops after three unconverged rounds; from the second round on, or for high-risk changes, the gated convergence protocol (`review-gate.mjs`) applies |
 | `commit-review` | before committing | READY/NOT READY + proposed branch and message + Testing / Risk / How to revert (no actual commit) |
 | `release-check` | before release/tag | GO/NO-GO/CONDITIONAL GO + blockers and unblock path (no actual release) |
 | `doc-gen` | writing/updating docs | API docs / CHANGELOG / README / user docs / migration guides / feature map, every claim traceable to code |
@@ -77,6 +77,8 @@ Commands and hooks:
 - `/agents-sync [diff|export|install]` — installation is automatic, so this is only for: `diff` comparing local vs bundled agents, `export` pushing hand-edited local agents back into the repo, `install` forcing an overwrite
 
 Core mechanics: `change-plan` writes the plan and acceptance criteria to `.devflow/<slug>.md` (plus `docs/plans/<slug>.md` when the change has a regression surface), and all five downstream skills plus every subagent check against it; persistent plans track progress through Work item state transitions and phase gates, and a Gate row may only be written by `test-changed` after the verification ran. Each of the five downstream skills (`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`) closes with the same self-check: green commands are not satisfied acceptance, plausible is not evidence, and "I tested it" is hearsay — if any of the three fails, `commit-review` cannot be READY and `release-check` cannot be GO.
+
+Multi-round review convergence: once a review reaches its second round, or the change is high risk, `reviewer` only produces findings and evidence, the main session verifies each one and writes its decision to `.devflow/<slug>/review-<round>.json`, and `scripts/review-gate.mjs` decides `converged` / `needs_user_confirmation` / `stop_max_rounds` / `continue` through eight gates. When a state file exists, `commit-review` only passes once the latest round is `converged`.
 
 Recommended lifecycle: `change-plan → implement → test-changed → review → gcommit → release-check → doc-gen`
 
@@ -170,6 +172,7 @@ python scripts/check-consistency.py             # versions, agent count, frontma
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 116 cases including the permission-mode dimension
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
 python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
+python plugins/dev-workflow/tests/test-review-gate.py  # the multi-round review gate: eight gates, cross-checks between fields, and the exit codes of an invalid state (needs node)
 ```
 
 `check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism, an agent description that hands off to an agent that does not exist or collides with a built-in type. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.
