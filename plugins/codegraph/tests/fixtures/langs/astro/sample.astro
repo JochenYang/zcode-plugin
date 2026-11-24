@@ -1,0 +1,40 @@
+---
+import type { CartItem } from '../cart';
+import { formatMoney } from '../money';
+
+interface Props {
+  items: CartItem[];
+}
+
+/** Tax for the whole cart. */
+const TAX_RATE = 0.08;
+const { items } = Astro.props;
+const total = items.reduce((sum, i) => sum + i.price, 0);
+---
+
+<button class="total" data-total={total}>
+  {formatMoney(total)}
+</button>
+
+<script lang="ts">
+  import type { CartItem } from '../cart';
+  import { track } from '../analytics';
+
+  /** Sends the cart total to analytics. */
+  function reportTotal(button: HTMLButtonElement): void {
+    track('cart', button.dataset.total ?? '0');
+  }
+
+  class Cart {
+    items: CartItem[] = [];
+
+    add(item: CartItem): number {
+      this.items.push(item);
+      return this.items.length;
+    }
+  }
+
+  document.querySelectorAll('.total').forEach((el) => {
+    el.addEventListener('click', () => reportTotal(el as HTMLButtonElement));
+  });
+</script>

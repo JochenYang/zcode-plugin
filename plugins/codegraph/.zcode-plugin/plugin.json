@@ -1,0 +1,57 @@
+{
+  "name": "codegraph",
+  "version": "0.1.0",
+  "description": "Local code graph for ZCode as a zero-dependency MCP server: tree-sitter index of 35 languages kept in SQLite under the plugin data folder, exposed through codegraph_status, codegraph_lookup (symbol search, callers, callees, impact, outline) and codegraph_map, so the model reads exact line ranges instead of grepping and reading whole files. The index is built or refreshed silently when a session opens; SessionStart, UserPromptSubmit and PostToolUse hooks tell the model when the graph is ready and when to use it. No network, no telemetry.",
+  "author": {
+    "name": "JochenYang"
+  },
+  "license": "MIT",
+  "commands": "commands",
+  "mcpServers": {
+    "codegraph": {
+      "command": "node",
+      "args": [
+        "${ZCODE_PLUGIN_ROOT}/bin/server.mjs"
+      ],
+      "env": {
+        "CODEGRAPH_AUTO_INDEX": "${user_config.autoIndex}",
+        "CODEGRAPH_MIN_FILES": "${user_config.minFiles}",
+        "CODEGRAPH_MAX_FILES": "${user_config.maxFiles}",
+        "CODEGRAPH_EXCLUDE": "${user_config.exclude}",
+        "CODEGRAPH_LIFTOFF_ONLY": "${user_config.liftoffOnly}"
+      }
+    }
+  },
+  "userConfig": {
+    "autoIndex": {
+      "type": "boolean",
+      "title": "自动索引",
+      "description": "打开后，支持语言的文件数达到 minFiles 的项目在会话打开时后台建索引，并在每次会话开始时检查更新；关闭则只认手动 refresh",
+      "default": true
+    },
+    "minFiles": {
+      "type": "number",
+      "title": "自动索引的最少文件数",
+      "description": "支持语言的文件数低于此值不自动建索引，避免在小目录上白跑；写入 CODEGRAPH_MIN_FILES",
+      "default": 30
+    },
+    "maxFiles": {
+      "type": "number",
+      "title": "文件数上限",
+      "description": "项目文件总数超过此值不自动建索引；写入 CODEGRAPH_MAX_FILES",
+      "default": 30000
+    },
+    "exclude": {
+      "type": "string",
+      "title": "额外排除",
+      "description": "逗号分隔的 glob 或相对路径，追加到内置忽略（node_modules、dist、build 等）之后；留空表示不排除额外内容。写入 CODEGRAPH_EXCLUDE",
+      "default": ""
+    },
+    "liftoffOnly": {
+      "type": "boolean",
+      "title": "仅用 Liftoff 编译 wasm",
+      "description": "保险开关：V8 TurboFan 升级让 Node 崩溃时打开，索引会慢约 1.6 倍；写入 CODEGRAPH_LIFTOFF_ONLY",
+      "default": false
+    }
+  }
+}

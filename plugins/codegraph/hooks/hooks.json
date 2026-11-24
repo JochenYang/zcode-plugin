@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear|compact|fork)$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/bin/hook.mjs",
+              "session-start"
+            ],
+            "timeoutMs": 5000,
+            "statusMessage": "Loading code graph index status"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/bin/hook.mjs",
+              "user-prompt"
+            ],
+            "timeoutMs": 3000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Edit|Write)$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "node",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/bin/hook.mjs",
+              "post-tool"
+            ],
+            "timeoutMs": 3000,
+            "statusMessage": "Marking edited file in the code graph"
+          }
+        ]
+      }
+    ]
+  }
+}

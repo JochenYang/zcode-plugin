@@ -1,0 +1,10 @@
+{% assign greeting = 'Hello' %}
+{% comment %} A static template: file-level only, never parsed. {% endcomment %}
+<h1>{{ greeting }}, {{ customer.name | upcase }}!</h1>
+{% if customer.orders.size > 0 %}
+  <ul>
+    {% for order in customer.orders %}
+      <li>{{ order.number }}: {{ order.total_price | money }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}

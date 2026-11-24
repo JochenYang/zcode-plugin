@@ -1,0 +1,38 @@
+{
+  "symbols": [
+    { "kind": "constant", "name": "MAX_SUPPLY", "line": 7, "endLine": 7, "qual": "MAX_SUPPLY", "exported": true },
+    { "kind": "class", "name": "Vault", "line": 10, "endLine": 40, "qual": "Vault", "doc": "Vault holds tokens for registered users.", "exported": true },
+    { "kind": "constant", "name": "FEE_BPS", "line": 11, "endLine": 11, "qual": "Vault.FEE_BPS", "exported": true },
+    { "kind": "field", "name": "token", "line": 12, "endLine": 12, "qual": "Vault.token", "exported": true },
+    { "kind": "struct", "name": "Account", "line": 14, "endLine": 14, "qual": "Vault.Account" },
+    { "kind": "enum", "name": "Status", "line": 15, "endLine": 15, "qual": "Vault.Status" },
+    { "kind": "other", "name": "Deposited", "line": 16, "endLine": 16, "qual": "Vault.Deposited" },
+    { "kind": "other", "name": "InsufficientBalance", "line": 17, "endLine": 17, "qual": "Vault.InsufficientBalance" },
+    { "kind": "macro", "name": "onlyPositive", "line": 19, "endLine": 22, "qual": "Vault.onlyPositive", "exported": false },
+    { "kind": "method", "name": "deposit", "line": 27, "endLine": 31, "qual": "Vault.deposit", "doc": "Deposits tokens into the vault.", "exported": true },
+    { "kind": "method", "name": "balanceOf", "line": 33, "endLine": 35, "qual": "Vault.balanceOf", "exported": true },
+    { "kind": "method", "name": "deploy", "line": 37, "endLine": 39, "qual": "Vault.deploy", "exported": true }
+  ],
+  "imports": [
+    { "spec": "./IERC20.sol", "line": 4 },
+    { "spec": "./Ownable.sol", "line": 5 }
+  ],
+  "calls": [
+    { "name": "require", "line": 20 },
+    { "name": "transferFrom", "line": 28 },
+    { "name": "IERC20", "line": 28 },
+    { "name": "Deposited", "line": 29 },
+    { "name": "balanceOf", "line": 34 },
+    { "name": "IERC20", "line": 34 },
+    { "name": "Vault", "line": 38 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "Ownable", "line": 10, "symbol": "Vault" },
+    { "kind": "ref", "name": "onlyPositive", "line": 27, "symbol": "deposit" },
+    { "kind": "call", "name": "transferFrom", "line": 28, "symbol": "deposit" },
+    { "kind": "call", "name": "Deposited", "line": 29, "symbol": "deposit" },
+    { "kind": "call", "name": "Vault", "line": 38, "symbol": "deploy" },
+    { "kind": "ref", "name": "Vault", "line": 37, "symbol": "deploy" },
+    { "kind": "ref", "name": "token", "line": 24, "symbol": "Vault" }
+  ]
+}

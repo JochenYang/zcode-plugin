@@ -1,0 +1,35 @@
+{
+  "symbols": [
+    { "kind": "macro", "name": "GRAPH_VERSION", "line": 1, "endLine": 1, "qual": "GRAPH_VERSION", "exported": true },
+    { "kind": "namespace", "name": "graph", "line": 6, "endLine": 34, "qual": "graph", "exported": true },
+    { "kind": "class", "name": "Node", "line": 9, "endLine": 23, "qual": "graph.Node", "doc": "A vertex with outbound edges.", "exported": true },
+    { "kind": "method", "name": "Node", "line": 11, "endLine": 11, "qual": "graph.Node.Node", "exported": true },
+    { "kind": "method", "name": "label", "line": 14, "endLine": 14, "qual": "graph.Node.label", "doc": "Short label for rendering.", "exported": true },
+    { "kind": "method", "name": "connect", "line": 16, "endLine": 16, "qual": "graph.Node.connect", "exported": true },
+    { "kind": "method", "name": "count", "line": 18, "endLine": 18, "qual": "graph.Node.count", "exported": true },
+    { "kind": "field", "name": "id_", "line": 21, "endLine": 21, "qual": "graph.Node.id_", "exported": false },
+    { "kind": "field", "name": "edges_", "line": 22, "endLine": 22, "qual": "graph.Node.edges_", "exported": false },
+    { "kind": "method", "name": "connect", "line": 25, "endLine": 27, "qual": "graph.connect", "exported": true },
+    { "kind": "method", "name": "first", "line": 30, "endLine": 30, "qual": "graph.first", "exported": true },
+    { "kind": "type", "name": "Index", "line": 32, "endLine": 32, "qual": "graph.Index", "exported": true }
+  ],
+  "imports": [
+    { "spec": "string", "line": 2 },
+    { "spec": "vector", "line": 3 },
+    { "spec": "graph.h", "line": 4 }
+  ],
+  "calls": [
+    { "name": "push_back", "line": 26 },
+    { "name": "at", "line": 30 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "std", "line": 14, "symbol": "label" },
+    { "kind": "ref", "name": "Node", "line": 16, "symbol": "connect" },
+    { "kind": "ref", "name": "GRAPH_VERSION", "line": 18, "symbol": "count" },
+    { "kind": "ref", "name": "Node", "line": 25, "symbol": "connect" },
+    { "kind": "call", "name": "push_back", "line": 26, "symbol": "connect" },
+    { "kind": "ref", "name": "vector", "line": 30, "symbol": "first" },
+    { "kind": "call", "name": "at", "line": 30, "symbol": "first" },
+    { "kind": "ref", "name": "vector", "line": 32, "symbol": "Index" }
+  ]
+}

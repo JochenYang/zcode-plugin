@@ -1,0 +1,38 @@
+{
+  "symbols": [
+    { "kind": "namespace", "name": "com.example.shop", "line": 1, "endLine": 1, "qual": "com.example.shop", "exported": true },
+    { "kind": "class", "name": "Money", "line": 7, "endLine": 16, "qual": "Money", "doc": "Fixed-precision money in minor units.", "exported": true },
+    { "kind": "method", "name": "units", "line": 10, "endLine": 10, "qual": "Money.units", "doc": "Whole units, rounded to two decimals.", "exported": true },
+    { "kind": "method", "name": "plus", "line": 12, "endLine": 15, "qual": "Money.plus", "exported": true },
+    { "kind": "object", "name": "Pricer", "line": 18, "endLine": 23, "qual": "Pricer", "exported": true },
+    { "kind": "constant", "name": "TAX_RATE", "line": 19, "endLine": 19, "qual": "Pricer.TAX_RATE", "exported": true },
+    { "kind": "constant", "name": "cache", "line": 20, "endLine": 20, "qual": "Pricer.cache", "exported": false },
+    { "kind": "method", "name": "gross", "line": 22, "endLine": 22, "qual": "Pricer.gross", "exported": true },
+    { "kind": "function", "name": "formatAmounts", "line": 25, "endLine": 26, "qual": "formatAmounts", "exported": true }
+  ],
+  "imports": [
+    { "spec": "java.util.Locale", "line": 3 },
+    { "spec": "kotlin.math.roundToInt", "line": 4 }
+  ],
+  "calls": [
+    { "name": "roundToInt", "line": 10 },
+    { "name": "require", "line": 13 },
+    { "name": "Money", "line": 14 },
+    { "name": "mutableMapOf", "line": 20 },
+    { "name": "Money", "line": 22 },
+    { "name": "roundToInt", "line": 22 },
+    { "name": "joinToString", "line": 26 },
+    { "name": "format", "line": 26 },
+    { "name": "units", "line": 26 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "roundToInt", "line": 10, "symbol": "units" },
+    { "kind": "call", "name": "Money", "line": 14, "symbol": "plus" },
+    { "kind": "call", "name": "Money", "line": 22, "symbol": "gross" },
+    { "kind": "call", "name": "format", "line": 26, "symbol": "formatAmounts" },
+    { "kind": "ref", "name": "TAX_RATE", "line": 22, "symbol": "gross" },
+    { "kind": "ref", "name": "Money", "line": 12, "symbol": "plus" },
+    { "kind": "ref", "name": "String", "line": 7, "symbol": "Money" },
+    { "kind": "ref", "name": "Locale", "line": 25, "symbol": "formatAmounts" }
+  ]
+}

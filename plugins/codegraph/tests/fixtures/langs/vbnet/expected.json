@@ -1,0 +1,39 @@
+{
+  "symbols": [
+    { "kind": "class", "name": "Money", "line": 6, "endLine": 25, "qual": "Money", "doc": "Fixed-precision money in minor units.", "exported": true },
+    { "kind": "constant", "name": "CentsPerUnit", "line": 7, "endLine": 7, "qual": "Money.CentsPerUnit", "exported": true },
+    { "kind": "field", "name": "currency", "line": 8, "endLine": 8, "qual": "Money.currency", "exported": false },
+    { "kind": "property", "name": "Cents", "line": 9, "endLine": 9, "qual": "Money.Cents", "exported": true },
+    { "kind": "method", "name": "New", "line": 11, "endLine": 14, "qual": "Money.New", "exported": true },
+    { "kind": "method", "name": "FromUnits", "line": 17, "endLine": 19, "qual": "Money.FromUnits", "doc": "Builds a Money from a whole-unit amount.", "exported": true },
+    { "kind": "method", "name": "Describe", "line": 21, "endLine": 23, "qual": "Money.Describe", "exported": true },
+    { "kind": "enum", "name": "Region", "line": 27, "endLine": 30, "qual": "Region", "exported": true },
+    { "kind": "constant", "name": "Us", "line": 28, "endLine": 28, "qual": "Region.Us", "exported": true },
+    { "kind": "constant", "name": "Eu", "line": 29, "endLine": 29, "qual": "Region.Eu", "exported": true },
+    { "kind": "module", "name": "Pricer", "line": 32, "endLine": 36, "qual": "Pricer", "exported": false },
+    { "kind": "constant", "name": "TaxRate", "line": 33, "endLine": 33, "qual": "Pricer.TaxRate", "exported": true },
+    { "kind": "method", "name": "Gross", "line": 34, "endLine": 35, "qual": "Pricer.Gross", "exported": true }
+  ],
+  "imports": [
+    { "spec": "System", "line": 1 },
+    { "spec": "System.Collections.Generic", "line": 2 },
+    { "spec": "System.Globalization", "line": 3 }
+  ],
+  "calls": [
+    { "name": "Money", "line": 18 },
+    { "name": "Round", "line": 18 },
+    { "name": "List", "line": 22 },
+    { "name": "Join", "line": 23 },
+    { "name": "Money", "line": 35 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "Round", "line": 18, "symbol": "FromUnits" },
+    { "kind": "call", "name": "Join", "line": 23, "symbol": "Describe" },
+    { "kind": "call", "name": "Money", "line": 35, "symbol": "Gross" },
+    { "kind": "ref", "name": "CentsPerUnit", "line": 23, "symbol": "Describe" },
+    { "kind": "ref", "name": "CentsPerUnit", "line": 18, "symbol": "FromUnits" },
+    { "kind": "ref", "name": "CultureInfo", "line": 21, "symbol": "Describe" },
+    { "kind": "ref", "name": "TaxRate", "line": 35, "symbol": "Gross" },
+    { "kind": "ref", "name": "Cents", "line": 12, "symbol": "New" }
+  ]
+}

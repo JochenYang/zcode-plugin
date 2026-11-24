@@ -1,0 +1,305 @@
+# codegraph 内部契约（所有并行 lane 的共同依据）
+
+本文件由阶段 0 冻结。lane 只能写计划里列出的独占路径；要改本文件的任何接口，写 `.devflow/codegraph-plugin/contract-requests.md`，不要直接改。
+
+## 0. 运行时与约定
+
+- Node ≥ 22.13（`node:sqlite`）。ESM，文件一律 `.mjs`；零 npm 依赖；不联网、不执行项目代码。
+- **V8 wasm 分层**：默认允许 TurboFan 升级（比 `--liftoff-only` 快约 1.6×）。曾有一个随包语法（`tree-sitter-wasms` 版 swift）在升级编译时让整个进程崩溃，已换成 `codegraph` 仓库的构建；`CODEGRAPH_LIFTOFF_ONLY=1` 是保险开关，`src/bootstrap.mjs` 会带 `--liftoff-only` 重启一次。不要在别处再写重启逻辑。
+- 测试用内置 `node --test`；只跑自己 lane：`node --test plugins/codegraph/tests/<lane>/*.test.mjs`。
+- 注释写设计意图与约束，英文；标识符英文；错误信息英文、可行动。
+- 失败就地抛错并带上下文；用户可见错误稳定、不泄露路径之外的敏感信息。
+- 开发工具：`node plugins/codegraph/bin/ast.mjs <lang> <file> [--depth N]` 打印带字段名的 AST；`node plugins/codegraph/bin/extract.mjs <file>… [--spec <lang>] [--refs]` 打印抽取结果。
+
+## 1. 目录与所有权
+
+| 路径 | 所有者 |
+|---|---|
+| `src/paths.mjs`、`src/store/schema.sql`、`src/extract/*`、`languages/registry.mjs`、`tests/contract.test.mjs`、`grammars/loader.mjs` | 阶段 0（冻结） |
+| `languages/<lang>.mjs`、`tests/languages/<lang>.test.mjs`、`tests/fixtures/langs/<lang>/*` | L1–L5（按语言分组） |
+| `src/index/*`、`tests/index/*` | A |
+| `src/resolve/*`、`src/graph/*`、`tests/resolve/*`、`tests/graph/*` | B |
+| `src/mcp/*`、`src/render/*`、`src/config.mjs`、`tests/mcp/*`、`tests/render/*` | C |
+| `hooks/*`、`bin/hook.mjs`、`commands/*`、`README.md`、`.zcode-plugin/plugin.json`、`THIRD-PARTY-NOTICES.md` 之外的打包文件 | D |
+| `grammars/**`（wasm、runtime、manifest、LICENSES、queries、tools） | G（阶段 0） |
+
+## 2. 路径（`src/paths.mjs`，已实现）
+
+- `PLUGIN_ROOT`、`GRAMMARS_DIR`、`LANGUAGES_DIR`
+- `dataDir()`：`ZCODE_PLUGIN_DATA`，缺省 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin`
+- `resolveProjectRoot(start?)` → `{ root, reason: 'git'|'cwd', unsafe }`：向上找最近的 `.git`；`unsafe` 表示家目录或盘根（索引器必须拒绝自动索引）
+- `projectKey(root)`、`indexDir(root)`、`dbPath(root)`、`statusPath(root)`、`dirtyLogPath(root)`、`dirtyOffsetPath(root)`、`lockPath(root)`、`configPath()`
+- `announcedPath(root, sessionId)`：`<indexDir>/announced/<sessionId>`，空文件，标记「这个会话已经被告知索引就绪」（`UserPromptSubmit` 钩子写与读）
+- `displayPath(root, abs)`：相对路径，`/` 分隔
+
+## 3. 磁盘格式
+
+### 3.1 `status.json`（索引器写，钩子读；tmp + rename 原子写）
+
+```json
+{ "schema": 1, "pluginVersion": "0.1.0", "root": "D:/x", "state": "empty|building|ready|error",
+  "indexedAt": 1732000000000, "filesTotal": 0, "filesDone": 0, "symbols": 0,
+  "languages": { "typescript": 12 }, "stale": 0, "error": null,
+  "reason": null }
+```
+
+`reason`（additive）：`empty`/`error` 态的机器可读原因——`auto-index-disabled` / `unsafe-root` / `below-min-files` / `too-many-files` / `no-supported-files` / `build-failed`；`ready`/`building` 为 null。只读进程（拿不到锁）不写 status.json，`lock-held-read-only` 只出现在 `Indexer.status()` 的内存返回里。
+
+### 3.2 `dirty.log`（钩子追加，索引器消费）
+
+UTF-8 追加行：`<mtimeMs>\t<相对路径，/ 分隔>\n`。索引器记录已读字节偏移到 `dirty.offset`。索引目录不存在时钩子**不创建**（还没索引就没有可标脏的东西）。
+
+### 3.3 `lock`（pid 判活）
+
+内容为 pid；存在且该 pid 存活即视为有人持有写锁，等待最多 5 s。pid 不存在则视为陈旧锁可删除。
+
+零字节锁文件（`O_EXCL` 已创建、pid 尚未写入的瞬间，或写入前进程已死）：mtime 与当前时间相差 < 2 s 视为正在加锁，等待而不删除；相差 ≥ 2 s（含明显来自未来的时间戳）视为陈旧，可删除。非 pid 的垃圾内容同样视为陈旧。
+
+## 4. 语法包（G 产出）
+
+- 运行时：`grammars/runtime/web-tree-sitter.mjs`（导出 `Parser`、`Language`，0.25.10）、`grammars/runtime/tree-sitter.wasm`。
+- 语言：`grammars/wasm/tree-sitter-<grammar>.wasm`；清单 `grammars/manifest.json`：`[{ "grammar", "file", "bytes", "sha256", "source", "version", "license", "languages": ["typescript", "tsx"] }]`。
+- 参考查询：`grammars/queries/<grammar>/{tags,locals}.scm`（有则放）。
+- 装载：`grammars/loader.mjs` 导出 `initTreeSitter()`、`loadLanguage(grammarId)`、`parserFor(grammarId)`。
+
+## 5. LanguageSpec（`languages/<lang>.mjs` 默认导出）
+
+```js
+export default {
+  id: 'python',                       // = 文件名，唯一
+  label: 'Python',
+  extensions: ['.py', '.pyi'],        // 不得与其它包冲突
+  grammar: 'python',                  // wasm 的 grammar id（见 grammars/manifest.json）
+  extends: null,                      // 继承另一包（见下方合并语义）
+  support: 'full',                    // full = 解析语法; script = 只有 embeddings、无自身 grammar; file-level = 只进 files 表与 map
+  scope: null,                        // 'locals' = 用 locals.scm 做作用域级引用解析（仅 js/ts/ruby）
+  commentTypes: ['comment'],          // 文档注释取「前一个命名兄弟节点」且类型在此列表
+  transparentAncestors: ['export_statement'], // 取文档注释、判断 isTopLevel 时跳过的包裹节点
+  maxParseBytes: 4194304,
+  definitions: {                      // 节点类型 -> 规则（每个节点类型一条规则）
+    function_definition: { kind: 'function', name: 'name', signature: ['parameters', 'return_type'],
+                            doc: { from: 'bodyFirstString' } },
+    class_definition:  { kind: 'class', name: 'name' },
+  },
+  calls: [ { node: 'call', fn: 'function' } ],
+  imports: [
+    { node: 'import_statement', kind: 'import', spec: (n, ctx) => '...', names: (n, ctx) => [{ imported, alias }] | null },
+  ],
+  references: [{ node: 'identifier' }],              // 兜底引用（未被打定义/调用/导入/skip 消费的节点）
+  skipPatterns: ['required_parameter pattern: (identifier) @skip'], // 查询模式：命中的节点不作为引用，也不会被 locals 合并重新加回；捕获写在要排除的节点上
+  recovery: [{ kind: 'function', regex: '^(?:export\\s+)?function\\s+([A-Za-z_$][\\w$]*)' }], // 语法不认的写法让后续语句折进 ERROR 节点时，按行首正则把顶层定义捞回来（只有 startLine、无 refs、`recovered: true`）
+  isExported: null,                   // (node, symbol, ctx) => boolean | null
+  embeddings: [],                     // [{ lang: 'typescript', extract: (source, ctx) => [{ text, startLine, endLine }] }]
+  hooks: {},                          // { onNode(node, ctx, out), postProcess(out, ctx) }
+};
+```
+
+规则语义（与引擎实现一一对应，审查后已对齐）：
+
+- `kind`：字符串或 `(node, ctx) => string`；取值 `function | method | class | struct | interface | trait | enum | type | variable | constant | field | property | namespace | module | component | macro | test | other`。在 class/struct/interface/trait/enum/object/record/namespace/module/component 内的 `function`/`method` 由引擎自动记为 `method`。
+- `name`：字段路径字符串（如 `'name'`、`'declarator.id'`）、函数 `(node, ctx) => node | string`，或省略（用节点自身）。任何**命名节点**（`isNamed`）的文本都可作为名字，不限节点类型（Ruby 的 `constant`、Kotlin 的 `simple_identifier`、Erlang 的 `atom` 都可以）。没有字段名的语法（如 kotlin wasm 的 `fieldCount=0`）必须用函数按子节点位置取名。
+- `signature`：字段名、字段数组、或 `(node, ctx) => string`；引擎拼接、压空白、截 120 字符。**签名里的类型引用仍会成为 `refs`**（引擎不消费签名字段）；不想要的标识符用 `skipPatterns` 排除，不要在读 `parent` 的 `when` 里排除（大文件上每个标识符读 `parent` 约 3.5 µs，曾是最大开销）。
+- `doc`：`{ from: 'prevSiblingComment' }`（默认；取 `transparentAncestors` 包裹外的前一个注释兄弟节点，间隔 ≤ 2 行）、`{ from: 'bodyFirstString' }`（沿 `body` 向下穿过语句包裹找第一个字符串节点，须在 body 首两行内）、`{ from: (node, ctx) => string }`、`{ from: 'none' }`。截 240 字符。
+- `when(node, ctx)`：定义/调用/导入规则的守卫。**引用规则上的 `when` 每个标识符都会执行**，只能做廉价判断；排除类需求用 `skipPatterns`。
+- `calls[].fn`：字段路径、函数 `(node, ctx) => node | string`（callee 文本，可含 receiver）、或返回 `{ name, receiver, node? }`。`node` 是 callee 名字节点，引擎会把它消费掉，避免同一调用点再产出一条同名 `ref`（Ruby/PHP 曾因此 callers 翻倍）；不给 `node` 时引擎消费 `method`/`function` 字段。`a.b.c()` 会拆成 receiver `a.b` + name `c`；`?`、`::`、`->` 分隔请自行在函数里处理。
+- `imports[].spec` 返回字符串（模块说明）；`names` 返回 `[{ imported, alias }]` 或 null。`kind` 自由（`import`/`from`/`require`/`include`/`dynamic`…）。
+- `embeddings`：`extract(source, ctx)` 返回脚本块，`startLine`/`endLine` 为**文件内绝对行号（1 基）**；引擎用目标包递归解析，符号/引用/导入按块偏移，`blocks` 记录顶层块（递归内的子块不记录）。自身或祖先包不得再嵌入自己（引擎会抛错）。外层包若同时有 `grammar`，外层也会解析并合并 `parseOk`/`errorNodes`。
+- `extends` 合并语义：`definitions`、`hooks` 按键浅合并（派生包覆盖同名键；改一条规则要整条重写）；`calls`、`imports`、`references`、`skipPatterns`、`embeddings`、`commentTypes` 追加；`extensions`、`grammar`、`scope`、`support`、`isExported`、`transparentAncestors` 等标量整体替换。
+- `hooks.onNode(node, ctx, out)`：存在时引擎退回「全节点命名遍历」，每个未被规则命中的节点都会调用；`hooks.postProcess(out, ctx)` 在包含关系计算前调用，可增删 `out.symbols/refs/imports`。
+- `ctx`：`{ spec, source, tree, lines, text(node), field(node, path), isConsumed(node), consume(node), isTopLevel(node), addSymbol(sym), addRef(ref), addImport(imp) }`。`add*` 的行号为**块内相对行**，引擎会加偏移并填 `block`。
+
+## 6. 抽取引擎（`src/extract/engine.mjs`，阶段 0 实现并冻结）
+
+```js
+await initEngine();                         // 加载运行时 + 全部语言包（每进程一次，worker 里也要调）
+await loadLanguage(grammarId);              // 缓存 Language（loader 导出，引擎转发）
+await loadSpecs();  listSpecs()             // 同一个函数的两个名字
+specForPath(relativePath, specs?)           // 按扩展名取 spec 或 null（最长扩展名优先，大小写不敏感）
+await extractFile({ path, source, spec, startLine = 1, block = null })   // → ExtractedFile
+```
+
+`ExtractedFile`：
+
+```js
+{ path, lang, hash, size, parseOk, errorNodes,
+  symbols: [{ kind, name, qual, startLine, startCol, endLine, endCol, signature, doc, exported, parent /* 下标或 null */, block }],
+  refs:    [{ name, receiver, kind, startLine, startCol, endLine, symbol /* 所属符号下标或 null */, scope, localDef /* 下标或 null */ }],
+  imports: [{ spec, names, kind, startLine, block }],
+  blocks:  [{ lang, startLine, endLine }] }
+```
+
+- 行号 1 基、列 0 基（tree-sitter 的列，按 UTF-16 代码单元计），范围闭区间。
+- `refs[].kind`：`call | ref | type | inherit | implement | decorator`（后四种由包在 `calls[].kind` 或 `references[].kind` 里声明）。
+- `symbol`（所属符号）由引擎按范围包含计算，单行定义按 `endCol` 判定；`parent` 为包含它的定义。
+- 发现方式：引擎把包里的节点类型编译成一条 tree-sitter `Query`，`captures()` 在 wasm 内匹配，JS 只处理命中的节点；节点类型在该语法版本里不存在时自动剔除并打一行 stderr 警告。有 `hooks.onNode` 的包走全节点遍历。
+- `scope === 'locals'` 的包：引擎在 worker 内调用 `src/resolve/locals.mjs` 的 `resolveLocals(tree, queryText, symbols)`，把结果并入 `refs`（`scope: 'local'`，`localDef` 指向同文件定义下标；被局部变量遮蔽的引用 `localDef` 为 null）。**局部变量/参数的使用本身不入库**：`scope === 'local'` 且 `localDef` 为空的**非调用**引用会被引擎丢弃（它们的目标永远不是索引里的符号）；调用引用保留，解析层把这类遮蔽的 callee 标 `?`，不会误连到同名全局定义。
+- 导入语句整个节点被消费：其中的标识符（含 `library(stats)` 这种裸参数）不会成为 `refs`；定义只消费名字节点与 `skipPatterns` 命中的节点（`skipPatterns` 里要自己写 `@skip` 捕获，让被排除的是内部标识符而不是整个结构）。
+- 解析树在返回前 `tree.delete()`；每进程每个语法只创建一个 `Parser`。解析树有 ERROR 节点照常抽取，`parseOk=false`；源码为空或超过 `maxParseBytes` 返回空结果不抛错。
+
+## 7. 存储（`src/store/db.mjs`、`src/store/repo.mjs`，S 实现）
+
+```js
+openDatabase(file)                                  // 建目录、应用 schema、WAL、foreign_keys；返回 Database
+close(db)
+// files
+upsertFile(db, { path, lang, hash, mtimeMs, size, parseOk, errorNodes, indexedAt })   // → id（已存在则更新并清掉旧 symbols/refs/imports）
+getFileByPath(db, path)      listFiles(db)      countFiles(db)      deleteFile(db, path)
+// per-file atomic replace（事务：删旧 → 写 symbols → 写 refs → 写 imports → 维护 symbols_fts）
+replaceAllForFile(db, fileId, { symbols, refs, imports })   // → { symbolIds: number[] }（与输入下标对应）
+replaceFile(db, fileMeta, extracted)                         // → { fileId, symbolIds }：upsertFile + replaceAllForFile 同一事务，索引器一律用这个
+setRefResolution(db, [{ refId, targetId, resolution }])      // resolution ∈ '=' | '~' | '?'；targetId 可 null
+// lookups
+findSymbolsByName(db, name, { exact = true } = {})
+searchSymbolsDetailed(db, query, { limit = 20, kind = null } = {})   // → { rows, matched, dropped }，按相关度排序（见下）
+searchSymbols(db, query, options)                                   // 上者的 rows
+usageCounts(db, symbolIds)        // → Map<id, { refs, files, inSource, byName }>；引用数超过 `USAGE_MAX_REFS` 的符号只给 { refs, capped: true }
+isSecondaryPath(path)            // → boolean；测试 / 脚本 / 第三方目录与文件，清单 `SECONDARY_PATH_PARTS`（search 排序与 inSource 共用）
+symbolById(db, id)           symbolsInFile(db, path)
+refsTo(db, symbolId)         refsByName(db, name)        refsInFile(db, fileId)     unresolvedRefs(db, { fileId } = {})
+importsOfFile(db, path)      importersOfPath(db, path)
+// dirty + meta（dirty 表是「至少一次」语义：takeDirty 取出即删，崩溃丢失的标脏由下一次 mtime 扫描补上）
+markDirty(db, paths)         takeDirty(db, limit = 500)      dirtyCount(db)
+metaGet(db, key)             metaSet(db, key, value)
+```
+
+- `db` 对象对 graph 层可见，B 可以直接写 SQL；列名即 schema。
+- `searchSymbolsDetailed` 的匹配与排序（模型第一步检索常是描述或猜的名字，这一段决定它信不信结果）：
+  - 匹配层：精确名 → 连写前缀（`parseconfig` → `parseConfig`）→ FTS5（bm25）→ LIKE 兜底。兜底每个词一条谓词，所以词序无关（`config parse`、`gift card redeem` 都能命中 `redeemGiftCard`），也够得到分词器够不到的名字（`parse2config`）。谓词与下面的词边界规则是同一条（`poolPredicate`）：长词是 `LIKE '%词%'`；≤ 2 字符的 ASCII 词只能是整词，所以只匹配名字开头或词边界之后（分隔符之后、字母 / 数字后接首字母大写的 `userId`、小写后接全大写的 `macOS`、`isIP`，用 GLOB 实现）。池在 SQL 里就被筛过，噪声不进池，池的大小不再决定会不会漏掉 `sessionId` 这样的整词命中。兜底候选按「词边界贴合度」过滤排序：长词可以是词前缀（`sign` → `signed`）或最弱的任意子串，≤ 2 字符的 ASCII 词必须是整词（`signIn` 的 `in` 不命中 `SigningIdentity`）；中日韩文的两字词是词本身，仍按前缀 / 子串匹配（`配置` 命中 `读取配置`）。被过滤掉的 FTS 行不占 `limit`，兜底是否执行看过滤后的行数。
+  - 排序键：完全同名 → 源码先于测试 / 脚本 / 第三方目录（路径含 `__tests__`、`tests`、`_test.go`、`test_`、`scripts`、`node_modules` 等，清单在 `repo.mjs` 的 `SECONDARY_PATH_PARTS`；清单是路径的子串，目录项带首尾斜杠并在匹配前给路径补一个前导斜杠，所以仓库根目录下的 `tests/`、`scripts/` 也算，`latest_x` 不算）→ 以查询开头的前缀先于更松的匹配 → bm25 / 贴合度。完全同名不会被任何匹配挤出 `limit`，前缀匹配不会被更松的匹配挤出 `limit`。
+  - 截断顺序：每层 FTS 按 `limit × 4`（40–2000 行）读取、LIKE 兜底最多读 2000 行（都按名字从短到长），**先过词边界过滤，再截到 `limit`**——被过滤掉的行不占名额，也不会让好行只能在兜底里以更低层级回来。短词查询的代价：每行最多 1 条 LIKE + 3 条 GLOB，cindy（17.8 万符号）上 `io` / `os` / `up` 实测 180–290 ms。
+  - 放宽：没有任何名字含全部词时，退回到部分匹配。取查询里最长的两个词作锚（并列取靠前的），各查一次「含该词的名字」；候选池在 SQL 里按「同时含其它查询词的个数」降序截取（截断发生在 SQL 里，所以截断本身要偏向多词命中），再用词边界规则逐词核对。两个锚的结果合并后依次按：命中的查询词数 → 命中词的具体程度（词长平方和）→ 源码先于测试 / 脚本 → 名字短者优先。成本与词数无关：完整查询（一条 FTS，至多一条 LIKE）加每个锚一条查询，共 3–4 条语句；`reasoning efforts discovery merge` 第一次回退就命中 `reasoning + efforts`（按子集重试的旧做法要试 6 次，5 个词的查询连两词组合都轮不到）。`matched` 是排在最前的名字命中的词（按查询原序），`dropped` 是其余的词；全无命中时三者皆为空数组。
+  - SQL 参数按其在 SQL 文本中的位置绑定（CTE 的 select 列表先于 `WHERE`）；带 `kind` 过滤时 FTS 层同样生效。
+- 符号被删除时，`refs.target_id`、`refs.local_def_id` 由 schema 的 `ON DELETE SET NULL` 置 NULL，`resolution` 由 repo 显式置 NULL；B 的解析管线把「`resolution IS NULL`」当作待解析。
+- **符号 id 保留**：`replaceAllForFile` 重写一个文件时，按 `kind|qual|name` 配对旧、新定义——两边都恰好 1 个的视为同一符号，保留旧 id 就地 UPDATE（行号/签名/doc/exported/parent 变化不换 id）并同步 FTS；其它旧符号删除、新符号取新 id；键在任一边重复（重载）则整组删旧插新。其它文件里指向**保留** id 的 refs 不动；只有被删符号的 refs 置空并进入待解析。`symbolIds` 仍按输入下标返回。
+- 写组与 bulk load（阶段 2 性能）：
+  - `beginWriteGroup(db)` → `endGroup()`：同一事务里连续提交多个文件（每文件仍是自己的 savepoint，单文件原子性不变）；必须成对、事务外调用。
+  - `beginBulkLoad(db)` / `endBulkLoad(db)`：仅 `Indexer.buildAll` 在「空库或 force 全量」时使用。begin 清空四表与 FTS、删除 refs/symbols 的 9 个二级索引、`PRAGMA foreign_keys=OFF`（必须在事务外；失败时自行恢复索引与 FK）；end 重建索引、FK=ON、`PRAGMA foreign_key_check` 非空即抛、`ANALYZE`。每条路径 end 恰好一次；bulk 期间 `openDatabase`（它会执行 schema 的 `CREATE INDEX IF NOT EXISTS`）只是降速，不是错误。
+  - `takePurgedSymbols(db)` / `clearPurgedSymbols(db)`、`pendingFiles(db)` / `clearPendingFiles(db)`：解析器用的两个 TEMP 表日志（每次入口无条件 `CREATE TEMP TABLE IF NOT EXISTS`，因为回滚会连 TEMP 表一起撤销）。`logPendingFiles` 用 `INDEXED BY refs_target`，`refs_target` 因此属于冻结索引名。
+  - `setRefResolution`：≥ 50 行按 `(target, resolution)` 分组、每 500 个 id 一批 `UPDATE … WHERE id IN (…)`，`changes` 总数不等于行数即抛。
+- **不要绕过 `repo` 直接 `DELETE FROM symbols/refs/imports`**：FTS 行与跨文件链接只由 `repo.replaceAllForFile`/`deleteFile` 维护。schema 已含 `symbols_parent`、`refs_local_def` 索引（FK 级联不再全表扫描）。
+- 约定：`mtimeMs` 必须是整数（A 侧 `Math.trunc`）；`imports.names` 以 JSON 数组存储，读出后自行 `JSON.parse`；`importersOfPath` 依赖 B 填 `imports.resolved_file_id`。
+
+## 8. 解析与查询（B 实现；阶段 0 放签名一致的桩，返回空结果）
+
+```js
+// src/resolve/pipeline.mjs
+resolveFile(db, fileId)        // → { resolved, ambiguous, unresolved }：解析该文件 refs；并重解析「目标曾在本文件」的其它文件 refs
+resolveAll(db)                 // 全库
+// src/resolve/locals.mjs
+resolveLocals(tree, queryText, symbols)   // → [{ name, startLine, startCol, endLine, symbol, localDef }]
+// src/graph/queries.mjs
+search(db, { query, kind, limit }, info = null)   // → [{ kind, name, qual, path, startLine, endLine, signature, usage? }]；给了 info 则回填 matched / dropped。前 `SEARCH_USAGE_ROWS`（3）行带 `usage: { refs, files, inSource, byName }`——其它文件里指向它的引用数（不含定义所在文件）、所在文件数、其中源码文件数、其中按唯一名字连上的引用数（`byName`，其余是 import 解析确定的；未连边的 `?` 不计）（`usageCounts`）；引用数超过 `USAGE_MAX_REFS`（2000）的符号改为 `usage: { refs, capped: true }`，只给全部引用数（含定义所在文件）；没有被外部引用的行没有这个字段
+symbol(db, { name, path, qual })              // → { symbol, callers, callees, imports } | null
+callers(db, { name, path, limit })            // → [{ name, path, startLine, resolution, count }]
+callees(db, { name, path, limit })
+impact(db, { name, path, depth })             // → { nodes, files, truncated }
+outline(db, { path })                         // → [{ kind, name, startLine, endLine, signature }]
+// src/graph/map.mjs
+repoMap(db, { path, budgetTokens })           // → { text, shown, total, truncated }
+```
+
+`repoMap` 的符号按输出顺序逐文件惰性读取，预算满即停；`total` / `filesTotal` 的口径与是否截断无关：整个 scope 内每文件前 6 个符号之和、有符号的文件数（截断时由一次聚合查询给出）。
+
+解析顺序固定：import 解析（`=`）→ 同文件唯一（裸名）→ 全局唯一名（`~`，歧义上限 500）→ 不连边（`?`）。成员调用 `x.m()`（接收者未知）只在属性名全局唯一时连边。动态特性（`getattr`、动态 import、反射）不连边。
+
+两种情形**不回落**，直接 `?`：
+
+1. 导入绑定存在、但其模块不在索引里（外部包、被 exclude、尚未索引）。import 已把名字钉在该模块上，按名回落会把 `import { omit } from 'lodash'` 连到项目里同名的 `omit`。目标文件入库后，`recheckImportersOf` / `recheckByName` 会把这些 ref 重新置为待解析并改为 `=`。
+2. 接收者已解析为类（本文件类、导入类或命名空间）而该类没有这个成员：`Shape.nope()` 不是全局函数 `nope`。例外：`this.m()` 未在本类声明时可能来自继承，仍走全局唯一名；`super.m()` 恒为 `?`。
+
+标记语义（渲染层据此显示）：`=` 确定（import 解析成功，或 `locals.scm` 作用域解析到同文件定义）；`~` 按名唯一（同文件唯一或全局唯一，可能是同名误连）；`?` 未解析、歧义或动态；NULL 尚未处理。`scope === 'local'` 且 `localDef === null` 的引用表示**被局部变量遮蔽**（局部定义不是索引里的符号），必须标 `?`，不得回落到全局唯一名。
+
+运行时 API（实测 web-tree-sitter 0.25.10）：`tree.language` 可取到 `Language`；用 `new Query(language, source)`（`Language.query` 已弃用），`query.captures(rootNode)` 按文档顺序返回 `{ name, node }`，适合做作用域栈追踪。
+
+## 9. 索引器（A 实现）
+
+```js
+// src/index/indexer.mjs
+export class Indexer {
+  constructor({ root, config, workers = 4 })
+  status()                                   // 读 status.json 对应字段 + 即时 dirty 数
+  ensureFresh({ maxWaitMs = 3000, force = false } = {})
+                                             // 消费 dirty.log、stat 比对、与文件枚举对账、增量同步；首次且允许自动索引时后台全量构建，最多等 maxWaitMs
+  buildAll({ force = false })                // 前台全量（进度回调）
+  onProgress(cb)                             // cb({ filesTotal, filesDone, state })
+}
+```
+
+- 文件枚举：git 仓 `git ls-files -z -c -o --exclude-standard`；非 git 仓自走目录并按 `exclude` 配置与内置忽略（`node_modules`、`.git`、`dist`、`build`、`out`、`target`、`vendor`、`.codegraph`）过滤。
+- 变更检测：size + mtime_ms 预筛 → sha256 复核；变了才重新解析。
+- **新鲜度以 server 自己为准**：`ensureFresh()` 每次调用先消费 `dirty.log`，再对已索引文件做 mtime+size 扫描（10k 文件量级约 100 ms，按 5 s 节流；超过 2 万文件时跳过扫描只信 `dirty.log`），有变化就增量重解析。钩子只是加速器：ZCode 的钩子进程没有 `node` 回退（只认 PATH），没装 Node 的机器上钩子静默失效，索引仍必须正确。
+- **周期枚举对账**：钩子只看得到编辑，分支切换 / pull / 生成器 / rm 这类没有钩子行的增删靠重新枚举发现。索引非空时，`ensureFresh` 在本进程首次、之后每 60 s（`meta.lastWalkAt`）、以及 `force: true` 时跑一次 `listFiles`：不在 `files` 表的路径 `markDirty`（交给 `sync()`），在表但不在枚举结果里的行 `deleteFile`（已删除、被 exclude、超过 maxFileBytes、超出 maxFiles，连带其 dirty 条目）。只删不增的路径若有 `resolution IS NULL` 的 refs，立即 `resolveAll`。
+- **死进程遗留的构建**：持有锁却读到磁盘 `state === 'building'`，而本进程没有构建在跑，只可能是上一个进程构建中被杀。索引非空且允许自动索引时按 listing 续建（非 force，mtime/size 未变的文件跳过）；索引为空则走自动索引判定；`autoIndex: false` / `unsafe` 时不续建，只把状态写回 `ready`。`buildAll` 与续建末尾：有提交，**或**存在 `resolution IS NULL` 的 refs，就 `resolveAll`（被杀在「文件已写、refs 未解析」之间的那次由此补齐）。
+- **大批量不阻塞**：脏文件 ≥ 200 时不走前台 `sync()`，改为后台非 force 构建（同样只重解析 mtime/size 变化的文件，status 为 `building`，查询结果 partial），`ensureFresh` 最多等 `maxWaitMs`。构建进行中再调用 `ensureFresh` 同样最多等 `maxWaitMs`，不启动第二个构建。
+- dirty 条目是外部输入：`normalizeDirtyPath` 先归一化 `.`/`..` 段再拒绝任何越界或绝对路径；`sync()` 用 `lstat` 校验，不跟随符号链接（与 walker 一致）。
+- 解析在 `worker_threads`（每 worker `initEngine()` 一次；单任务 60 s 超时则终止该 worker 并把该文件记为解析失败），主线程按文件事务写库；增量 `sync()` 对每个重写过的文件调用 `resolveFile`，全量 `buildAll()` 在末尾调用一次 `resolveAll`（实测比逐文件快 3×，结果更一致）。
+- 全量构建走 bulk load（见 §7）：清表、删索引、FK 关到结束，每 100 个文件一次 WAL 提交；构建期间 `wal_autocheckpoint=0`，结束做一次 `wal_checkpoint(TRUNCATE)` 并恢复自动检查点。bulk 构建的 `resolveAll` 必须在 `endBulkLoad` **之后**（解析器需要索引）；增量 sync 的 `resolveFile` 在每个文件的写组 savepoint 内执行。`buildAll` 与后台构建失败都写 `status.json` 的 `error` 态与 `reasonDetail`。
+- 自动索引条件：`config.autoIndex` 且 `!unsafe` 且支持语言的文件数 ≥ `config.minFilesToAutoIndex` 且总数 ≤ `config.maxFiles`；否则 `state: 'empty'`，`status.json` 的 `reason` 给机器可读原因（`auto-index-disabled` / `unsafe-root` / `below-min-files` / `too-many-files` / `no-supported-files` / `build-failed`）；只读进程（拿不到锁）不写 status.json，只在 `status()` 返回里给出 `lock-held-read-only`。`total` 指枚举到的全部文件数（任意语言，已应用 ignore/exclude），`supportedCount` 为语言包命中的文件数，`maxFiles` 截断只作用于后者。
+- 语言包装载是容错的：任一包语法/引用错误时打一行 stderr 并跳过（`registry.loadErrors` 记录），索引照常；契约测试用 `initEngine({ strict: true })` 让坏包直接失败。
+- 多进程写：`lockPath` 的 pid 锁；拿不到锁走只读（查询照常，不同步）。
+- **会话开始即刷新**（`src/mcp/server.mjs` 的 `silentIndexStart`）：每会话一个服务进程，`initialize` 请求一到就在后台调 `ensureFresh({ maxWaitMs: 0 })`，不等它完成、失败只写 stderr。于是新项目在会话打开时就开始建第一次索引（而不是等模型第一次调用工具——`SessionStart` 钩子让未索引项目的模型「就绪前用 Grep/Read」，照做的模型永远不会触发构建），已索引项目则在会话打开时做一次增量检查。钩子进程短命，进程内的构建会随它退出，所以构建只能由服务进程发起。2026-11-24 实测：握手后不发任何工具调用，99 个文件的项目 1.6 s 就绪、2 个文件的项目 0.5 s 就绪；低于自动索引门槛的项目只写 `state: 'empty'` 的记录，不索引。
+
+## 10. MCP 与工具（C 实现协议层与渲染；工具名与 schema 冻结）
+
+传输：stdio，按行分隔的 JSON-RPC 2.0（与 `plugins/websearch/bin/server.mjs` 相同写法）。方法：`initialize`（回显 `protocolVersion`，`capabilities.tools = {}`，`instructions` 见下）、`notifications/initialized`、`tools/list`、`tools/call`、`ping`。未知方法回 `-32601`；非法 JSON 回 `-32700` 且进程不退出。
+
+ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegraph-plugin/zcode-facts.md`）：
+- `hooks/hooks.json` 由宿主**自动发现并加载**；清单里再声明 `hooks` 键会报 `Duplicate plugin hooks file ignored`，所以 `plugin.json` 不写 `hooks`。
+- MCP server 的 cwd = 会话工作区；env 注入 `ZCODE_PLUGIN_DATA`/`ZCODE_PLUGIN_ROOT`/`ZCODE_PROJECT_DIR`；`command/args/env` 里的 `${…}` 会展开；第三方插件每会话一个进程（写入必须走文件锁）。
+- 工具结果模型可见上限 **50 000 字节**，超出静默截尾（不落盘）。单次输出预算 ≤ 45 KB。
+- `initialize.instructions` **不会被注入**系统提示；指引只能放在工具 description 与 `SessionStart.additionalContext`。
+- 工具名：`mcp__plugin_codegraph_codegraph__<tool>`。
+- `"command": "node"` 在 MCP 侧有内置回退（Electron 的 Node 22.22.1），钩子侧没有。
+- 钩子 stdin 带通用字段 `session_id`、`cwd`、`hook_event_name`，env 带 `ZCODE_SESSION_ID`、`ZCODE_PROJECT_DIR`；`UserPromptSubmit` 的输出 `{ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext } }` 生效，钩子配置里不写 `matcher` 即全匹配。三个钩子：
+  - `session-start`：读 `status.json` 注入状态与指引（≤ 120 token）。索引已就绪时顺带写 `announced/<sessionId>`，因为它已经告诉过模型。
+  - `user-prompt`：状态为 `ready` 且本会话没有 `announced/<sessionId>` 时，注入同样的就绪状态与指引并写标记；否则静默退出。它负责「索引在会话开始后才建完」的通知，每个会话一次；没有 session id 时保持静默（分不清「说过」与「没说过」）；标记超过一天的被清掉。单次约 60 ms。
+  - `post-tool`：见 §3.2。
+
+| 工具 | 参数 | 说明 |
+|---|---|---|
+| `codegraph_status` | `refresh?: boolean` | 索引状态；`refresh` 强制同步一次 |
+| `codegraph_lookup` | `operation: 'search'|'symbol'|'callers'|'callees'|'impact'|'outline'`，`query?: string`，`name?: string`，`file?: string`，`depth?: int(1–6, 默认 2)`，`limit?: int(1–200, 默认 20)`，`body?: boolean` | `search` 用 `query`（符号名、前缀或任意词序的描述）；其余用 `name`（`outline` 用 `file`）。`body=true` 且函数体 ≤ 30 行时内联源码，否则给 Read 行段 |
+| `codegraph_map` | `path?: string`，`budget?: int(200–4000 tokens, 默认 1200)` | 仓库地图 |
+
+工具描述（固定文案，命令式）：
+
+- `codegraph_lookup`：`Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. symbol with body=true returns the definition source in the same call. Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. Index may lag a few seconds after external edits; codegraph_status reports staleness.`
+- `query` 参数：`search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). When no name holds every word, the longest ones anchor a partial-match search, best match first. Required for search.`
+- `codegraph_map`：`Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.`
+- `codegraph_status`：`Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. When the project is not indexed, fall back to Read/Grep.`
+
+`initialize.instructions`（约 700 字符）：说明三个工具、何时用 Grep（文本、配置、字符串、未支持语言）、未索引时用内置工具。
+
+## 11. 输出格式（`src/render/text.mjs`，C 实现；快照测试以此为准）
+
+```
+# <operation> <args> · <summary> · <freshness>
+<rows>
+<footer>
+```
+
+- `symbol`：首行 `# symbol parseConfig · src/config/parse.ts:42-71 (30 lines) · callers 3/5 resolved`；随后 `sig` 行、`doc:` 行、`calls(n): a= b~ c?`、`called by(n): name path:line=`、`imports: a, b`、图例行（仅含 `~` 或 `?` 时出现）、`body:` 行（`30 lines → Read src/config/parse.ts offset 42 limit 30` 或内联代码块）。`function` / `method` / `component` / `macro` 的入边写作 `callers` / `called by`，其它 kind（类型、类、常量、字段……）写作 `uses` / `used by`——入边是全部引用，不只是调用。
+- `callers`/`callees`/`impact`/`outline`：每行 `<kind> <name> <signature> <path>:<start>-<end>`（`kind` 右对齐 9 列省略号，`signature` 截 80 列），按 path 再按行排序。`search` 的前 3 行在行尾追加 ` · 12 uses in 4 files (3 in source)`（`usage.refs` 为 0 或没有 `usage` 时不追加）：定向的那一次调用就带上「谁依赖它」，不必等模型之后再回来问 `callers`——T20 的 13 个会话里它在第一次编辑后一次也没回来过。其中有按唯一名字连上的引用时（`usage.byName > 0`）行尾再加 `~` 并带出图例行；被大量引用的符号（`capped`）只写 ` · 15361 references (not broken down by file)`（全部引用，含定义所在文件）。
+- `search`：行格式同上，但**保持相关度顺序**（完全同名优先；其余先看名字是否以查询开头，同一层内源码先于测试与脚本，再 bm25，最后 LIKE 兜底），不按 path 重排——小预算截断时留下的是最相关的行。首行在部分匹配时写 `# search "sign-in cookie" · 18 partial matches (no name has all words; best match: sign + cookie) · indexed 0s ago`（`matched` 是排在最前的那个名字含的词，多个词用 ` + ` 连接；靠后的行未必含这些词，所以首行只说「最佳匹配含什么」，不说整个结果集都含）；无命中写 `no matches` 并给 `hint: search matches symbol names only (text, configs and string literals belong to Grep); a word of one or two letters must be a whole word.`。
+- 页脚提示（`hint:` / `next:`）排在图例行之后。`search` 有结果时固定给一行 `next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); impact <name> shows what a change breaks.`。**行优先于提示**：预算装不下「首行 + 页脚 + 几行结果」时先丢页脚提示（从最后一个起，页脚剩给行的空间少于 48 token 即丢），再丢截断提示；行与首行始终保留。
+- `map`：按目录分组，`dir/` 行后缩进 `<file>  <kind> <name>:<line> ...`，每文件最多 6 个符号。
+- 截断：末行 `(N of M shown)`；陈旧：首行末尾 ` · stale: N files changed since index`；构建中：` · indexing 43% (results partial)`。
+- token 估算：`Math.ceil(Buffer.byteLength(text) / 4)`，超出预算先截行数再补截断行。
+- 所有文本纯文本，不输出 JSON；`tool_result` 的 `content[0].text` 即全文。
+
+## 12. 配置（`src/config.mjs`，C 实现）
+
+文件 `configPath()`（JSON），字段缺省：
+
+```json
+{ "autoIndex": true, "minFilesToAutoIndex": 30, "maxFiles": 30000, "maxFileBytes": 4194304, "exclude": [],
+  "languages": null, "defaultBudgetTokens": { "lookup": 1500, "map": 1200 }, "frontload": false, "liftoffOnly": false }
+```
+
+环境变量覆盖（字段为空才回落）：`CODEGRAPH_AUTO_INDEX`、`CODEGRAPH_MAX_FILES`、`CODEGRAPH_MIN_FILES`、`CODEGRAPH_EXCLUDE`（逗号分隔）、`CODEGRAPH_LIFTOFF_ONLY`。宿主把 userConfig 的布尔渲染成 `"true"/"false"`（不是 `"1"/"0"`），空串表示未设，所以布尔解析接受 `true/1/yes/on` 与 `false/0/no/off/""`。`Indexer.ensureFresh({ force })` 的 `force`（`codegraph_status{refresh:true}` 用）绕过 stat 扫描的 5 s 节流，并无条件执行一次 §9 的文件枚举对账；它不强制重新解析未变化的文件（那是 `buildAll({ force: true })`）。
+
+## 13. 测试约定
+
+- `tests/contract.test.mjs`：对 `languages/*.mjs` 每个包跑同一套断言：`sample.<ext>` 的符号/import/调用点与 `expected.json` 一致、`broken.<ext>` 不抛错且有 ERROR 节点、扩展名无冲突、`id` 等于文件名。`CODEGRAPH_CONTRACT_LANGS=python,ruby` 只跑指定包（并行开发用）。
+- `expected.json`：`{ "symbols": [{ "kind", "name", "line", "endLine", "qual"?, "doc"?, "exported"? }], "imports": [{ "spec", "line" }], "calls": [{ "name", "line" }], "refs": [{ "kind"?, "name", "line", "symbol" }] }`。`symbols`/`imports`/`calls` 是**精确多重集**（多一个少一个都失败）；`qual`/`doc`/`exported` 写了才比对；`refs` 是**必须存在的子集**（`symbol` 为所属符号名或 null），用来锁住单行定义的归属。
+- 多文件解析用例放 `tests/fixtures/projects/<name>/`，测试里用临时目录建库。

@@ -1,0 +1,40 @@
+{
+  "symbols": [
+    { "kind": "namespace", "name": "com.example.shop", "line": 1, "endLine": 1, "qual": "com.example.shop", "exported": false },
+    { "kind": "class", "name": "Money", "line": 8, "endLine": 33, "qual": "Money", "doc": "Money amount in cents plus a currency code.", "exported": true },
+    { "kind": "field", "name": "CENTS_PER_UNIT", "line": 9, "endLine": 9, "qual": "Money.CENTS_PER_UNIT", "exported": false },
+    { "kind": "field", "name": "cents", "line": 10, "endLine": 10, "qual": "Money.cents", "exported": false },
+    { "kind": "field", "name": "currency", "line": 11, "endLine": 11, "qual": "Money.currency", "exported": false },
+    { "kind": "method", "name": "Money", "line": 13, "endLine": 16, "qual": "Money.Money", "exported": true },
+    { "kind": "method", "name": "of", "line": 19, "endLine": 21, "qual": "Money.of", "doc": "Builds a Money from a whole-unit amount.", "exported": true },
+    { "kind": "method", "name": "price", "line": 23, "endLine": 25, "qual": "Money.price", "exported": true },
+    { "kind": "method", "name": "describe", "line": 27, "endLine": 32, "qual": "Money.describe", "exported": true },
+    { "kind": "interface", "name": "Priced", "line": 35, "endLine": 37, "qual": "Priced", "exported": false },
+    { "kind": "method", "name": "price", "line": 36, "endLine": 36, "qual": "Priced.price", "exported": false }
+  ],
+  "imports": [
+    { "spec": "java.util.ArrayList", "line": 3 },
+    { "spec": "java.util.List", "line": 4 },
+    { "spec": "java.util.Objects", "line": 5 }
+  ],
+  "calls": [
+    { "name": "requireNonNull", "line": 15 },
+    { "name": "Money", "line": 20 },
+    { "name": "round", "line": 20 },
+    { "name": "ArrayList", "line": 28 },
+    { "name": "add", "line": 29 },
+    { "name": "add", "line": 30 },
+    { "name": "toString", "line": 30 },
+    { "name": "join", "line": 31 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "requireNonNull", "line": 15, "symbol": "Money" },
+    { "kind": "call", "name": "round", "line": 20, "symbol": "of" },
+    { "kind": "call", "name": "add", "line": 29, "symbol": "describe" },
+    { "kind": "ref", "name": "Priced", "line": 8, "symbol": "Money" },
+    { "kind": "ref", "name": "String", "line": 11, "symbol": "currency" },
+    { "kind": "ref", "name": "CENTS_PER_UNIT", "line": 20, "symbol": "of" },
+    { "kind": "ref", "name": "Money", "line": 23, "symbol": "price" },
+    { "kind": "ref", "name": "Money", "line": 36, "symbol": "price" }
+  ]
+}

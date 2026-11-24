@@ -1,0 +1,9 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. BROKEN.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-TOTAL         PIC S9(9
+       PROCEDURE DIVISION.
+           MOVE  TO WS-TOTAL
+           ADD WS-TOTAL TO
+           STOP

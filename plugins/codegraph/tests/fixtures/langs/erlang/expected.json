@@ -1,0 +1,31 @@
+{
+  "symbols": [
+    { "kind": "module", "name": "vault", "line": 2, "endLine": 2, "qual": "vault", "doc": "Vault service keeping per-user balances." },
+    { "kind": "macro", "name": "MAX_FEE", "line": 11, "endLine": 11, "qual": "MAX_FEE" },
+    { "kind": "struct", "name": "account", "line": 12, "endLine": 12, "qual": "account" },
+    { "kind": "field", "name": "owner", "line": 12, "endLine": 12, "qual": "account.owner" },
+    { "kind": "field", "name": "balance", "line": 12, "endLine": 12, "qual": "account.balance" },
+    { "kind": "type", "name": "account", "line": 13, "endLine": 13, "qual": "account" },
+    { "kind": "function", "name": "start_link", "line": 16, "endLine": 17, "qual": "start_link", "doc": "Starts the vault process.", "exported": true },
+    { "kind": "function", "name": "deposit", "line": 20, "endLine": 23, "qual": "deposit", "doc": "Credits Amount for Owner.", "exported": true },
+    { "kind": "function", "name": "handle_call", "line": 25, "endLine": 27, "qual": "handle_call", "exported": true }
+  ],
+  "imports": [
+    { "spec": "lists", "line": 7 },
+    { "spec": "kernel/include/logger.hrl", "line": 8 },
+    { "spec": "vault.hrl", "line": 9 }
+  ],
+  "calls": [
+    { "name": "start_link", "line": 17 },
+    { "name": "is_binary", "line": 20 },
+    { "name": "call", "line": 21 },
+    { "name": "sum", "line": 26 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "MODULE", "line": 17, "symbol": "start_link" },
+    { "kind": "ref", "name": "Owner", "line": 20, "symbol": "deposit" },
+    { "kind": "call", "name": "sum", "line": 26, "symbol": "handle_call" },
+    { "kind": "ref", "name": "MAX_FEE", "line": 26, "symbol": "handle_call" },
+    { "kind": "ref", "name": "B", "line": 25, "symbol": "handle_call" }
+  ]
+}

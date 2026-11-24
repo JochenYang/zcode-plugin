@@ -1,0 +1,6 @@
+function greet(required string name) {
+    return "Hello, " & arguments.name & "!";
+}
+
+greeter = { name: "world" };
+writeOutput(greet(greeter.name));

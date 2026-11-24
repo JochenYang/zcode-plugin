@@ -1,0 +1,26 @@
+{
+  "symbols": [
+    { "kind": "macro", "name": "TILE", "line": 4, "endLine": 4, "qual": "TILE", "exported": true },
+    { "kind": "struct", "name": "Vec4", "line": 7, "endLine": 7, "qual": "Vec4", "doc": "Per-thread vector.", "exported": true },
+    { "kind": "field", "name": "x", "line": 7, "endLine": 7, "qual": "Vec4.x", "exported": true },
+    { "kind": "function", "name": "dot", "line": 9, "endLine": 11, "qual": "dot", "exported": false },
+    { "kind": "function", "name": "saxpy", "line": 14, "endLine": 17, "qual": "saxpy", "doc": "One thread per output element.", "exported": true },
+    { "kind": "function", "name": "fill", "line": 20, "endLine": 23, "qual": "fill", "exported": true },
+    { "kind": "function", "name": "launch", "line": 25, "endLine": 28, "qual": "launch", "exported": true }
+  ],
+  "imports": [
+    { "spec": "cuda_runtime.h", "line": 1 },
+    { "spec": "cstdio", "line": 2 }
+  ],
+  "calls": [
+    { "name": "saxpy", "line": 26 },
+    { "name": "fill", "line": 27 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "Vec4", "line": 9, "symbol": "dot" },
+    { "kind": "ref", "name": "T", "line": 20, "symbol": "fill" },
+    { "kind": "ref", "name": "cudaStream_t", "line": 25, "symbol": "launch" },
+    { "kind": "call", "name": "saxpy", "line": 26, "symbol": "launch" },
+    { "kind": "call", "name": "fill", "line": 27, "symbol": "launch" }
+  ]
+}

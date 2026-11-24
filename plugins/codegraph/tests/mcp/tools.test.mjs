@@ -1,0 +1,487 @@
+// Tool layer (CONTRACTS.md §10/§11): schemas, validation, freshness flow and
+// rendering, driven through the real JSON-RPC handler with a fake context. The
+// database holds data produced by the real extraction engine from
+// fixtures/graph/sample.ts; graph queries are injected (`ctx.queries`) because
+// the real module may still be the phase-0 stub.
+import { test, describe, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer } from '../../src/mcp/server.mjs';
+import { BUDGET_RANGE, DEPTH_RANGE, LIMIT_RANGE, OPERATIONS, TOOLS, callTool, resolveGraph } from '../../src/mcp/tools.mjs';
+import * as graphQueries from '../../src/graph/queries.mjs';
+import * as graphMap from '../../src/graph/map.mjs';
+import { DEFAULT_CONFIG } from '../../src/config.mjs';
+import { close, openDatabase } from '../../src/store/db.mjs';
+import { findSymbolsByName, importsOfFile, refsByName, replaceFile, symbolsInFile } from '../../src/store/repo.mjs';
+import { extractFile, initEngine, loadSpecs, specForPath } from '../../src/extract/engine.mjs';
+import { INSTRUCTIONS } from '../../src/mcp/instructions.mjs';
+import { estimateTokens, MAX_OUTPUT_BYTES } from '../../src/render/budget.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE = path.join(HERE, 'fixtures', 'graph', 'sample.ts');
+const SAMPLE = 'src/graph/sample.ts';
+const LONG = 'src/graph/long.ts';
+// Footer of every non-empty search result (CONTRACTS.md §11).
+const SEARCH_NEXT_HINT =
+  'next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); impact <name> shows what a change breaks.';
+
+const CONTRACT_DESCRIPTIONS = {
+  codegraph_lookup:
+    'Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. symbol with body=true returns the definition source in the same call. Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. Index may lag a few seconds after external edits; codegraph_status reports staleness.',
+  codegraph_map:
+    'Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.',
+  codegraph_status:
+    'Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. When the project is not indexed, fall back to Read/Grep.',
+};
+
+let db;
+let root;
+let indexedAt;
+
+before(async () => {
+  await initEngine();
+  const specs = await loadSpecs();
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-tools-'));
+  db = openDatabase(':memory:');
+  indexedAt = Date.now();
+  const sources = {
+    [SAMPLE]: fs.readFileSync(FIXTURE, 'utf8'),
+    // 40 lines so the body is above the inline limit and must become a Read line.
+    [LONG]: ['export function longBody(n: number): number {', ...Array.from({ length: 38 }, (_, i) => `  const v${i} = n + ${i};`), '}'].join('\n'),
+  };
+  for (const [rel, source] of Object.entries(sources)) {
+    const abs = path.join(root, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, source);
+    const extracted = await extractFile({ path: rel, source, spec: specForPath(rel, specs) });
+    assert.equal(extracted.parseOk, true, `${rel} parses`);
+    replaceFile(db, { path: rel, lang: extracted.lang, hash: extracted.hash, mtimeMs: indexedAt, size: extracted.size, parseOk: extracted.parseOk, errorNodes: extracted.errorNodes, indexedAt }, extracted);
+  }
+});
+
+after(() => {
+  close(db);
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
+});
+
+const READY = () => ({ state: 'ready', filesTotal: 2, filesDone: 2, symbols: 5, languages: { typescript: 2 }, stale: 0, indexedAt: Date.now() - 125_000, error: null });
+const FRESH = 'indexed 2m ago';
+
+function fakeCtx(status = READY(), extra = {}) {
+  const calls = [];
+  return {
+    root,
+    db,
+    config: { ...DEFAULT_CONFIG, defaultBudgetTokens: { ...DEFAULT_CONFIG.defaultBudgetTokens } },
+    indexer: {
+      ensureFresh: async (opts) => {
+        calls.push(['ensureFresh', opts]);
+      },
+      status: () => {
+        calls.push(['status']);
+        return typeof status === 'function' ? status() : status;
+      },
+    },
+    calls,
+    ...extra,
+  };
+}
+
+function serverFor(ctx) {
+  return createServer({ onCall: (name, args) => callTool(name, args, ctx) });
+}
+
+async function rpc(server, method, params) {
+  return JSON.parse(await server.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })));
+}
+
+async function call(ctx, name, args) {
+  const res = await rpc(serverFor(ctx), 'tools/call', { name, arguments: args });
+  assert.equal(res.error, undefined, `protocol error: ${JSON.stringify(res.error)}`);
+  return res.result;
+}
+
+const text = (result) => result.content[0].text;
+
+// A test implementation of the query layer on top of the real store, shaped
+// like CONTRACTS.md §8. Resolution marks are synthesised so every marker and
+// the legend are exercised.
+function storeQueries(log = []) {
+  const row = (r) => ({ kind: r.kind, name: r.name, qual: r.qual, path: r.path, startLine: r.start_line, endLine: r.end_line, signature: r.signature });
+  return {
+    search(db_, { query, kind, limit }) {
+      log.push(['search', { query, kind, limit }]);
+      return findSymbolsByName(db_, query, { exact: false }).slice(0, limit).map(row);
+    },
+    symbol(db_, { name, path, qual }) {
+      log.push(['symbol', { name, path, qual }]);
+      const matches = findSymbolsByName(db_, name).filter((r) => !path || r.path === path);
+      if (matches.length !== 1) return null;
+      const s = matches[0];
+      return {
+        symbol: s,
+        callers: refsByName(db_, name).map((r, i) => ({ name, path: r.path, startLine: r.start_line, resolution: ['=', '~', '?'][i % 3], count: i === 0 ? 2 : 1 })),
+        callees: refsByName(db_, 'parseConfig').length ? [{ name: 'parseConfig', path: SAMPLE, startLine: 16, resolution: '~' }] : [],
+        imports: importsOfFile(db_, s.path),
+      };
+    },
+    callers(db_, { name, path, limit }) {
+      log.push(['callers', { name, path, limit }]);
+      return refsByName(db_, name).slice(0, limit).map((r, i) => ({ name, path: r.path, startLine: r.start_line, resolution: ['=', '~', '?'][i % 3], count: i === 0 ? 2 : 1 }));
+    },
+    callees(db_, { name, path, limit }) {
+      log.push(['callees', { name, path, limit }]);
+      return [{ name: 'parseConfig', path: SAMPLE, startLine: 16, resolution: '~' }].slice(0, limit);
+    },
+    impact(db_, { name, path, depth }) {
+      log.push(['impact', { name, path, depth }]);
+      const nodes = symbolsInFile(db_, SAMPLE).map((r, i) => ({ ...row(r), depth: (i % depth) + 1 }));
+      return { nodes, files: [SAMPLE], truncated: depth < 3 };
+    },
+    outline(db_, { path }) {
+      log.push(['outline', { path }]);
+      return symbolsInFile(db_, path).map(row);
+    },
+  };
+}
+
+describe('TOOLS', () => {
+  test('three tools with the frozen names, descriptions and parameter ranges', () => {
+    assert.deepEqual(TOOLS.map((t) => t.name), ['codegraph_status', 'codegraph_lookup', 'codegraph_map']);
+    for (const tool of TOOLS) {
+      assert.equal(tool.description, CONTRACT_DESCRIPTIONS[tool.name], tool.name);
+      assert.equal(tool.inputSchema.type, 'object');
+      assert.equal(typeof tool.inputSchema.properties, 'object');
+    }
+    const lookup = TOOLS[1].inputSchema;
+    assert.deepEqual(lookup.required, ['operation']);
+    assert.deepEqual(lookup.properties.operation.enum, [...OPERATIONS]);
+    assert.deepEqual([lookup.properties.depth.minimum, lookup.properties.depth.maximum], [DEPTH_RANGE.min, DEPTH_RANGE.max]);
+    assert.deepEqual([lookup.properties.limit.minimum, lookup.properties.limit.maximum], [LIMIT_RANGE.min, LIMIT_RANGE.max]);
+    for (const key of ['query', 'name', 'file']) assert.equal(lookup.properties[key].type, 'string', key);
+    assert.equal(lookup.properties.body.type, 'boolean');
+    const map = TOOLS[2].inputSchema;
+    assert.deepEqual([map.properties.budget.minimum, map.properties.budget.maximum], [BUDGET_RANGE.min, BUDGET_RANGE.max]);
+    assert.equal(map.properties.path.type, 'string');
+    assert.equal(TOOLS[0].inputSchema.properties.refresh.type, 'boolean');
+  });
+
+  test('tools/list over JSON-RPC returns them; instructions mention the three tools', async () => {
+    const res = await rpc(serverFor(fakeCtx()), 'tools/list', {});
+    assert.deepEqual(res.result.tools, TOOLS);
+    assert.ok(INSTRUCTIONS.includes('codegraph_status') && INSTRUCTIONS.includes('codegraph_lookup') && INSTRUCTIONS.includes('codegraph_map'));
+    assert.ok(INSTRUCTIONS.length <= 800, `${INSTRUCTIONS.length} chars`);
+  });
+});
+
+describe('argument validation (TypeError -> in-band error)', () => {
+  const cases = [
+    ['codegraph_lookup', {}, '"operation" is required'],
+    ['codegraph_lookup', { operation: 'grep' }, /"operation" must be one of search, symbol, callers, callees, impact, outline \(got "grep"\)/],
+    ['codegraph_lookup', { operation: 'search' }, /operation=search requires "query"/],
+    ['codegraph_lookup', { operation: 'symbol' }, /operation=symbol requires "name"/],
+    ['codegraph_lookup', { operation: 'outline' }, /operation=outline requires "file"/],
+    ['codegraph_lookup', { operation: 'search', query: '  ' }, /"query" must be a non-empty string \(got "  "\)/],
+    ['codegraph_lookup', { operation: 'search', query: 'x', depth: 0 }, /"depth" must be an integer between 1 and 6 \(got 0\)/],
+    ['codegraph_lookup', { operation: 'impact', name: 'x', depth: 7 }, /"depth" must be an integer between 1 and 6 \(got 7\)/],
+    ['codegraph_lookup', { operation: 'impact', name: 'x', depth: '2' }, /"depth" must be an integer between 1 and 6 \(got "2"\)/],
+    ['codegraph_lookup', { operation: 'search', query: 'x', limit: 0 }, /"limit" must be an integer between 1 and 200 \(got 0\)/],
+    ['codegraph_lookup', { operation: 'search', query: 'x', limit: 201 }, /"limit" must be an integer between 1 and 200 \(got 201\)/],
+    ['codegraph_lookup', { operation: 'search', query: 'x', limit: 2.5 }, /"limit" must be an integer between 1 and 200 \(got 2.5\)/],
+    ['codegraph_lookup', { operation: 'symbol', name: 'x', body: 'yes' }, /"body" must be a boolean \(got "yes"\)/],
+    ['codegraph_map', { budget: 199 }, /"budget" must be an integer between 200 and 4000 \(got 199\)/],
+    ['codegraph_map', { budget: 4001 }, /"budget" must be an integer between 200 and 4000 \(got 4001\)/],
+    ['codegraph_status', { refresh: 'true' }, /"refresh" must be a boolean \(got "true"\)/],
+  ];
+  for (const [name, args, expected] of cases) {
+    test(`${name} ${JSON.stringify(args)}`, async () => {
+      const ctx = fakeCtx();
+      const res = await rpc(serverFor(ctx), 'tools/call', { name, arguments: args });
+      assert.equal(res.error, undefined, 'not a protocol error');
+      assert.equal(res.result.isError, true);
+      assert.match(res.result.content[0].text, /^codegraph error: /);
+      if (expected instanceof RegExp) assert.match(res.result.content[0].text, expected);
+      else assert.ok(res.result.content[0].text.includes(expected), res.result.content[0].text);
+      assert.deepEqual(ctx.calls, [], 'invalid arguments never reach the indexer');
+    });
+  }
+
+  test('non-object arguments and unknown tool names are TypeErrors', async () => {
+    await assert.rejects(callTool('codegraph_status', [1]), /"arguments" must be an object \(got array\)/);
+    await assert.rejects(callTool('codegraph_status', 'x'), /"arguments" must be an object/);
+    await assert.rejects(callTool('nope', {}), /unknown tool "nope"/);
+    const res = await call(fakeCtx(), 'codegraph_status', { refresh: true, bogus: 1, limit: 999 });
+    assert.equal(res.isError, undefined, 'unknown parameters are ignored');
+  });
+});
+
+describe('freshness flow', () => {
+  test('every tool awaits ensureFresh() first, then reads status(); refresh=true is forwarded', async () => {
+    const ctx = fakeCtx();
+    await call(ctx, 'codegraph_status', {});
+    await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'parseConfig' });
+    await call(ctx, 'codegraph_map', {});
+    assert.deepEqual(ctx.calls, [
+      ['ensureFresh', undefined], ['status'],
+      ['ensureFresh', undefined], ['status'],
+      ['ensureFresh', undefined], ['status'],
+    ]);
+    const refresh = fakeCtx();
+    await call(refresh, 'codegraph_status', { refresh: true });
+    assert.deepEqual(refresh.calls, [['ensureFresh', { maxWaitMs: 3000, force: true }], ['status']]);
+  });
+
+  test('a failing sync does not abort the query; it is reported in the freshness segment', async () => {
+    const ctx = fakeCtx(READY(), {
+      indexer: { ensureFresh: async () => { throw new Error('lock timeout'); }, status: () => READY() },
+    });
+    const out = text(await call(ctx, 'codegraph_status', {}));
+    assert.equal(out.split('\n')[0], `# status · ready · 2 files · 5 symbols · ${FRESH} · sync failed: lock timeout`);
+    const lookup = fakeCtx(READY(), {
+      indexer: { ensureFresh: async () => { throw new Error('lock timeout'); }, status: () => READY() },
+      queries: storeQueries(),
+    });
+    assert.ok(text(await call(lookup, 'codegraph_lookup', { operation: 'outline', file: SAMPLE })).includes(`· ${FRESH} · sync failed: lock timeout`));
+  });
+});
+
+describe('codegraph_status', () => {
+  test('ready, empty and building render as text (no isError)', async () => {
+    const ready = await call(fakeCtx(), 'codegraph_status', {});
+    assert.equal(ready.isError, undefined);
+    assert.deepEqual(ready.content, [{ type: 'text', text: `# status · ready · 2 files · 5 symbols · ${FRESH}\nlanguages: typescript 2` }]);
+    const empty = text(await call(fakeCtx({ state: 'empty', filesTotal: 0, filesDone: 0, symbols: 0, reason: 'below-min-files', reasonDetail: '4 supported file(s)' }), 'codegraph_status', {}));
+    assert.equal(empty.split('\n')[0], '# status · empty · 0 files · 0 symbols · not indexed');
+    assert.equal(empty.split('\n')[1], 'reason: 4 supported file(s) [below-min-files]');
+    const building = text(await call(fakeCtx({ state: 'building', filesTotal: 2, filesDone: 1, symbols: 3 }), 'codegraph_status', { refresh: true }));
+    assert.equal(building.split('\n')[0], '# status refresh=true · building · 1 of 2 files · 3 symbols · indexing 50% (results partial)');
+  });
+
+  test('a status() that throws yields the unavailable text instead of an error', async () => {
+    const ctx = fakeCtx(READY(), { indexer: { ensureFresh: async () => {}, status: () => { throw new Error('status.json unreadable'); } } });
+    const out = text(await call(ctx, 'codegraph_status', {}));
+    assert.equal(out.split('\n')[0], '# status · unavailable');
+    assert.ok(out.includes('status.json unreadable'));
+  });
+});
+
+describe('codegraph_lookup', () => {
+  test('not indexed: readable text, the query layer is never called', async () => {
+    const log = [];
+    const ctx = fakeCtx({ state: 'empty', filesTotal: 0, symbols: 0 }, { queries: storeQueries(log) });
+    const out = await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'parseConfig' });
+    assert.equal(out.isError, undefined);
+    assert.equal(text(out), '# search parseConfig · not indexed\nhint: project is not indexed; use Read/Grep for now. codegraph_status explains why.');
+    assert.deepEqual(log, []);
+    const map = text(await call(fakeCtx({ state: 'empty' }, { map: { repoMap: () => { throw new Error('must not run'); } } }), 'codegraph_map', {}));
+    assert.equal(map.split('\n')[0], '# map · not indexed');
+  });
+
+  test('query errors become readable text with the message, never isError', async () => {
+    const ctx = fakeCtx(READY(), { queries: { ...graphQueries, search: () => { throw new Error('database disk image is malformed'); } } });
+    const out = await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'x' });
+    assert.equal(out.isError, undefined);
+    assert.equal(
+      text(out),
+      `# search x · query failed · ${FRESH}\nhint: the index could not be queried (database disk image is malformed); codegraph_status reports the index state.`,
+    );
+    const mapCtx = fakeCtx(READY(), { map: { repoMap: () => { throw new Error('boom'); } } });
+    assert.equal(text(await call(mapCtx, 'codegraph_map', {})), `# map · query failed · ${FRESH}\nhint: the index could not be queried (boom); codegraph_status reports the index state.`);
+  });
+
+  test('default path: the real graph modules are used when the context overrides nothing', async (t) => {
+    assert.equal(resolveGraph({}).queries, graphQueries);
+    assert.equal(resolveGraph({}).map, graphMap);
+    const fake = storeQueries();
+    assert.equal(resolveGraph({ queries: fake }).queries, fake);
+    assert.equal(resolveGraph({ map: fake }).map, fake);
+    // Whatever the real module returns today, the tool must render exactly that
+    // in the row format: the expectation is derived from the module's own rows,
+    // kept in the module's (relevance) order.
+    const rows = graphQueries.search(db, { query: 'parseConfig', kind: null, limit: 21 });
+    const out = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'search', query: 'parseConfig' }));
+    const expected = [
+      rows.length === 0 ? `# search parseConfig · no matches · ${FRESH}` : `# search parseConfig · ${rows.length} ${rows.length === 1 ? 'match' : 'matches'} · ${FRESH}`,
+      ...rows.map((r) => `${r.kind.padStart(9)} ${r.name}${r.signature ? ` ${r.signature}` : ''} ${r.path}:${r.startLine}-${r.endLine}`),
+      ...(rows.length === 0 ? [] : [SEARCH_NEXT_HINT]),
+    ];
+    if (rows.every((r) => Number.isInteger(r.startLine) && Number.isInteger(r.endLine))) {
+      assert.equal(out, expected.join('\n'));
+    } else {
+      // Lane B's rows must carry line numbers (CONTRACTS.md §8); until they do,
+      // only the header is asserted and the gap is reported.
+      t.diagnostic(`graph queries return rows without startLine/endLine: ${JSON.stringify(rows[0])}`);
+      assert.equal(out.split('\n')[0], expected[0]);
+      assert.ok(out.includes('parseConfig'));
+    }
+    const outline = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'outline', file: SAMPLE }));
+    assert.equal(outline.split('\n')[0], `# outline ${SAMPLE} · ${graphQueries.outline(db, { path: SAMPLE }).length} symbols · ${FRESH}`);
+    assert.ok(outline.includes('function parseConfig'), 'real outline rows are rendered');
+    const symbol = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'symbol', name: 'parseConfig', body: true }));
+    assert.ok(symbol.startsWith(`# symbol parseConfig · ${SAMPLE}:`));
+    const sym = graphQueries.symbol(db, { name: 'parseConfig' });
+    if (Number.isInteger(sym?.symbol?.startLine) && Number.isInteger(sym?.symbol?.endLine)) {
+      assert.ok(symbol.includes('```'), 'real symbol result inlines the body');
+    } else {
+      t.diagnostic(`graph symbol() returns no line range: ${JSON.stringify(sym?.symbol)}`);
+      assert.ok(symbol.includes('body: symbol has no line range in the index'));
+    }
+  });
+
+  test('wiring with an injected query layer: search rows, limit probing, kind alignment', async () => {
+    const log = [];
+    const ctx = fakeCtx(READY(), { queries: storeQueries(log) });
+    const out = text(await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'parse' }));
+    assert.deepEqual(log, [['search', { query: 'parse', kind: null, limit: 21 }]], 'asks for limit + 1 to detect truncation');
+    assert.equal(
+      out,
+      [`# search parse · 1 match · ${FRESH}`, ' function parseConfig (src: string, opts?: Options): Config src/graph/sample.ts:8-11', SEARCH_NEXT_HINT].join('\n'),
+    );
+    assert.equal(out.includes('legend'), false, 'a "?" inside a signature is not a marker');
+    const load = text(await call(fakeCtx(READY(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'search', query: 'load' }));
+    assert.equal(
+      load,
+      [
+        `# search load · 3 matches · ${FRESH}`,
+        '    class Loader src/graph/sample.ts:13-18',
+        '   method load (file: string): Config src/graph/sample.ts:15-17',
+        ' function loadAll (dir: string): Config[] src/graph/sample.ts:20-22',
+        SEARCH_NEXT_HINT,
+      ].join('\n'),
+    );
+    const limited = text(await call(fakeCtx(READY(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'search', query: 'load', limit: 2 }));
+    assert.equal(limited.split('\n').at(-1), '(2 of 3+ shown)');
+    assert.equal(limited.split('\n').at(-2), 'hint: raise budget (max 4000) or limit (max 200) to see more rows');
+  });
+
+  test('symbol: header, relations with markers and legend, inline body from disk, Read line for long bodies', async () => {
+    const log = [];
+    const ctx = fakeCtx(READY(), { queries: storeQueries(log) });
+    const out = text(await call(ctx, 'codegraph_lookup', { operation: 'symbol', name: 'parseConfig', body: true }));
+    assert.deepEqual(log, [['symbol', { name: 'parseConfig', path: undefined, qual: undefined }]]);
+    const expected = [
+      `# symbol parseConfig · ${SAMPLE}:8-11 (4 lines) · callers 1/1 resolved · ${FRESH}`,
+      'sig: (src: string, opts?: Options): Config',
+      'doc: Parses a config string.',
+      'calls(1): parseConfig~',
+      `called by(1): parseConfig ${SAMPLE}:16= ×2`,
+      'imports: node:fs, ./options',
+      'legend: = import-resolved · ~ unique-name · ? unresolved/dynamic',
+      'body (4 lines):',
+      '```',
+      'export function parseConfig(src: string, opts?: Options): Config {',
+      "  const text = readFile(src, 'utf8');",
+      '  return validate(text, opts);',
+      '}',
+      '```',
+    ];
+    // The body is the exact source range of the symbol (fixture lines 8-11).
+    assert.equal(out, expected.join('\n'));
+
+    const long = text(await call(fakeCtx(READY(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'symbol', name: 'longBody', body: true }));
+    assert.ok(long.includes(`# symbol longBody · ${LONG}:1-40 (40 lines)`));
+    assert.equal(long.split('\n').at(-1), `body: 40 lines → Read ${LONG} offset 1 limit 40`);
+    assert.equal(long.includes('```'), false);
+
+    const noBody = text(await call(fakeCtx(READY(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'symbol', name: 'longBody' }));
+    assert.equal(noBody.includes('body'), false);
+  });
+
+  test('symbol body: missing file and symbol without result', async () => {
+    const missing = fakeCtx(READY(), {
+      queries: { ...storeQueries(), symbol: () => ({ symbol: { name: 'x', path: 'src/gone.ts', startLine: 1, endLine: 2 }, callers: [], callees: [], imports: [] }) },
+    });
+    const out = text(await call(missing, 'codegraph_lookup', { operation: 'symbol', name: 'x', body: true }));
+    assert.equal(out.split('\n').at(-1), 'body: cannot read src/gone.ts (ENOENT); the index may be stale');
+    const none = text(await call(fakeCtx(READY(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'symbol', name: 'nope' }));
+    assert.equal(none.split('\n')[0], `# symbol nope · not found · ${FRESH}`);
+    assert.match(none.split('\n')[1], /^hint: no unique symbol/);
+  });
+
+  test('callers / callees / impact / outline through the injected layer', async () => {
+    const log = [];
+    const ctx = fakeCtx(READY(), { queries: storeQueries(log) });
+    const callers = text(await call(ctx, 'codegraph_lookup', { operation: 'callers', name: 'parseConfig' }));
+    assert.deepEqual(log.at(-1), ['callers', { name: 'parseConfig', path: undefined, limit: 21 }]);
+    assert.equal(callers, [`# callers parseConfig · 1 call site (1/1 resolved) · ${FRESH}`, `     call parseConfig ${SAMPLE}:16= ×2`].join('\n'));
+    assert.equal(callers.includes('legend'), false, 'only "=" markers: no legend');
+    const callees = text(await call(ctx, 'codegraph_lookup', { operation: 'callees', name: 'load', file: SAMPLE }));
+    assert.deepEqual(log.at(-1), ['callees', { name: 'load', path: SAMPLE, limit: 21 }]);
+    assert.equal(callees.split('\n')[0], `# callees load ${SAMPLE} · 1 callee (1/1 resolved) · ${FRESH}`);
+    assert.equal(callees.split('\n')[1], `     call parseConfig ${SAMPLE}:16~`);
+    const impact = text(await call(ctx, 'codegraph_lookup', { operation: 'impact', name: 'parseConfig', depth: 1 }));
+    assert.deepEqual(log.at(-1), ['impact', { name: 'parseConfig', path: undefined, depth: 1 }]);
+    assert.equal(impact.split('\n')[0], `# impact parseConfig depth=1 · 4 nodes in 1 file · ${FRESH}`);
+    assert.equal(impact.split('\n').at(-2), `files(1): ${SAMPLE}`);
+    assert.equal(impact.split('\n').at(-1), 'hint: impact was cut; raise depth (max 6) or limit (max 200) to see more.');
+    const impact2 = text(await call(fakeCtx(READY(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'impact', name: 'parseConfig', depth: 2, limit: 2 }));
+    assert.equal(impact2.split('\n').at(-1), '(2 of 3+ shown)');
+    const outline = text(await call(ctx, 'codegraph_lookup', { operation: 'outline', file: SAMPLE }));
+    assert.deepEqual(log.at(-1), ['outline', { path: SAMPLE }]);
+    assert.equal(
+      outline,
+      [
+        `# outline ${SAMPLE} · 4 symbols · ${FRESH}`,
+        ' function parseConfig (src: string, opts?: Options): Config src/graph/sample.ts:8-11',
+        '    class Loader src/graph/sample.ts:13-18',
+        '   method load (file: string): Config src/graph/sample.ts:15-17',
+        ' function loadAll (dir: string): Config[] src/graph/sample.ts:20-22',
+      ].join('\n'),
+    );
+  });
+
+  test('paths are normalised to the index form (native separators, absolute inside root, leading "./")', async () => {
+    const log = [];
+    const ctx = fakeCtx(READY(), { queries: storeQueries(log) });
+    const native = process.platform === 'win32' ? SAMPLE.split('/').join('\\') : SAMPLE;
+    await call(ctx, 'codegraph_lookup', { operation: 'outline', file: `./${native}` });
+    assert.deepEqual(log.at(-1), ['outline', { path: SAMPLE }]);
+    await call(ctx, 'codegraph_lookup', { operation: 'outline', file: path.join(root, SAMPLE) });
+    assert.deepEqual(log.at(-1), ['outline', { path: SAMPLE }]);
+    const mapLog = [];
+    await call(fakeCtx(READY(), { map: { repoMap: (_db, opts) => { mapLog.push(opts); return { text: 'x', shown: 1, total: 1, truncated: false }; } } }), 'codegraph_map', { path: path.join(root, 'src') });
+    assert.deepEqual(mapLog, [{ path: 'src', budgetTokens: DEFAULT_CONFIG.defaultBudgetTokens.map }]);
+  });
+
+  test('budget: explicit value wins, config default applies, out-of-range config values are clamped', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ kind: 'function', name: `symbol${i}`, path: `src/f${i}.ts`, startLine: i + 1, endLine: i + 2 }));
+    const queries = { ...graphQueries, search: (_db, { limit }) => many.slice(0, limit) };
+    // limit 200 lifts the row limit so the budget is the only cut.
+    const out = text(await call(fakeCtx(READY(), { queries }), 'codegraph_lookup', { operation: 'search', query: 'x', limit: 200, budget: 300 }));
+    assert.ok(estimateTokens(out) <= 300, `${estimateTokens(out)} tokens`);
+    assert.match(out.split('\n').at(-1), /^\(\d+ of 60 shown\)$/);
+    const fromConfig = fakeCtx(READY(), { queries, config: { defaultBudgetTokens: { lookup: 250, map: 1200 } } });
+    const cfgOut = text(await call(fromConfig, 'codegraph_lookup', { operation: 'search', query: 'x', limit: 200 }));
+    assert.ok(estimateTokens(cfgOut) <= 250);
+    const clamped = fakeCtx(READY(), { queries, config: { defaultBudgetTokens: { lookup: 5, map: 1200 } } });
+    const clampOut = text(await call(clamped, 'codegraph_lookup', { operation: 'search', query: 'x', limit: 200 }));
+    assert.ok(estimateTokens(clampOut) <= 200, `clamped to the 200 minimum: ${estimateTokens(clampOut)}`);
+    for (const budget of [200, 2000, 4000]) {
+      const big = text(await call(fakeCtx(READY(), { queries }), 'codegraph_lookup', { operation: 'search', query: 'x', limit: 200, budget }));
+      assert.ok(estimateTokens(big) <= budget);
+      assert.ok(Buffer.byteLength(big) <= MAX_OUTPUT_BYTES);
+    }
+  });
+});
+
+describe('codegraph_map', () => {
+  test('repoMap receives path and budget; the text is wrapped with header and truncation hint', async () => {
+    const log = [];
+    const ctx = fakeCtx(READY(), {
+      map: {
+        repoMap: (_db, opts) => {
+          log.push(opts);
+          return { text: 'src/\n  a.ts  function f:1', shown: 3, total: 40, truncated: true };
+        },
+      },
+    });
+    const out = text(await call(ctx, 'codegraph_map', { path: 'src', budget: 3000 }));
+    assert.deepEqual(log, [{ path: 'src', budgetTokens: 3000 }]);
+    assert.equal(out, `# map src · 3 of 40 symbols · ${FRESH}\nsrc/\n  a.ts  function f:1\nhint: raise budget (max 4000) or pass a narrower path to see more.`);
+    const all = text(await call(fakeCtx(READY(), { map: { repoMap: () => ({ text: 'a.ts  function f:1', shown: 1, total: 1, truncated: false }) } }), 'codegraph_map', {}));
+    assert.equal(all, `# map · 1 symbol · ${FRESH}\na.ts  function f:1`);
+  });
+});

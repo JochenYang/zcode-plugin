@@ -1,0 +1,42 @@
+{
+  "symbols": [
+    { "kind": "namespace", "name": "App\\Billing", "line": 3, "endLine": 3, "qual": "App\\Billing" },
+    { "kind": "constant", "name": "VERSION", "line": 8, "endLine": 8, "qual": "VERSION" },
+    { "kind": "function", "name": "invoice_total", "line": 11, "endLine": 14, "qual": "invoice_total", "doc": "Computes the grand total of an invoice." },
+    { "kind": "class", "name": "Calculator", "line": 16, "endLine": 38, "qual": "Calculator" },
+    { "kind": "constant", "name": "TAX_RATE", "line": 18, "endLine": 18, "qual": "Calculator.TAX_RATE" },
+    { "kind": "field", "name": "lines", "line": 20, "endLine": 20, "qual": "Calculator.lines" },
+    { "kind": "method", "name": "add", "line": 23, "endLine": 26, "qual": "Calculator.add", "doc": "Adds one line." },
+    { "kind": "method", "name": "total", "line": 28, "endLine": 32, "qual": "Calculator.total" },
+    { "kind": "method", "name": "round", "line": 34, "endLine": 37, "qual": "Calculator.round" }
+  ],
+  "imports": [
+    { "spec": "App\\Models\\Invoice", "line": 5 },
+    { "spec": "App\\Support\\Money", "line": 6 },
+    { "spec": "array_sum", "line": 7 }
+  ],
+  "calls": [
+    { "name": "array_sum", "line": 13 },
+    { "name": "array_map", "line": 13 },
+    { "name": "amount", "line": 13 },
+    { "name": "lines", "line": 13 },
+    { "name": "array_sum", "line": 30 },
+    { "name": "array_map", "line": 30 },
+    { "name": "amount", "line": 30 },
+    { "name": "round", "line": 31 },
+    { "name": "round", "line": 36 },
+    { "name": "format", "line": 40 },
+    { "name": "Calculator", "line": 40 },
+    { "name": "total", "line": 40 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "array_sum", "line": 13, "symbol": "invoice_total" },
+    { "kind": "call", "name": "lines", "line": 13, "symbol": "invoice_total" },
+    { "kind": "call", "name": "round", "line": 31, "symbol": "total" },
+    { "kind": "call", "name": "round", "line": 36, "symbol": "round" },
+    { "kind": "call", "name": "total", "line": 40, "symbol": null },
+    { "kind": "ref", "name": "Invoice", "line": 11, "symbol": "invoice_total" },
+    { "kind": "ref", "name": "TAX_RATE", "line": 31, "symbol": "total" },
+    { "kind": "ref", "name": "Cash", "line": 40, "symbol": null }
+  ]
+}

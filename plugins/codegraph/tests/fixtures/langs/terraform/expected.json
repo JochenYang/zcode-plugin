@@ -1,0 +1,25 @@
+{
+  "symbols": [
+    { "kind": "other", "name": "provider.aws", "line": 2, "endLine": 4, "qual": "provider.aws", "doc": "Main networking stack for the web tier." },
+    { "kind": "variable", "name": "variable.region", "line": 6, "endLine": 9, "qual": "variable.region" },
+    { "kind": "other", "name": "locals", "line": 11, "endLine": 13, "qual": "locals" },
+    { "kind": "variable", "name": "name_prefix", "line": 12, "endLine": 12, "qual": "locals.name_prefix" },
+    { "kind": "module", "name": "module.network", "line": 15, "endLine": 18, "qual": "module.network" },
+    { "kind": "component", "name": "data.aws_ami.ubuntu", "line": 20, "endLine": 23, "qual": "data.aws_ami.ubuntu" },
+    { "kind": "component", "name": "resource.aws_instance.web", "line": 25, "endLine": 30, "qual": "resource.aws_instance.web" },
+    { "kind": "component", "name": "resource.aws_s3_bucket.logs", "line": 32, "endLine": 35, "qual": "resource.aws_s3_bucket.logs" },
+    { "kind": "constant", "name": "output.instance_id", "line": 37, "endLine": 39, "qual": "output.instance_id" }
+  ],
+  "imports": [
+    { "spec": "./modules/network", "line": 16 }
+  ],
+  "calls": [],
+  "refs": [
+    { "kind": "ref", "name": "var.region", "line": 3, "symbol": "provider.aws" },
+    { "kind": "ref", "name": "local.name_prefix", "line": 34, "symbol": "resource.aws_s3_bucket.logs" },
+    { "kind": "ref", "name": "data.aws_ami.ubuntu.id", "line": 26, "symbol": "resource.aws_instance.web" },
+    { "kind": "ref", "name": "module.network.subnet_id", "line": 28, "symbol": "resource.aws_instance.web" },
+    { "kind": "ref", "name": "each.key", "line": 34, "symbol": "resource.aws_s3_bucket.logs" },
+    { "kind": "ref", "name": "aws_instance.web.id", "line": 38, "symbol": "output.instance_id" }
+  ]
+}

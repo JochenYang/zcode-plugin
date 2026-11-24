@@ -24,6 +24,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | `plugins/guardrails` | 0.2.1 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
 | `plugins/websearch` | 0.2.0 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel and Bing with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
+| `plugins/codegraph` | 0.1.0 | Local code graph: a zero-dependency MCP server keeping a tree-sitter index of 35 language rows in SQLite under the plugin data folder; `codegraph_status` / `codegraph_lookup` / `codegraph_map` return exact `file:line` ranges; the index is built or refreshed silently when a session opens, and `SessionStart` / `UserPromptSubmit` / `PostToolUse` hooks tell the model when the graph is ready and when to use it; no telemetry, no network, no project code execution |
 
 The plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
 
@@ -166,6 +167,21 @@ A standalone search plugin with its own zero-dependency MCP server (`bin/server.
 
 Engine table, settings detail, safety boundary and known limits: `plugins/websearch/README.md`.
 
+## codegraph
+
+A local code-graph plugin with its own zero-npm-dependency MCP server (`bin/server.mjs`, `node:sqlite` plus bundled tree-sitter wasm, no node_modules). The model sees the tools as `mcp__plugin_codegraph_codegraph__codegraph_status` / `__codegraph_lookup` / `__codegraph_map`.
+
+- **35 language rows** (33 symbol-extracting packs plus COBOL and Liquid at file level) covering TypeScript/JavaScript, Python, Go, Rust, C/C++, Java/Kotlin/Scala, C#/VB.NET, PHP/Ruby, Vue/Svelte/Astro, Terraform, Solidity and more; every grammar wasm ships in the box, provenance and licences in `plugins/codegraph/THIRD-PARTY-NOTICES.md`
+- `codegraph_lookup` (search / symbol / callers / callees / impact / outline) returns one symbol per line with exact line ranges, replacing the "grep once, read the whole file once" loop; `codegraph_map` replaces Glob plus reading file heads; relations carry confidence marks — `=` import-resolved, `~` unique-name, `?` unresolved or dynamic
+- The index lives in `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/indexes/<project key>/` and nothing is written inside the project; qualifying projects (`autoIndex` on, ≥ 30 supported files, ≤ 30000 files, not a home or drive root) start building in the background **when the session opens** (the work begins with the MCP handshake, before the model calls anything), and an indexed project is checked for changes and synced at the same time; `codegraph_status` reports progress and stale files
+- Later changes are picked up **silently and lazily**: the file watcher (2 s debounce), the `PostToolUse` hook and an mtime scan before each call only mark the changed files dirty; they are parsed again **right before the next codegraph tool call** (under 200 files sync in the foreground, more go to a background build). Without a tool call nothing is re-parsed and the model is not told
+- All three hooks are accelerators only: `SessionStart` (startup/resume/clear/compact/fork) injects ≤ 120 tokens of index status plus "when to use the graph, when to use Grep"; `UserPromptSubmit` announces an index that became ready mid-session, once per session; `PostToolUse` (Edit/Write, ApplyPatch via the host alias) appends one line to `dirty.log` only when the index directory already exists and never creates it. Without the hooks the server's mtime scan keeps the index correct
+- **Node ≥ 22.13**. The MCP side has ZCode's built-in Node fallback (Electron's Node 22.22.1); **the hooks resolve `node` from PATH only** — without it they fail silently and the index stays correct
+- Config file `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json` (`autoIndex` / `minFilesToAutoIndex` / `maxFiles` / `exclude` / `languages`), with `CODEGRAPH_AUTO_INDEX` / `CODEGRAPH_MIN_FILES` / `CODEGRAPH_MAX_FILES` / `CODEGRAPH_EXCLUDE` applying only when the file leaves the field unset; manual entry point `/codegraph [refresh]`
+- Known limits: COBOL and Liquid are file-level only; `getattr`, dynamic imports and reflection produce no edges; the first build runs in the background and results are partial meanwhile
+
+Tool parameters, config keys, the language table, privacy and limits: `plugins/codegraph/README.md`.
+
 ## Checks
 
 Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them after changing a plugin:
@@ -178,6 +194,7 @@ node --test plugins/websearch/tests/*.test.mjs  # the websearch network layer: e
 node --test plugins/git-conventions/tests/*.test.mjs  # the commit message hook: recognised command forms, every rule, and passing on what cannot be read
 python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
 python plugins/dev-workflow/tests/test-review-gate.py  # the multi-round review gate: eight gates, cross-checks between fields, and the exit codes of an invalid state (needs node)
+node --test plugins/codegraph/tests/hooks/*.test.mjs  # the codegraph hooks: real spawn, SessionStart text/schema, dirty.log protocol, hooks.json fields
 ```
 
 `check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism, an agent description that hands off to an agent that does not exist or collides with a built-in type. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.

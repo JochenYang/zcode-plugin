@@ -1,0 +1,29 @@
+{
+  "symbols": [
+    { "kind": "struct", "name": "VertexIn", "line": 5, "endLine": 8, "qual": "VertexIn", "doc": "Per-vertex inputs.", "exported": true },
+    { "kind": "field", "name": "position", "line": 6, "endLine": 6, "qual": "VertexIn.position", "exported": true },
+    { "kind": "field", "name": "color", "line": 7, "endLine": 7, "qual": "VertexIn.color", "exported": true },
+    { "kind": "struct", "name": "VertexOut", "line": 10, "endLine": 13, "qual": "VertexOut", "exported": true },
+    { "kind": "field", "name": "position", "line": 11, "endLine": 11, "qual": "VertexOut.position", "exported": true },
+    { "kind": "field", "name": "color", "line": 12, "endLine": 12, "qual": "VertexOut.color", "exported": true },
+    { "kind": "function", "name": "vertex_main", "line": 16, "endLine": 22, "qual": "vertex_main", "doc": "Transforms a vertex into clip space.", "exported": true },
+    { "kind": "function", "name": "fragment_main", "line": 25, "endLine": 27, "qual": "fragment_main", "doc": "Blends a fragment's colour.", "exported": true },
+    { "kind": "function", "name": "add_arrays", "line": 29, "endLine": 33, "qual": "add_arrays", "exported": true }
+  ],
+  "imports": [
+    { "spec": "metal_stdlib", "line": 1 }
+  ],
+  "calls": [
+    { "name": "float4", "line": 19 },
+    { "name": "float4", "line": 26 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "float2", "line": 6, "symbol": "position" },
+    { "kind": "ref", "name": "float3", "line": 12, "symbol": "color" },
+    { "kind": "ref", "name": "VertexOut", "line": 16, "symbol": "vertex_main" },
+    { "kind": "ref", "name": "VertexIn", "line": 17, "symbol": "vertex_main" },
+    { "kind": "call", "name": "float4", "line": 19, "symbol": "vertex_main" },
+    { "kind": "call", "name": "float4", "line": 26, "symbol": "fragment_main" },
+    { "kind": "ref", "name": "uint", "line": 31, "symbol": "add_arrays" }
+  ]
+}

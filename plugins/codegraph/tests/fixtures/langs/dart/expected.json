@@ -1,0 +1,49 @@
+{
+  "symbols": [
+    { "kind": "class", "name": "Money", "line": 5, "endLine": 23, "qual": "Money", "doc": "Fixed-precision money in minor units.", "exported": true },
+    { "kind": "constant", "name": "centsPerUnit", "line": 6, "endLine": 6, "qual": "Money.centsPerUnit", "exported": true },
+    { "kind": "field", "name": "cents", "line": 7, "endLine": 7, "qual": "Money.cents", "exported": true },
+    { "kind": "field", "name": "currency", "line": 8, "endLine": 8, "qual": "Money.currency", "exported": true },
+    { "kind": "method", "name": "Money", "line": 10, "endLine": 10, "qual": "Money.Money", "exported": true },
+    { "kind": "method", "name": "fromUnits", "line": 13, "endLine": 14, "qual": "Money.fromUnits", "doc": "Builds a Money from a whole-unit amount.", "exported": true },
+    { "kind": "method", "name": "operator +", "line": 16, "endLine": 16, "qual": "Money.operator +", "exported": true },
+    { "kind": "method", "name": "compareTo", "line": 19, "endLine": 19, "qual": "Money.compareTo", "exported": true },
+    { "kind": "method", "name": "toString", "line": 22, "endLine": 22, "qual": "Money.toString", "exported": true },
+    { "kind": "trait", "name": "Priced", "line": 25, "endLine": 27, "qual": "Priced", "exported": true },
+    { "kind": "method", "name": "rate", "line": 26, "endLine": 26, "qual": "Priced.rate", "exported": true },
+    { "kind": "enum", "name": "Region", "line": 29, "endLine": 29, "qual": "Region", "exported": true },
+    { "kind": "constant", "name": "us", "line": 29, "endLine": 29, "qual": "Region.us", "exported": true },
+    { "kind": "constant", "name": "eu", "line": 29, "endLine": 29, "qual": "Region.eu", "exported": true },
+    { "kind": "constant", "name": "taxRate", "line": 31, "endLine": 31, "qual": "taxRate", "exported": true },
+    { "kind": "constant", "name": "zero", "line": 32, "endLine": 32, "qual": "zero", "exported": true },
+    { "kind": "function", "name": "describeAll", "line": 34, "endLine": 35, "qual": "describeAll", "exported": true }
+  ],
+  "imports": [
+    { "spec": "dart:math", "line": 1 },
+    { "spec": "package:intl/intl.dart", "line": 2 }
+  ],
+  "calls": [
+    { "name": "Money", "line": 14 },
+    { "name": "round", "line": 14 },
+    { "name": "Money", "line": 16 },
+    { "name": "compareTo", "line": 19 },
+    { "name": "currency", "line": 22 },
+    { "name": "format", "line": 22 },
+    { "name": "Money", "line": 32 },
+    { "name": "map", "line": 35 },
+    { "name": "toString", "line": 35 },
+    { "name": "join", "line": 35 },
+    { "name": "max", "line": 35 },
+    { "name": "toString", "line": 35 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "round", "line": 14, "symbol": "fromUnits" },
+    { "kind": "call", "name": "Money", "line": 16, "symbol": "operator +" },
+    { "kind": "call", "name": "Money", "line": 32, "symbol": "zero" },
+    { "kind": "call", "name": "format", "line": 22, "symbol": "toString" },
+    { "kind": "ref", "name": "centsPerUnit", "line": 14, "symbol": "fromUnits" },
+    { "kind": "ref", "name": "NumberFormat", "line": 22, "symbol": "toString" },
+    { "kind": "ref", "name": "Comparable", "line": 5, "symbol": "Money" },
+    { "kind": "ref", "name": "math", "line": 35, "symbol": "describeAll" }
+  ]
+}

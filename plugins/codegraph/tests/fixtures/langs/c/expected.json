@@ -1,0 +1,34 @@
+{
+  "symbols": [
+    { "kind": "macro", "name": "MAX_NODES", "line": 4, "endLine": 4, "qual": "MAX_NODES", "exported": true },
+    { "kind": "macro", "name": "SQUARE", "line": 5, "endLine": 5, "qual": "SQUARE", "exported": true },
+    { "kind": "type", "name": "Node", "line": 8, "endLine": 11, "qual": "Node", "doc": "A vertex with a short label.", "exported": true },
+    { "kind": "field", "name": "id", "line": 9, "endLine": 9, "qual": "Node.id", "exported": true },
+    { "kind": "field", "name": "label", "line": 10, "endLine": 10, "qual": "Node.label", "exported": true },
+    { "kind": "enum", "name": "Color", "line": 13, "endLine": 13, "qual": "Color", "exported": true },
+    { "kind": "struct", "name": "Point", "line": 15, "endLine": 17, "qual": "Point", "exported": true },
+    { "kind": "field", "name": "x", "line": 16, "endLine": 16, "qual": "Point.x", "exported": true },
+    { "kind": "function", "name": "make_node", "line": 20, "endLine": 24, "qual": "make_node", "doc": "Creates a node with the given id.", "exported": false },
+    { "kind": "function", "name": "norm", "line": 26, "endLine": 28, "qual": "norm", "exported": true },
+    { "kind": "function", "name": "main", "line": 30, "endLine": 35, "qual": "main", "exported": true }
+  ],
+  "imports": [
+    { "spec": "stdio.h", "line": 1 },
+    { "spec": "graph.h", "line": 2 }
+  ],
+  "calls": [
+    { "name": "snprintf", "line": 22 },
+    { "name": "sqrt", "line": 27 },
+    { "name": "make_node", "line": 31 },
+    { "name": "printf", "line": 33 },
+    { "name": "norm", "line": 33 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "Node", "line": 20, "symbol": "make_node" },
+    { "kind": "ref", "name": "Node", "line": 21, "symbol": "make_node" },
+    { "kind": "ref", "name": "Point", "line": 26, "symbol": "norm" },
+    { "kind": "call", "name": "sqrt", "line": 27, "symbol": "norm" },
+    { "kind": "call", "name": "make_node", "line": 31, "symbol": "main" },
+    { "kind": "call", "name": "norm", "line": 33, "symbol": "main" }
+  ]
+}

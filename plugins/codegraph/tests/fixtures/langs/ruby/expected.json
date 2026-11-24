@@ -1,0 +1,37 @@
+{
+  "symbols": [
+    { "kind": "constant", "name": "DEFAULT_CURRENCY", "line": 6, "endLine": 6, "qual": "DEFAULT_CURRENCY" },
+    { "kind": "module", "name": "Cart", "line": 8, "endLine": 34, "qual": "Cart" },
+    { "kind": "constant", "name": "MAX_ITEMS", "line": 9, "endLine": 9, "qual": "Cart.MAX_ITEMS" },
+    { "kind": "class", "name": "Item", "line": 12, "endLine": 23, "qual": "Cart.Item", "doc": "An item in the shopping cart." },
+    { "kind": "method", "name": "initialize", "line": 15, "endLine": 18, "qual": "Cart.Item.initialize" },
+    { "kind": "method", "name": "discounted", "line": 20, "endLine": 22, "qual": "Cart.Item.discounted" },
+    { "kind": "method", "name": "load", "line": 26, "endLine": 29, "qual": "Cart.load", "doc": "Loads items from a JSON file." },
+    { "kind": "method", "name": "total", "line": 31, "endLine": 33, "qual": "Cart.total" }
+  ],
+  "imports": [
+    { "spec": "json", "line": 3 },
+    { "spec": "../support/reader", "line": 4 }
+  ],
+  "calls": [
+    { "name": "attr_accessor", "line": 13 },
+    { "name": "parse", "line": 27 },
+    { "name": "read", "line": 27 },
+    { "name": "map", "line": 28 },
+    { "name": "new", "line": 28 },
+    { "name": "sum", "line": 32 },
+    { "name": "puts", "line": 36 },
+    { "name": "load", "line": 36 },
+    { "name": "length", "line": 36 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "attr_accessor", "line": 13, "symbol": "Item" },
+    { "kind": "call", "name": "parse", "line": 27, "symbol": "load" },
+    { "kind": "call", "name": "new", "line": 28, "symbol": "load" },
+    { "kind": "call", "name": "sum", "line": 32, "symbol": "total" },
+    { "kind": "call", "name": "load", "line": 36, "symbol": null },
+    { "kind": "ref", "name": "JSON", "line": 27, "symbol": "load" },
+    { "kind": "ref", "name": "Item", "line": 28, "symbol": "load" },
+    { "kind": "ref", "name": "Cart", "line": 36, "symbol": null }
+  ]
+}

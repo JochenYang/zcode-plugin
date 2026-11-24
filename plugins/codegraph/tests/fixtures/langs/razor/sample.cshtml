@@ -1,0 +1,40 @@
+@page
+@model CartModel
+@inject CartService Cart
+
+<h1>Cart (@Cart.Count items)</h1>
+<button class="btn" onclick="logCart(@Cart.Count)">Add</button>
+
+@functions {
+  /** Formats a price for display. */
+  public static string FormatPrice(int cents)
+  {
+    return (cents / 100.0).ToString("C");
+  }
+
+  private sealed class Line
+  {
+    public int Qty { get; private set; }
+
+    /** Adds one unit. */
+    public void Add()
+    {
+      Qty = Qty + 1;
+    }
+  }
+
+  private void AddItem()
+  {
+    Cart.AddItem();
+    FormatPrice(100);
+  }
+}
+
+@{ var total = FormatPrice(1250); }
+<script>
+  /** Logs the cart. */
+  function logCart(name) {
+    console.log(name);
+  }
+  logCart('cart');
+</script>

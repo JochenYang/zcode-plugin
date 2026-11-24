@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- codegraph · concept 2 "syntax tree in brackets". Same grid, palette and stroke weight as concept 1. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B3A9E"/>
+      <stop offset="0.55" stop-color="#2E3178"/>
+      <stop offset="1" stop-color="#1F2937"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="226" ry="226"/>
+    </clipPath>
+    <radialGradient id="lift" cx="0.3" cy="0.2" r="0.8">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#lift)"/>
+  </g>
+  <!-- angle brackets -->
+  <g fill="none" stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="338,372 236,512 338,652"/>
+    <polyline points="686,372 788,512 686,652"/>
+  </g>
+  <!-- two-level symbol tree -->
+  <g stroke="#FFFFFF" stroke-width="44" stroke-linecap="round">
+    <line x1="512" y1="386" x2="430" y2="580"/>
+    <line x1="512" y1="386" x2="594" y2="580"/>
+  </g>
+  <circle cx="430" cy="580" r="42" fill="#FFFFFF"/>
+  <circle cx="594" cy="580" r="42" fill="#FFFFFF"/>
+  <!-- root: the definition everything hangs from -->
+  <circle cx="512" cy="386" r="50" fill="#2DD4BF"/>
+  <circle cx="512" cy="386" r="20" fill="#1F2937"/>
+</svg>

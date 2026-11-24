@@ -1,0 +1,41 @@
+{
+  "symbols": [
+    { "kind": "struct", "name": "Money", "line": 4, "endLine": 28, "qual": "Money", "doc": "Fixed-precision money in minor units.", "exported": true },
+    { "kind": "property", "name": "centsPerUnit", "line": 5, "endLine": 5, "qual": "Money.centsPerUnit", "exported": true },
+    { "kind": "property", "name": "cents", "line": 6, "endLine": 6, "qual": "Money.cents", "exported": true },
+    { "kind": "property", "name": "currency", "line": 7, "endLine": 7, "qual": "Money.currency", "exported": true },
+    { "kind": "property", "name": "count", "line": 8, "endLine": 8, "qual": "Money.count", "exported": true },
+    { "kind": "method", "name": "init", "line": 10, "endLine": 13, "qual": "Money.init", "exported": true },
+    { "kind": "method", "name": "fromUnits", "line": 16, "endLine": 18, "qual": "Money.fromUnits", "doc": "Builds a Money from a whole-unit amount.", "exported": true },
+    { "kind": "method", "name": "describe", "line": 20, "endLine": 23, "qual": "Money.describe", "exported": true },
+    { "kind": "method", "name": "<", "line": 25, "endLine": 27, "qual": "Money.<", "exported": true },
+    { "kind": "enum", "name": "Region", "line": 30, "endLine": 32, "qual": "Region", "exported": false },
+    { "kind": "constant", "name": "us", "line": 31, "endLine": 31, "qual": "Region.us", "exported": false },
+    { "kind": "constant", "name": "taxRate", "line": 34, "endLine": 34, "qual": "taxRate", "exported": false },
+    { "kind": "function", "name": "formatAll", "line": 36, "endLine": 38, "qual": "formatAll", "exported": false }
+  ],
+  "imports": [
+    { "spec": "Foundation", "line": 1 }
+  ],
+  "calls": [
+    { "name": "Money", "line": 17 },
+    { "name": "Int", "line": 17 },
+    { "name": "rounded", "line": 17 },
+    { "name": "Double", "line": 17 },
+    { "name": "joined", "line": 22 },
+    { "name": "joined", "line": 37 },
+    { "name": "map", "line": 37 },
+    { "name": "describe", "line": 37 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "rounded", "line": 17, "symbol": "fromUnits" },
+    { "kind": "call", "name": "Money", "line": 17, "symbol": "fromUnits" },
+    { "kind": "call", "name": "joined", "line": 22, "symbol": "describe" },
+    { "kind": "call", "name": "describe", "line": 37, "symbol": "formatAll" },
+    { "kind": "ref", "name": "centsPerUnit", "line": 17, "symbol": "fromUnits" },
+    { "kind": "ref", "name": "Locale", "line": 20, "symbol": "describe" },
+    { "kind": "ref", "name": "Equatable", "line": 4, "symbol": "Money" },
+    { "kind": "ref", "name": "centsPerUnit", "line": 22, "symbol": "describe" },
+    { "kind": "ref", "name": "Money", "line": 36, "symbol": "formatAll" }
+  ]
+}

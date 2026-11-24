@@ -1,0 +1,577 @@
+[
+  {
+    "grammar": "typescript",
+    "file": "wasm/tree-sitter-typescript.wasm",
+    "bytes": 2342690,
+    "sha256": "8515404dceed38e1ed86aa34b09fcf3379fff1b4ff9dd3967bcd6d1eb5ac3d8f",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-typescript.wasm; upstream https://github.com/tree-sitter/tree-sitter-typescript",
+    "version": "tree-sitter-typescript@^0.20.5 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "typescript"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-typescript@0.23.2 queries/{tags,locals}.scm",
+    "notes": "Smaller alternative exists in the colbymchenry/codegraph clone (1414055 bytes) but A was preferred as requested."
+  },
+  {
+    "grammar": "tsx",
+    "file": "wasm/tree-sitter-tsx.wasm",
+    "bytes": 2411272,
+    "sha256": "6aa3b2c70e76f5d48eafef1093e9c4de383e13f2fdde2f4e9b98a378f6a8f1b6",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-tsx.wasm; upstream https://github.com/tree-sitter/tree-sitter-typescript",
+    "version": "tree-sitter-typescript@^0.20.5 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "tsx"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-typescript@0.23.2 queries/{tags,locals}.scm (shared by both dialects)",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 1445641 bytes."
+  },
+  {
+    "grammar": "javascript",
+    "file": "wasm/tree-sitter-javascript.wasm",
+    "bytes": 647334,
+    "sha256": "63812b9e275d26851264734868d27a1656bd44a2ef6eb3e85e6b03728c595ab5",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-javascript.wasm; upstream https://github.com/tree-sitter/tree-sitter-javascript",
+    "version": "tree-sitter-javascript@^0.20.3 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "javascript"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-javascript@0.25.0 queries/{tags,locals}.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 411832 bytes."
+  },
+  {
+    "grammar": "python",
+    "file": "wasm/tree-sitter-python.wasm",
+    "bytes": 476105,
+    "sha256": "9056d0fb0c337810d019fae350e8167786119da98f0f282aceae7ab89ee8253b",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-python.wasm; upstream https://github.com/tree-sitter/tree-sitter-python",
+    "version": "tree-sitter-python@^0.21.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "python"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-python@0.25.0 queries/tags.scm (upstream ships no locals.scm)",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 456131 bytes."
+  },
+  {
+    "grammar": "go",
+    "file": "wasm/tree-sitter-go.wasm",
+    "bytes": 235957,
+    "sha256": "9963ca89b616eaf04b08a43bc1fb0f07b85395bec313330851f1f1ead2f755b6",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-go.wasm; upstream https://github.com/tree-sitter/tree-sitter-go",
+    "version": "tree-sitter-go@^0.20.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "go"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-go@0.23.4 queries/tags.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 210013 bytes."
+  },
+  {
+    "grammar": "rust",
+    "file": "wasm/tree-sitter-rust.wasm",
+    "bytes": 818756,
+    "sha256": "4409921a70d0aa5bec7d1d7ce809a557a8ee1cf6ace901e3ac6a76e62cfea903",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-rust.wasm; upstream https://github.com/tree-sitter/tree-sitter-rust",
+    "version": "tree-sitter-rust@^0.20.4 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "rust"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-rust@0.24.0 queries/tags.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 1114303 bytes."
+  },
+  {
+    "grammar": "java",
+    "file": "wasm/tree-sitter-java.wasm",
+    "bytes": 430239,
+    "sha256": "637aac4415fb39a211a4f4292d63c66b5ce9c32fa2cd35464af4f681d91b9a1f",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-java.wasm; upstream https://github.com/tree-sitter/tree-sitter-java",
+    "version": "tree-sitter-java@^0.20.2 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "java"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-java@0.23.5 queries/tags.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 414653 bytes."
+  },
+  {
+    "grammar": "c_sharp",
+    "file": "wasm/tree-sitter-c_sharp.wasm",
+    "bytes": 3978594,
+    "sha256": "6266a7e32d68a3459104d994dc848df15d5672b0ea8e86d327274b694f8e6991",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-c_sharp.wasm; upstream https://github.com/tree-sitter/tree-sitter-c-sharp",
+    "version": "tree-sitter-c-sharp@^0.20.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 13,
+    "languages": [
+      "c_sharp"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-c-sharp@0.20.0 queries/tags.scm (matches this 0.20-era wasm; the 0.24.0 tags.scm does not compile against it: 'Bad node name type')",
+    "alternativeSource": "colbymchenry/codegraph@461a5d8 src/extraction/wasm/tree-sitter-c_sharp.wasm (5350581 bytes, newer grammar); A preferred: smaller and verified with web-tree-sitter 0.25",
+    "notes": "ABI 13 = runtime MIN_COMPATIBLE_VERSION. Old 0.20-era grammar; node types may lag the 0.24 queries."
+  },
+  {
+    "grammar": "php",
+    "file": "wasm/tree-sitter-php.wasm",
+    "bytes": 812594,
+    "sha256": "55bb617b6f01e14bab997861f0b20a2420cf6ba3199ffeb295b9ec398966d8a3",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-php.wasm; upstream https://github.com/tree-sitter/tree-sitter-php",
+    "version": "tree-sitter-php@^0.22.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "php"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-php@0.24.2 queries/tags.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 1058082 bytes."
+  },
+  {
+    "grammar": "ruby",
+    "file": "wasm/tree-sitter-ruby.wasm",
+    "bytes": 2106447,
+    "sha256": "93a5022855314cdb45458c7bb026a24a0ebc3a5ff6439e542e881f14dfa13a39",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-ruby.wasm; upstream https://github.com/tree-sitter/tree-sitter-ruby",
+    "version": "tree-sitter-ruby@^0.20.1 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "ruby"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-ruby@0.23.1 queries/{tags,locals}.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 2106097 bytes (near-identical build)."
+  },
+  {
+    "grammar": "c",
+    "file": "wasm/tree-sitter-c.wasm",
+    "bytes": 792959,
+    "sha256": "056b25072382f72deee2c64ec238ffc4bb8cf42844ef21502c0e70f03a8a0d66",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-c.wasm; upstream https://github.com/tree-sitter/tree-sitter-c",
+    "version": "tree-sitter-c@^0.20.7 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "c"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-c@0.24.1 queries/tags.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 625716 bytes."
+  },
+  {
+    "grammar": "cpp",
+    "file": "wasm/tree-sitter-cpp.wasm",
+    "bytes": 4662978,
+    "sha256": "f6afdf53bfd6de76557bb7edb624a3a3869e14d9a83b78433f93617ecee42527",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-cpp.wasm; upstream https://github.com/tree-sitter/tree-sitter-cpp",
+    "version": "tree-sitter-cpp@^0.20.4 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "cpp"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "npm tree-sitter-cpp@0.23.4 queries/tags.scm",
+    "notes": "Alternative in the colbymchenry/codegraph clone: 3434644 bytes."
+  },
+  {
+    "grammar": "objc",
+    "file": "wasm/tree-sitter-objc.wasm",
+    "bytes": 7708264,
+    "sha256": "7c1b5bfdca7e64b6c63b6040bb7ba0afc347df116f9030ca32f8535d7377f6ff",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-objc.wasm; upstream https://github.com/tree-sitter-grammars/tree-sitter-objc",
+    "version": "tree-sitter-objc@^2.1.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "objc"
+    ],
+    "queries": [
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-objc@3.0.2 queries/locals.scm (upstream ships no tags.scm); file body is '; inherits: c', so the loader must splice c/locals.scm in",
+    "notes": "Largest grammar in the set (7.7 MB)."
+  },
+  {
+    "grammar": "swift",
+    "file": "wasm/tree-sitter-swift.wasm",
+    "bytes": 4149238,
+    "sha256": "32fc07d236e211d06807e77ed0c39ceb83325a9002b4886de8b4684f33af4838",
+    "source": "colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-swift.wasm (alex-pinkus/tree-sitter-swift + codegraph patch); alternative: npm tree-sitter-wasms@0.1.13 (3147876 bytes, ABI 13)",
+    "version": "tree-sitter-swift@^0.4.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "swift"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-swift@0.7.1 queries/{tags,locals}.scm",
+    "alternativeSource": "colbymchenry/codegraph@461a5d8 src/extraction/wasm/tree-sitter-swift.wasm (4149238 bytes; alex-pinkus 0.7.4 + codegraph scanner patch, ABI 15); A preferred: smaller",
+    "notes": "ABI 15. Replaced the tree-sitter-wasms build: that one (ABI 13) is the only grammar whose V8 TurboFan tier-up crashes the whole Node process (\"Fatal process out of memory: Zone\") — reproduced on Node 24.21 with 60 parses of tests/fixtures/grammars/swift.swift; every other grammar passed the same stress. This build parses swift.swift with 0 ERROR nodes and survives the stress without --liftoff-only."
+  },
+  {
+    "grammar": "kotlin",
+    "file": "wasm/tree-sitter-kotlin.wasm",
+    "bytes": 4052705,
+    "sha256": "b5cb00c8d06ed0f10f1dbe497205b437809d7e87db1f638721a8cfb30e044449",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-kotlin.wasm; upstream https://github.com/fwcd/tree-sitter-kotlin",
+    "version": "tree-sitter-kotlin@^0.3.1 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "kotlin"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "GitHub fwcd/tree-sitter-kotlin@main queries/tags.scm (npm tree-sitter-kotlin@0.3.8 ships only highlights.scm)",
+    "alternativeSource": "colbymchenry/codegraph@461a5d8 src/extraction/wasm/tree-sitter-kotlin.wasm (6078823 bytes; fwcd main d6af96d, 2026-10-31); A preferred: smaller",
+    "notes": "fieldCount reports 0 for this wasm (no field names exported); extraction must not rely on field names."
+  },
+  {
+    "grammar": "scala",
+    "file": "wasm/tree-sitter-scala.wasm",
+    "bytes": 215264,
+    "sha256": "160cfbb8ff7220886e99ed9699abceb6d837b4cd28993b9282c7f445a0554abd",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-scala.wasm; upstream https://github.com/tree-sitter/tree-sitter-scala",
+    "version": "tree-sitter-scala@^0.19.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 13,
+    "languages": [
+      "scala"
+    ],
+    "queries": [],
+    "queriesSource": "none: upstream tags.scm first appeared in tree-sitter-scala v0.24 (Scala 3 grammar) and locals.scm from v0.23.4 both fail to compile against this 0.19-era wasm ('Bad node name lambda_expression' / 'enum_definition')",
+    "alternativeSource": "colbymchenry/codegraph@461a5d8 src/extraction/wasm/tree-sitter-scala.wasm (3973559 bytes, Scala 3 grammar); A preferred: smaller",
+    "notes": "ABI 13 = runtime MIN_COMPATIBLE_VERSION. Very small 0.19-era grammar; Scala 3 syntax (given/extension clauses) likely produces ERROR nodes. The 0.24 queries reference node types that may not exist in this wasm."
+  },
+  {
+    "grammar": "dart",
+    "file": "wasm/tree-sitter-dart.wasm",
+    "bytes": 984666,
+    "sha256": "7f5364e4256cf7e55efd01dd52421ef2663caa8061b82659b7e4bf61064545ec",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-dart.wasm; upstream https://github.com/UserNobody14/tree-sitter-dart",
+    "version": "github:UserNobody14/tree-sitter-dart (unpinned devDependency of tree-sitter-wasms@0.1.13; ABI 15 build)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "dart"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "GitHub UserNobody14/tree-sitter-dart@master queries/tags.scm (npm tree-sitter-dart@1.0.0 ships only folds/highlights)",
+    "notes": "npm package.json declares ISC but the LICENSE file text is MIT; MIT recorded. Alternative in the colbymchenry/codegraph clone: 1199200 bytes (master 0038280)."
+  },
+  {
+    "grammar": "vue",
+    "file": "wasm/tree-sitter-vue.wasm",
+    "bytes": 23895,
+    "sha256": "6244521bb3fb60f34ce5f677f2af81facb2c38691193985ca5fa85e1b6f29250",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-vue.wasm; upstream https://github.com/tree-sitter-grammars/tree-sitter-vue (commit 7e48557 pinned by tree-sitter-wasms)",
+    "version": "tree-sitter-vue@7e48557b903a9db9c38cea3b7839ef7e1f36c693",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "vue"
+    ],
+    "queries": [],
+    "queriesSource": "upstream ships no tags.scm (only highlights/indents/injections)",
+    "notes": "Markup-only wrapper grammar; script/style bodies are raw_text and need embeddings."
+  },
+  {
+    "grammar": "lua",
+    "file": "wasm/tree-sitter-lua.wasm",
+    "bytes": 49488,
+    "sha256": "6d95607fc7d78964cfdf065ccb1ba76be5ed217c5ec0d0a3cace13c59fa1ae43",
+    "source": "colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-lua.wasm; upstream https://github.com/Azganoth/tree-sitter-lua",
+    "version": "tree-sitter-lua@^2.1.3 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "lua"
+    ],
+    "queries": [],
+    "queriesSource": "upstream ships no tags.scm (no queries/ directory in the repository)",
+    "notes": "ABI 15. Replaced the tree-sitter-wasms@0.1.13 build (ABI 13, 43539 bytes, sha256 75ef8091…): that one misparsed valid Lua after other grammars were loaded in the same process (3 ERROR nodes on tests/fixtures/grammars/lua.lua). This build parses the fixture with 0 ERROR nodes alone and after the full grammar set."
+  },
+  {
+    "grammar": "solidity",
+    "file": "wasm/tree-sitter-solidity.wasm",
+    "bytes": 423940,
+    "sha256": "160745e470f234cae903a9ba445d19e758d0b02e1197401fc765976c6254d2b6",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-solidity.wasm; upstream https://github.com/JoranHonig/tree-sitter-solidity (commit b239a95 pinned by tree-sitter-wasms)",
+    "version": "tree-sitter-solidity@b239a95f94cfcc6e7b3e961bc73a28d55e214f02",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "solidity"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-solidity tags.scm@1.2.0 + locals.scm@1.2.13 (the 1.2.13 tags.scm does not compile against this wasm: 'Bad node name expression')",
+    "notes": "2020-era grammar snapshot; newer Solidity (0.8.x) syntax may produce ERROR nodes."
+  },
+  {
+    "grammar": "embedded_template",
+    "file": "wasm/tree-sitter-embedded_template.wasm",
+    "bytes": 5124,
+    "sha256": "68584527f712dbf2cc39776c56980c08516991f184a4a17bb67c2f436f0fc373",
+    "source": "npm tree-sitter-wasms@0.1.13 out/tree-sitter-embedded_template.wasm; upstream https://github.com/tree-sitter/tree-sitter-embedded-template",
+    "version": "tree-sitter-embedded-template@^0.20.0 (declared devDependency range of tree-sitter-wasms@0.1.13; exact resolution not published)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "embedded_template"
+    ],
+    "queries": [],
+    "queriesSource": "upstream ships no tags.scm",
+    "optional": true,
+    "notes": "Optional helper grammar for <%= %> / {{ }} template bodies; no symbol extraction expected."
+  },
+  {
+    "grammar": "arkts",
+    "file": "wasm/tree-sitter-arkts.wasm",
+    "bytes": 4384161,
+    "sha256": "db0812971109457d22b3fe9dcdb1cd8e614fba2a338e220670bd254485753623",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-arkts.wasm; upstream https://github.com/harmony-contrib/tree-sitter-arkts",
+    "version": "unknown (codegraph vendored build of a later harmony-contrib/tree-sitter-arkts commit; not byte-identical to npm tree-sitter-arkts@0.3.0)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "arkts"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-arkts@0.3.0 queries/{tags,locals}.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13."
+  },
+  {
+    "grammar": "luau",
+    "file": "wasm/tree-sitter-luau.wasm",
+    "bytes": 94204,
+    "sha256": "f1647052518f2bdfae8e8c0b033ffdeca1193d69d11c78ba20f84c8374fd0fe3",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-luau.wasm (byte-identical to npm tree-sitter-luau@1.2.0 tree-sitter-luau.wasm); upstream https://github.com/tree-sitter-grammars/tree-sitter-luau",
+    "version": "1.2.0",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "luau"
+    ],
+    "queries": [
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-luau@1.2.0 queries/locals.scm; upstream ships no tags.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13."
+  },
+  {
+    "grammar": "r",
+    "file": "wasm/tree-sitter-r.wasm",
+    "bytes": 481163,
+    "sha256": "2a8f5acd1c53d91e0ec5c01a6830d8ac7f5a7f96f0ac4b3768c016c8e9d07711",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-r.wasm; upstream https://github.com/r-lib/tree-sitter-r",
+    "version": "1.2.0 (per codegraph docs/design/r-kernel-port-checklist.md)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "r"
+    ],
+    "queries": [
+      "tags.scm",
+      "locals.scm"
+    ],
+    "queriesSource": "GitHub r-lib/tree-sitter-r@58a2279 (main, 2026-06-22) queries/{tags,locals}.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. npm tree-sitter-r@0.0.1-security is a hijacked placeholder; do not use."
+  },
+  {
+    "grammar": "terraform",
+    "file": "wasm/tree-sitter-terraform.wasm",
+    "bytes": 92484,
+    "sha256": "0d9ef3ae926acc0411bfecba9b34df4ea659061917b96455570a45a70824e890",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-terraform.wasm; upstream https://github.com/tree-sitter-grammars/tree-sitter-hcl (dialects/terraform)",
+    "version": "unknown (codegraph vendored build of dialects/terraform)",
+    "license": "Apache-2.0",
+    "abi": 14,
+    "languages": [
+      "terraform"
+    ],
+    "queries": [],
+    "queriesSource": "upstream tree-sitter-hcl ships no queries/ directory",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. Generic HCL node types (block/attribute/identifier); labels come from string_lit children."
+  },
+  {
+    "grammar": "nix",
+    "file": "wasm/tree-sitter-nix.wasm",
+    "bytes": 80876,
+    "sha256": "4acffa1c013df751193a21ce429777ca214c7d3a7e3665085b6df00dad8869f0",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-nix.wasm; upstream https://github.com/nix-community/tree-sitter-nix",
+    "version": "unknown (codegraph vendored ABI-15 rebuild)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "nix"
+    ],
+    "queries": [
+      "locals.scm"
+    ],
+    "queriesSource": "npm tree-sitter-nix@0.0.2 queries/locals.scm; upstream ships no tags.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13."
+  },
+  {
+    "grammar": "pascal",
+    "file": "wasm/tree-sitter-pascal.wasm",
+    "bytes": 716886,
+    "sha256": "be3634fca99c19f5e1035a1a9c7d93d6ee82b35e6d5024f02be4883b71329c3e",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-pascal.wasm; upstream https://github.com/Isopod/tree-sitter-pascal",
+    "version": "unknown (codegraph vendored build)",
+    "license": "MIT",
+    "abi": 14,
+    "languages": [
+      "pascal"
+    ],
+    "queries": [
+      "locals.scm"
+    ],
+    "queriesSource": "GitHub Isopod/tree-sitter-pascal@3a274dc queries/locals.scm; upstream ships no tags.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. npm tree-sitter-pascal@0.0.1 is the same grammar (author Benjamin Gray)."
+  },
+  {
+    "grammar": "vbnet",
+    "file": "wasm/tree-sitter-vbnet.wasm",
+    "bytes": 6614160,
+    "sha256": "5a8aa2911e28e43e22b077ae56c8143ccfe52485bb6719152b60e2e66a1a9e53",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-vbnet.wasm; upstream https://github.com/govindbanura/tree-sitter-vbnet at 538b7087bf80e86004531b392fe1186379c0a2b5 + codegraph patch (docs/grammars/tree-sitter-vbnet.patch)",
+    "version": "commit 538b7087 + patch",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "vbnet"
+    ],
+    "queries": [],
+    "queriesSource": "upstream ships no queries/ directory",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. Upstream package.json says ISC but the LICENSE file is MIT; MIT recorded. Patch adds a scanner and real-world VB.NET constructs."
+  },
+  {
+    "grammar": "erlang",
+    "file": "wasm/tree-sitter-erlang.wasm",
+    "bytes": 421639,
+    "sha256": "dbab33f03e07b89f4385fcdd48d87d86ba35c82a0a426788d55b8c25410bc491",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-erlang.wasm; upstream https://github.com/WhatsApp/tree-sitter-erlang",
+    "version": "0.19, ABI 14 (per codegraph src/extraction/languages/erlang.ts)",
+    "license": "Apache-2.0",
+    "abi": 14,
+    "languages": [
+      "erlang"
+    ],
+    "queries": [],
+    "queriesSource": "upstream ships only queries/highlights.scm (no tags.scm)",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. npm tree-sitter-erlang@0.0.1-security is a hijacked placeholder; never source from it."
+  },
+  {
+    "grammar": "cfml",
+    "file": "wasm/tree-sitter-cfml.wasm",
+    "bytes": 2700518,
+    "sha256": "17aeb294c58dd47045b470fc082ccceac3100c8e548b13764d4f3987a062322f",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-cfml.wasm; upstream https://github.com/cfmleditor/tree-sitter-cfml (cfml dialect, .cfc/.cfm)",
+    "version": "unknown (codegraph vendored build)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "cfml"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "GitHub cfmleditor/tree-sitter-cfml@24051c0 cfml/queries/tags.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. Tag-aware CFML grammar; bare-script bodies switch to the cfscript grammar."
+  },
+  {
+    "grammar": "cfscript",
+    "file": "wasm/tree-sitter-cfscript.wasm",
+    "bytes": 2162812,
+    "sha256": "e381db5d2b8a7744fc7d8e51b0a14ff03f86c8ff497cdfe32d1da467f19d4096",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-cfscript.wasm; upstream https://github.com/cfmleditor/tree-sitter-cfml (cfscript dialect, .cfs)",
+    "version": "unknown (codegraph vendored build)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "cfscript"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "GitHub cfmleditor/tree-sitter-cfml@24051c0 cfscript/queries/tags.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13."
+  },
+  {
+    "grammar": "cfquery",
+    "file": "wasm/tree-sitter-cfquery.wasm",
+    "bytes": 2411407,
+    "sha256": "9d4eaaec46eec7e6400d4b8d6c85fac7dfe33867ed5b4e5c218dfa7851c32558",
+    "source": "local clone colbymchenry/codegraph@461a5d87a873a4932997cd9a49042ab30e45a675 src/extraction/wasm/tree-sitter-cfquery.wasm; upstream https://github.com/cfmleditor/tree-sitter-cfml (cfquery dialect: SQL body of <cfquery>)",
+    "version": "unknown (codegraph vendored build)",
+    "license": "MIT",
+    "abi": 15,
+    "languages": [
+      "cfquery"
+    ],
+    "queries": [
+      "tags.scm"
+    ],
+    "queriesSource": "GitHub cfmleditor/tree-sitter-cfml@24051c0 cfquery/queries/tags.scm",
+    "notes": "Not available in tree-sitter-wasms@0.1.13. No file extension of its own; used for <cfquery> bodies."
+  }
+]

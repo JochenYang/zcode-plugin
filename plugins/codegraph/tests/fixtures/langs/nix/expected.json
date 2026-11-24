@@ -1,0 +1,30 @@
+{
+  "symbols": [
+    { "kind": "variable", "name": "version", "line": 5, "endLine": 5, "qual": "version" },
+    { "kind": "function", "name": "greet", "line": 8, "endLine": 8, "qual": "greet", "doc": "Greets a user by name." },
+    { "kind": "function", "name": "mkPackage", "line": 10, "endLine": 13, "qual": "mkPackage" },
+    { "kind": "type", "name": "packages", "line": 15, "endLine": 18, "qual": "packages" },
+    { "kind": "variable", "name": "hello", "line": 16, "endLine": 16, "qual": "packages.hello" },
+    { "kind": "variable", "name": "custom", "line": 17, "endLine": 17, "qual": "packages.custom" },
+    { "kind": "variable", "name": "nixpkgs", "line": 20, "endLine": 20, "qual": "nixpkgs" },
+    { "kind": "variable", "name": "cfg", "line": 21, "endLine": 21, "qual": "cfg" },
+    { "kind": "variable", "name": "devShell", "line": 24, "endLine": 27, "qual": "devShell" }
+  ],
+  "imports": [
+    { "spec": "<nixpkgs>", "line": 20 },
+    { "spec": "./config.nix", "line": 21 }
+  ],
+  "calls": [
+    { "name": "mkDerivation", "line": 10 },
+    { "name": "mkPackage", "line": 17 },
+    { "name": "mkShell", "line": 24 },
+    { "name": "greet", "line": 26 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "pkgs", "line": 10, "symbol": "mkPackage" },
+    { "kind": "ref", "name": "mkPackage", "line": 17, "symbol": "custom" },
+    { "kind": "ref", "name": "greet", "line": 26, "symbol": "devShell" },
+    { "kind": "ref", "name": "lib", "line": 29, "symbol": null },
+    { "kind": "call", "name": "mkShell", "line": 24, "symbol": "devShell" }
+  ]
+}

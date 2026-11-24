@@ -1,0 +1,186 @@
+{
+  "symbols": [
+    {
+      "kind": "constant",
+      "name": "MaxNodes",
+      "line": 9,
+      "endLine": 9,
+      "qual": "MaxNodes",
+      "doc": "MaxNodes caps how many nodes a graph may hold.",
+      "exported": true
+    },
+    {
+      "kind": "variable",
+      "name": "version",
+      "line": 11,
+      "endLine": 11,
+      "qual": "version",
+      "exported": false
+    },
+    {
+      "kind": "struct",
+      "name": "Node",
+      "line": 14,
+      "endLine": 17,
+      "qual": "Node",
+      "doc": "Node is a single vertex with outbound edges.",
+      "exported": true
+    },
+    {
+      "kind": "field",
+      "name": "ID",
+      "line": 15,
+      "endLine": 15,
+      "qual": "Node.ID",
+      "exported": true
+    },
+    {
+      "kind": "field",
+      "name": "Edges",
+      "line": 16,
+      "endLine": 16,
+      "qual": "Node.Edges",
+      "exported": true
+    },
+    {
+      "kind": "type",
+      "name": "EdgeKind",
+      "line": 18,
+      "endLine": 18,
+      "qual": "EdgeKind",
+      "exported": true
+    },
+    {
+      "kind": "method",
+      "name": "Label",
+      "line": 21,
+      "endLine": 23,
+      "qual": "Node.Label",
+      "doc": "Label returns a printable label for the node.",
+      "exported": true
+    },
+    {
+      "kind": "method",
+      "name": "Connect",
+      "line": 26,
+      "endLine": 28,
+      "qual": "Node.Connect",
+      "doc": "Connect appends dst to the node's edge list.",
+      "exported": true
+    },
+    {
+      "kind": "function",
+      "name": "joinLabels",
+      "line": 30,
+      "endLine": 36,
+      "qual": "joinLabels",
+      "exported": false
+    },
+    {
+      "kind": "interface",
+      "name": "Labeled",
+      "line": 38,
+      "endLine": 40,
+      "qual": "Labeled",
+      "exported": true
+    },
+    {
+      "kind": "method",
+      "name": "Label",
+      "line": 39,
+      "endLine": 39,
+      "qual": "Labeled.Label",
+      "exported": true
+    }
+  ],
+  "imports": [
+    {
+      "spec": "fmt",
+      "line": 4
+    },
+    {
+      "spec": "strings",
+      "line": 5
+    }
+  ],
+  "calls": [
+    {
+      "name": "Sprintf",
+      "line": 22
+    },
+    {
+      "name": "append",
+      "line": 27
+    },
+    {
+      "name": "make",
+      "line": 31
+    },
+    {
+      "name": "len",
+      "line": 31
+    },
+    {
+      "name": "append",
+      "line": 33
+    },
+    {
+      "name": "Label",
+      "line": 33
+    },
+    {
+      "name": "Join",
+      "line": 35
+    }
+  ],
+  "refs": [
+    {
+      "kind": "ref",
+      "name": "int",
+      "line": 15,
+      "symbol": "ID"
+    },
+    {
+      "kind": "ref",
+      "name": "int",
+      "line": 18,
+      "symbol": "EdgeKind"
+    },
+    {
+      "kind": "ref",
+      "name": "string",
+      "line": 39,
+      "symbol": "Label"
+    },
+    {
+      "kind": "ref",
+      "name": "Node",
+      "line": 21,
+      "symbol": "Label"
+    },
+    {
+      "kind": "call",
+      "name": "Sprintf",
+      "line": 22,
+      "symbol": "Label"
+    },
+    {
+      "kind": "call",
+      "name": "append",
+      "line": 27,
+      "symbol": "Connect"
+    },
+    {
+      "kind": "call",
+      "name": "make",
+      "line": 31,
+      "symbol": "joinLabels"
+    },
+    {
+      "kind": "call",
+      "name": "Label",
+      "line": 33,
+      "symbol": "joinLabels"
+    }
+  ]
+}

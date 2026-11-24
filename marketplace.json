@@ -105,6 +105,27 @@
       ],
       "source": "./plugins/model-speed",
       "icon": "https://static.geluman.cn/icon/model-speed.png"
+    },
+    {
+      "name": "codegraph",
+      "version": "0.1.0",
+      "description": "Local code graph for ZCode as a zero-dependency MCP server: tree-sitter index of 35 languages kept in SQLite under the plugin data folder, exposed through codegraph_status, codegraph_lookup (symbol search, callers, callees, impact, outline) and codegraph_map, so the model reads exact line ranges instead of grepping and reading whole files. The index is built or refreshed silently when a session opens; SessionStart, UserPromptSubmit and PostToolUse hooks tell the model when the graph is ready and when to use it. No network, no telemetry.",
+      "author": {
+        "name": "JochenYang"
+      },
+      "category": "developer-tools",
+      "tags": [
+        "code-graph",
+        "tree-sitter",
+        "mcp",
+        "code-navigation",
+        "index"
+      ],
+      "source": "./plugins/codegraph",
+      "icon": "https://static.geluman.cn/icon/codegraph.png",
+      "description_i18n": {
+        "zh-CN": "ZCode 本地代码图谱：零依赖 MCP server，用随包的 tree-sitter 把 35 行语言索引成符号/引用/调用图，存进插件数据目录的 SQLite；codegraph_status、codegraph_lookup（符号搜索、调用者、被调用者、影响面、大纲）、codegraph_map 三个工具直接给出精确 file:line，替代 Grep 加整文件 Read。索引在会话打开时自动建立或刷新；SessionStart、UserPromptSubmit、PostToolUse 三个钩子告诉模型图谱何时就绪、何时该用它。零遥测、零外联、不执行项目代码；需 Node ≥ 22.13，钩子只认 PATH。"
+      }
     }
   ]
 }

@@ -1,0 +1,41 @@
+{
+  "symbols": [
+    { "kind": "constant", "name": "CACHE", "line": 10, "endLine": 10, "qual": "CACHE", "exported": true },
+    { "kind": "class", "name": "Point", "line": 13, "endLine": 25, "qual": "Point", "doc": "A 2D point.", "exported": true },
+    { "kind": "method", "name": "__init__", "line": 16, "endLine": 18, "qual": "Point.__init__", "exported": false },
+    { "kind": "method", "name": "scaled", "line": 20, "endLine": 22, "qual": "Point.scaled", "doc": "Returns a scaled copy.", "exported": true },
+    { "kind": "method", "name": "to_dict", "line": 24, "endLine": 25, "qual": "Point.to_dict", "exported": true },
+    { "kind": "function", "name": "distance", "line": 28, "endLine": 30, "qual": "distance", "doc": "Distance between two points.", "exported": true },
+    { "kind": "function", "name": "load_points", "line": 34, "endLine": 37, "qual": "load_points", "exported": true }
+  ],
+  "imports": [
+    { "spec": "functools", "line": 2 },
+    { "spec": "json", "line": 3 },
+    { "spec": "math", "line": 4 },
+    { "spec": "os.path", "line": 5 },
+    { "spec": "collections", "line": 6 },
+    { "spec": ".shapes", "line": 7 },
+    { "spec": "..util", "line": 8 }
+  ],
+  "calls": [
+    { "name": "OrderedDict", "line": 10 },
+    { "name": "Point", "line": 22 },
+    { "name": "hypot", "line": 30 },
+    { "name": "lru_cache", "line": 33 },
+    { "name": "loads", "line": 35 },
+    { "name": "basename", "line": 35 },
+    { "name": "Point", "line": 36 },
+    { "name": "parse_pairs", "line": 36 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "OrderedDict", "line": 10, "symbol": "CACHE" },
+    { "kind": "call", "name": "Point", "line": 22, "symbol": "scaled" },
+    { "kind": "call", "name": "hypot", "line": 30, "symbol": "distance" },
+    { "kind": "call", "name": "lru_cache", "line": 33, "symbol": null },
+    { "kind": "call", "name": "parse_pairs", "line": 36, "symbol": "load_points" },
+    { "kind": "ref", "name": "Shape", "line": 13, "symbol": "Point" },
+    { "kind": "ref", "name": "float", "line": 16, "symbol": "__init__" },
+    { "kind": "ref", "name": "Point", "line": 20, "symbol": "scaled" },
+    { "kind": "ref", "name": "CACHE", "line": 37, "symbol": "load_points" }
+  ]
+}

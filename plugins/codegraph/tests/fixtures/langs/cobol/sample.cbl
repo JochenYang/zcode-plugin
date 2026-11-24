@@ -1,0 +1,30 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. VAULT.
+       AUTHOR. LEDGER TEAM.
+      * Keeps per-user balances for the ledger.
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-TOTAL         PIC S9(9)V99 COMP-3 VALUE ZERO.
+       01  WS-OWNER          PIC X(32).
+       01  WS-AMOUNT         PIC S9(9)V99 COMP-3.
+
+       PROCEDURE DIVISION.
+       MAIN-SECTION.
+           PERFORM INIT-VAULT
+           MOVE "ALICE" TO WS-OWNER
+           MOVE 125.50 TO WS-AMOUNT
+           PERFORM DEPOSIT
+           PERFORM SHOW-TOTAL
+           STOP RUN.
+
+       DEPOSIT.
+           ADD WS-AMOUNT TO WS-TOTAL
+           DISPLAY "DEPOSITED " WS-AMOUNT " FOR " WS-OWNER.
+
+       SHOW-TOTAL.
+           DISPLAY "TOTAL " WS-TOTAL.
+
+       INIT-VAULT.
+           MOVE ZERO TO WS-TOTAL.

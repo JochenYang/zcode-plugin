@@ -1,0 +1,39 @@
+{
+  "symbols": [
+    { "kind": "class", "name": "GraphNode", "line": 5, "endLine": 10, "qual": "GraphNode", "doc": "A vertex with outbound edges.", "exported": true },
+    { "kind": "property", "name": "label", "line": 6, "endLine": 6, "qual": "GraphNode.label", "exported": true },
+    { "kind": "method", "name": "initWithLabel:", "line": 7, "endLine": 7, "qual": "GraphNode.initWithLabel:", "exported": true },
+    { "kind": "method", "name": "nodeWithLabel:", "line": 8, "endLine": 8, "qual": "GraphNode.nodeWithLabel:", "exported": true },
+    { "kind": "method", "name": "connectTo:", "line": 9, "endLine": 9, "qual": "GraphNode.connectTo:", "exported": true },
+    { "kind": "interface", "name": "GraphObserver", "line": 13, "endLine": 15, "qual": "GraphObserver", "doc": "Receives lifecycle events of a graph.", "exported": true },
+    { "kind": "method", "name": "graph:didAddEdge:", "line": 14, "endLine": 14, "qual": "GraphObserver.graph:didAddEdge:", "exported": true },
+    { "kind": "function", "name": "Prefix", "line": 17, "endLine": 19, "qual": "Prefix", "exported": false },
+    { "kind": "class", "name": "GraphNode", "line": 21, "endLine": 34, "qual": "GraphNode", "exported": true },
+    { "kind": "method", "name": "initWithLabel:", "line": 22, "endLine": 27, "qual": "GraphNode.initWithLabel:", "exported": true },
+    { "kind": "method", "name": "nodeWithLabel:", "line": 28, "endLine": 30, "qual": "GraphNode.nodeWithLabel:", "exported": true },
+    { "kind": "method", "name": "connectTo:", "line": 31, "endLine": 33, "qual": "GraphNode.connectTo:", "exported": true }
+  ],
+  "imports": [
+    { "spec": "Foundation", "line": 1 },
+    { "spec": "Graph.h", "line": 2 }
+  ],
+  "calls": [
+    { "name": "init", "line": 23 },
+    { "name": "stringByAppendingString:", "line": 24 },
+    { "name": "Prefix", "line": 24 },
+    { "name": "initWithLabel:", "line": 29 },
+    { "name": "alloc", "line": 29 },
+    { "name": "NSLog", "line": 32 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "GraphObserver", "line": 5, "symbol": "GraphNode" },
+    { "kind": "ref", "name": "NSString", "line": 6, "symbol": "label" },
+    { "kind": "ref", "name": "NSString", "line": 7, "symbol": "initWithLabel:" },
+    { "kind": "ref", "name": "GraphNode", "line": 14, "symbol": "graph:didAddEdge:" },
+    { "kind": "ref", "name": "NSString", "line": 17, "symbol": "Prefix" },
+    { "kind": "call", "name": "init", "line": 23, "symbol": "initWithLabel:" },
+    { "kind": "call", "name": "stringByAppendingString:", "line": 24, "symbol": "initWithLabel:" },
+    { "kind": "call", "name": "alloc", "line": 29, "symbol": "nodeWithLabel:" },
+    { "kind": "call", "name": "NSLog", "line": 32, "symbol": "connectTo:" }
+  ]
+}

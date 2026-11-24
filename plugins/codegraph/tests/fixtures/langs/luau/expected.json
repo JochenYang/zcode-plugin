@@ -1,0 +1,27 @@
+{
+  "symbols": [
+    { "kind": "variable", "name": "Types", "line": 2, "endLine": 2, "qual": "Types", "doc": "Types and exports for a small vector module." },
+    { "kind": "type", "name": "Vec2", "line": 4, "endLine": 4, "qual": "Vec2", "exported": true },
+    { "kind": "type", "name": "Kind", "line": 6, "endLine": 6, "qual": "Kind", "exported": false },
+    { "kind": "variable", "name": "Vector", "line": 8, "endLine": 8, "qual": "Vector" },
+    { "kind": "function", "name": "new", "line": 11, "endLine": 13, "qual": "new" },
+    { "kind": "function", "name": "add", "line": 15, "endLine": 17, "qual": "add" },
+    { "kind": "method", "name": "length", "line": 19, "endLine": 21, "qual": "length" },
+    { "kind": "function", "name": "sum", "line": 23, "endLine": 29, "qual": "sum" }
+  ],
+  "imports": [
+    { "spec": "./types", "line": 2 }
+  ],
+  "calls": [
+    { "name": "sqrt", "line": 20 },
+    { "name": "new", "line": 24 },
+    { "name": "add", "line": 26 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "sqrt", "line": 20, "symbol": "length" },
+    { "kind": "call", "name": "new", "line": 24, "symbol": "sum" },
+    { "kind": "call", "name": "add", "line": 26, "symbol": "sum" },
+    { "kind": "ref", "name": "Vec2", "line": 15, "symbol": "add" },
+    { "kind": "ref", "name": "Vector", "line": 24, "symbol": "sum" }
+  ]
+}

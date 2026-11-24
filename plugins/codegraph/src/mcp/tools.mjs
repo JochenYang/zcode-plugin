@@ -1,0 +1,374 @@
+// Tool schemas and dispatcher for the three MCP tools (CONTRACTS.md §10).
+//
+// Descriptions are the frozen contract texts. Argument errors raise TypeError
+// (the protocol layer turns them into in-band errors); every runtime condition
+// — not indexed, building, failing query — is rendered as readable text so the
+// model can recover instead of seeing a failed tool.
+import fs from 'node:fs';
+import path from 'node:path';
+import * as graphQueries from '../graph/queries.mjs';
+import * as graphMap from '../graph/map.mjs';
+import { DEFAULT_CONFIG, BUDGET_TOKENS_MAX, BUDGET_TOKENS_MIN } from '../config.mjs';
+import { displayPath } from '../paths.mjs';
+import { getContext } from './context.mjs';
+import * as render from '../render/text.mjs';
+
+export const OPERATIONS = Object.freeze(['search', 'symbol', 'callers', 'callees', 'impact', 'outline']);
+export const DEPTH_RANGE = Object.freeze({ min: 1, max: 6, default: 2 });
+export const LIMIT_RANGE = Object.freeze({ min: 1, max: 200, default: 20 });
+export const BUDGET_RANGE = Object.freeze({ min: BUDGET_TOKENS_MIN, max: BUDGET_TOKENS_MAX });
+// Bodies larger than this are not read from disk just to be replaced by a Read line.
+const MAX_BODY_READ_BYTES = 8 * 1024 * 1024;
+
+const PARAMETER = {
+  operation: {
+    type: 'string',
+    enum: [...OPERATIONS],
+    description:
+      'search: symbols by name; symbol: one symbol with callers/callees/imports; callers/callees: direct relationships; ' +
+      'impact: transitive dependents up to depth; outline: symbols of one file in source order.',
+  },
+  query: {
+    type: 'string',
+    description:
+      'search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). ' +
+      'When no name holds every word, the longest ones anchor a partial-match search, best match first. Required for search.',
+  },
+  name: { type: 'string', description: 'symbol/callers/callees/impact only: bare symbol name. Required for those operations.' },
+  file: {
+    type: 'string',
+    description:
+      'Path relative to the workspace root with "/" separators. Required for outline; optional elsewhere to pick one of several same-named symbols.',
+  },
+  depth: { type: 'integer', minimum: DEPTH_RANGE.min, maximum: DEPTH_RANGE.max, description: `impact only: relationship hops to follow. Default ${DEPTH_RANGE.default}.` },
+  limit: { type: 'integer', minimum: LIMIT_RANGE.min, maximum: LIMIT_RANGE.max, description: `Maximum rows returned. Default ${LIMIT_RANGE.default}.` },
+  budget: {
+    type: 'integer',
+    minimum: BUDGET_RANGE.min,
+    maximum: BUDGET_RANGE.max,
+    description: `Token budget for the result. Default ${DEFAULT_CONFIG.defaultBudgetTokens.lookup}.`,
+  },
+  body: {
+    type: 'boolean',
+    description: `symbol only: include the source body (inline when at most ${render.INLINE_BODY_MAX_LINES} lines, otherwise a Read line with offset/limit). Default false.`,
+  },
+};
+
+export const TOOLS = Object.freeze([
+  Object.freeze({
+    name: 'codegraph_status',
+    description:
+      'Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. ' +
+      'Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. ' +
+      'When the project is not indexed, fall back to Read/Grep.',
+    inputSchema: Object.freeze({
+      type: 'object',
+      properties: Object.freeze({
+        refresh: { type: 'boolean', description: 'Force an incremental sync (dirty log + mtime scan) before reporting.' },
+      }),
+    }),
+  }),
+  Object.freeze({
+    name: 'codegraph_lookup',
+    description:
+      'Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, ' +
+      'who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. ' +
+      'operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. ' +
+      'symbol with body=true returns the definition source in the same call. ' +
+      'Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. ' +
+      'Index may lag a few seconds after external edits; codegraph_status reports staleness.',
+    inputSchema: Object.freeze({
+      type: 'object',
+      properties: PARAMETER,
+      required: Object.freeze(['operation']),
+    }),
+  }),
+  Object.freeze({
+    name: 'codegraph_map',
+    description:
+      'Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. ' +
+      'Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.',
+    inputSchema: Object.freeze({
+      type: 'object',
+      properties: Object.freeze({
+        path: { type: 'string', description: 'Limit the map to this directory or file (relative to the workspace root). Default: whole repository.' },
+        budget: {
+          type: 'integer',
+          minimum: BUDGET_RANGE.min,
+          maximum: BUDGET_RANGE.max,
+          description: `Token budget for the map. Default ${DEFAULT_CONFIG.defaultBudgetTokens.map}.`,
+        },
+      }),
+    }),
+  }),
+]);
+
+// ---------- argument validation ----------
+
+function describe(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (['number', 'bigint', 'boolean'].includes(typeof value)) return String(value);
+  return typeof value;
+}
+
+const invalid = (tool, field, expectation, value) =>
+  new TypeError(`${tool}: "${field}" ${expectation} (got ${describe(value)})`);
+
+function checkString(tool, field, value) {
+  if (typeof value !== 'string' || value.trim() === '') throw invalid(tool, field, 'must be a non-empty string', value);
+  return value.trim();
+}
+
+function checkInteger(tool, field, value, range) {
+  if (!Number.isInteger(value) || value < range.min || value > range.max) {
+    throw invalid(tool, field, `must be an integer between ${range.min} and ${range.max}`, value);
+  }
+  return value;
+}
+
+function checkBoolean(tool, field, value) {
+  if (typeof value !== 'boolean') throw invalid(tool, field, 'must be a boolean', value);
+  return value;
+}
+
+const REQUIRED_BY_OPERATION = Object.freeze({ search: 'query', symbol: 'name', callers: 'name', callees: 'name', impact: 'name', outline: 'file' });
+// Only the parameters a tool declares are validated; anything else is ignored.
+const FIELDS_BY_TOOL = Object.freeze({
+  codegraph_status: Object.freeze(['refresh']),
+  codegraph_lookup: Object.freeze(['operation', 'query', 'name', 'file', 'depth', 'limit', 'budget', 'body']),
+  codegraph_map: Object.freeze(['path', 'budget']),
+});
+
+function validate(tool, args) {
+  if (args === undefined || args === null) return {};
+  if (typeof args !== 'object' || Array.isArray(args)) throw invalid(tool, 'arguments', 'must be an object', args);
+  const out = {};
+  for (const [field, value] of Object.entries(args)) {
+    if (value === undefined || !FIELDS_BY_TOOL[tool].includes(field)) continue;
+    switch (field) {
+      case 'operation':
+        if (!OPERATIONS.includes(value)) throw invalid(tool, field, `must be one of ${OPERATIONS.join(', ')}`, value);
+        out.operation = value;
+        break;
+      case 'query':
+      case 'name':
+      case 'file':
+      case 'path':
+        out[field] = checkString(tool, field, value);
+        break;
+      case 'depth':
+        out.depth = checkInteger(tool, field, value, DEPTH_RANGE);
+        break;
+      case 'limit':
+        out.limit = checkInteger(tool, field, value, LIMIT_RANGE);
+        break;
+      case 'budget':
+        out.budget = checkInteger(tool, field, value, BUDGET_RANGE);
+        break;
+      case 'body':
+      case 'refresh':
+        out[field] = checkBoolean(tool, field, value);
+        break;
+      default:
+        break; // unknown keys are ignored: the schema documents what is used
+    }
+  }
+  if (tool === 'codegraph_lookup') {
+    if (out.operation === undefined) throw invalid(tool, 'operation', 'is required', undefined);
+    const needed = REQUIRED_BY_OPERATION[out.operation];
+    if (!out[needed]) throw new TypeError(`${tool}: operation=${out.operation} requires "${needed}"`);
+  }
+  return out;
+}
+
+// ---------- graph module resolution ----------
+
+/** Which graph modules a context uses; the real modules unless the context overrides them. */
+export function resolveGraph(context) {
+  return { queries: context.queries ?? graphQueries, map: context.map ?? graphMap };
+}
+
+// ---------- dispatch ----------
+
+/**
+ * Run one tool. `ctx` defaults to the process context (getContext()); tests
+ * pass a fake `{ root, config, indexer, db, queries?, map? }`.
+ *
+ * @returns {Promise<{ content: { type: 'text', text: string }[] }>}
+ */
+export async function callTool(name, args, ctx) {
+  if (!TOOLS.some((t) => t.name === name)) throw new TypeError(`callTool: unknown tool ${describe(name)}`);
+  const params = validate(name, args);
+  const context = await (ctx ?? getContext());
+  switch (name) {
+    case 'codegraph_status':
+      return statusTool(params, context);
+    case 'codegraph_lookup':
+      return lookupTool(params, context);
+    default:
+      return mapTool(params, context);
+  }
+}
+
+const text = (s) => ({ content: [{ type: 'text', text: s }] });
+const message = (err) => String(err?.message ?? err).replace(/\s+/g, ' ').trim();
+const head = (rows, n) => (Array.isArray(rows) ? rows.slice(0, n) : []);
+const quote = (s) => (/\s/.test(s) ? JSON.stringify(s) : s);
+
+// Every tool syncs first (CONTRACTS.md §9: the server is the source of
+// freshness) and then reads the status for the header. A sync failure does not
+// abort the call — the query still runs on whatever is indexed — but is
+// reported in the freshness segment.
+async function prepare(context, { refresh = false } = {}) {
+  const indexer = context.indexer;
+  let syncError = null;
+  if (typeof indexer?.ensureFresh === 'function') {
+    try {
+      // `force` asks the indexer to skip its mtime-scan throttle (contract request).
+      await indexer.ensureFresh(refresh ? { maxWaitMs: 3000, force: true } : undefined);
+    } catch (err) {
+      syncError = err;
+    }
+  }
+  let status = null;
+  if (typeof indexer?.status === 'function') {
+    try {
+      status = await indexer.status();
+    } catch (err) {
+      syncError ??= err;
+    }
+  }
+  return { status, syncError };
+}
+
+function freshnessText(status, syncError) {
+  const base = render.freshnessLabel(status);
+  return syncError ? `${base} · sync failed: ${message(syncError)}` : base;
+}
+
+function budgetOf(context, value, kind) {
+  const fromConfig = context.config?.defaultBudgetTokens?.[kind];
+  const chosen = value ?? (Number.isInteger(fromConfig) ? fromConfig : DEFAULT_CONFIG.defaultBudgetTokens[kind]);
+  return Math.min(BUDGET_RANGE.max, Math.max(BUDGET_RANGE.min, chosen));
+}
+
+function notice(operation, args, summary, hint, freshness = '') {
+  return text(render.renderNotice({ operation, args, summary, hint, freshness }));
+}
+
+// Paths reach the index as '/'-separated and relative to the root; accept the
+// native separator and absolute paths inside the workspace as well.
+function normalizePath(root, value) {
+  if (value === undefined) return undefined;
+  let p = path.isAbsolute(value) ? displayPath(root, value) : value;
+  if (process.platform === 'win32') p = p.split('\\').join('/');
+  return p.replace(/^\.\//, '').replace(/^\/+/, '');
+}
+
+async function statusTool(p, context) {
+  const refresh = p.refresh === true;
+  const { status, syncError } = await prepare(context, { refresh });
+  return text(render.renderStatus(status, { refresh, syncError }));
+}
+
+async function lookupTool(p, context) {
+  const { status, syncError } = await prepare(context);
+  const freshness = freshnessText(status, syncError);
+  const budget = budgetOf(context, p.budget, 'lookup');
+  const { operation } = p;
+  const file = normalizePath(context.root, p.file);
+  const args = quote(operation === 'search' ? p.query : operation === 'outline' ? file : [p.name, file].filter(Boolean).join(' '));
+  if (status?.state === 'empty') {
+    return notice(operation, args, 'not indexed', 'project is not indexed; use Read/Grep for now. codegraph_status explains why.');
+  }
+  const { queries } = resolveGraph(context);
+  const { db } = context;
+  const limit = p.limit ?? LIMIT_RANGE.default;
+  const meta = { budget, freshness };
+  try {
+    switch (operation) {
+      case 'search': {
+        const info = {};
+        const rows = queries.search(db, { query: p.query, kind: null, limit: limit + 1 }, info);
+        return text(render.renderSearch(head(rows, limit), { ...meta, query: p.query, more: rows.length > limit, ...info }));
+      }
+      case 'symbol': {
+        const result = queries.symbol(db, { name: p.name, path: file, qual: undefined });
+        const body = p.body && result?.symbol ? readBody(context.root, result.symbol) : null;
+        return text(render.renderSymbol(result, { ...meta, name: p.name, file, body }));
+      }
+      case 'callers':
+      case 'callees': {
+        const rows = queries[operation](db, { name: p.name, path: file, limit: limit + 1 });
+        const shown = head(rows, limit);
+        const out = { ...meta, name: p.name, file, more: rows.length > limit };
+        return text(operation === 'callers' ? render.renderCallers(shown, out) : render.renderCallees(shown, out));
+      }
+      case 'impact': {
+        const depth = p.depth ?? DEPTH_RANGE.default;
+        const result = queries.impact(db, { name: p.name, path: file, depth });
+        const nodes = Array.isArray(result?.nodes) ? result.nodes : [];
+        const shown = head(nodes, limit);
+        return text(
+          render.renderImpact(
+            { ...result, nodes: shown },
+            { ...meta, name: p.name, file, depth, more: nodes.length > limit },
+          ),
+        );
+      }
+      case 'outline': {
+        const rows = queries.outline(db, { path: file });
+        return text(render.renderOutline(rows, { ...meta, file }));
+      }
+      default:
+        throw invalid('codegraph_lookup', 'operation', `must be one of ${OPERATIONS.join(', ')}`, p.operation);
+    }
+  } catch (err) {
+    return notice(operation, args, 'query failed', `the index could not be queried (${message(err)}); codegraph_status reports the index state.`, freshness);
+  }
+}
+
+async function mapTool(p, context) {
+  const { status, syncError } = await prepare(context);
+  const freshness = freshnessText(status, syncError);
+  const budget = budgetOf(context, p.budget, 'map');
+  const target = normalizePath(context.root, p.path);
+  if (status?.state === 'empty') {
+    return notice('map', quote(target ?? ''), 'not indexed', 'project is not indexed; use Glob/Read for now. codegraph_status explains why.');
+  }
+  const { map } = resolveGraph(context);
+  try {
+    const result = map.repoMap(context.db, { path: target, budgetTokens: budget });
+    return text(render.renderMap(result, { path: target, budget, freshness }));
+  } catch (err) {
+    return notice('map', quote(target ?? ''), 'query failed', `the index could not be queried (${message(err)}); codegraph_status reports the index state.`, freshness);
+  }
+}
+
+// Source body for operation=symbol: `{ lines }` when it can be inlined,
+// `{ lineCount }` when only the Read line is needed, `{ error }` when unreadable.
+function readBody(root, symbol) {
+  const rel = String(symbol.path ?? '');
+  const start = symbol.startLine ?? symbol.start_line;
+  const end = symbol.endLine ?? symbol.end_line;
+  const lineCount = Number.isInteger(start) && Number.isInteger(end) ? end - start + 1 : 0;
+  if (!Number.isInteger(start) || lineCount < 1) return { error: 'symbol has no line range in the index' };
+  if (lineCount > render.INLINE_BODY_MAX_LINES) return { lineCount };
+  const abs = path.resolve(root, rel);
+  if (!isInside(root, abs)) return { error: `path is outside the workspace: ${rel}` };
+  try {
+    if (fs.statSync(abs).size > MAX_BODY_READ_BYTES) return { lineCount };
+    const lines = fs.readFileSync(abs, 'utf8').split(/\r?\n/).slice(start - 1, end);
+    return { lines };
+  } catch (err) {
+    return { error: `cannot read ${rel} (${err?.code ?? message(err)}); the index may be stale` };
+  }
+}
+
+function isInside(root, abs) {
+  const base = process.platform === 'win32' ? root.toLowerCase() : root;
+  const target = process.platform === 'win32' ? abs.toLowerCase() : abs;
+  return target === base || target.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+}

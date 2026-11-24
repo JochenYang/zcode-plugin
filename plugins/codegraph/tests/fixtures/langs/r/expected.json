@@ -1,0 +1,24 @@
+{
+  "symbols": [
+    { "kind": "function", "name": "add", "line": 8, "endLine": 10, "qual": "add", "doc": "Adds two numbers." },
+    { "kind": "function", "name": "make_counter", "line": 13, "endLine": 19, "qual": "make_counter", "doc": "Builds a counter closure." },
+    { "kind": "constant", "name": "MAX_RETRIES", "line": 21, "endLine": 21, "qual": "MAX_RETRIES" },
+    { "kind": "function", "name": "retry", "line": 23, "endLine": 28, "qual": "retry" },
+    { "kind": "function", "name": "load_data", "line": 30, "endLine": 32, "qual": "load_data" }
+  ],
+  "imports": [
+    { "spec": "stats", "line": 1 }
+  ],
+  "calls": [
+    { "name": "seq_len", "line": 24 },
+    { "name": "tryCatch", "line": 25 },
+    { "name": "f", "line": 25 },
+    { "name": "read.csv", "line": 31 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "seq_len", "line": 24, "symbol": "retry" },
+    { "kind": "call", "name": "tryCatch", "line": 25, "symbol": "retry" },
+    { "kind": "call", "name": "read.csv", "line": 31, "symbol": "load_data" },
+    { "kind": "ref", "name": "MAX_RETRIES", "line": 23, "symbol": "retry" }
+  ]
+}

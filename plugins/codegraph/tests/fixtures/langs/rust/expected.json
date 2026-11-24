@@ -1,0 +1,42 @@
+{
+  "symbols": [
+    { "kind": "constant", "name": "MAX_NODES", "line": 5, "endLine": 5, "qual": "MAX_NODES", "doc": "Maximum number of nodes a graph may hold.", "exported": true },
+    { "kind": "variable", "name": "VERSION", "line": 6, "endLine": 6, "qual": "VERSION", "exported": false },
+    { "kind": "struct", "name": "Node", "line": 10, "endLine": 13, "qual": "Node", "doc": "A node with outbound edges.", "exported": true },
+    { "kind": "field", "name": "id", "line": 11, "endLine": 11, "qual": "Node.id", "exported": true },
+    { "kind": "field", "name": "edges", "line": 12, "endLine": 12, "qual": "Node.edges", "exported": false },
+    { "kind": "enum", "name": "Color", "line": 15, "endLine": 15, "qual": "Color", "exported": true },
+    { "kind": "trait", "name": "Label", "line": 17, "endLine": 20, "qual": "Label", "exported": true },
+    { "kind": "method", "name": "label", "line": 19, "endLine": 19, "qual": "Label.label", "doc": "Short label for rendering.", "exported": false },
+    { "kind": "type", "name": "impl Node", "line": 21, "endLine": 26, "qual": "impl Node" },
+    { "kind": "method", "name": "new", "line": 23, "endLine": 25, "qual": "impl Node.new", "doc": "Builds an empty node.", "exported": true },
+    { "kind": "type", "name": "impl Label for Node", "line": 27, "endLine": 31, "qual": "impl Label for Node" },
+    { "kind": "method", "name": "label", "line": 28, "endLine": 30, "qual": "impl Label for Node.label", "exported": false },
+    { "kind": "type", "name": "Index", "line": 32, "endLine": 32, "qual": "Index", "exported": true },
+    { "kind": "function", "name": "join_labels", "line": 34, "endLine": 36, "qual": "join_labels", "doc": "Concatenates node labels.", "exported": true },
+    { "kind": "macro", "name": "shout", "line": 37, "endLine": 39, "qual": "shout", "exported": false }
+  ],
+  "imports": [
+    { "spec": "std::collections::HashMap", "line": 1 },
+    { "spec": "crate::graph::{Edge, Node as Vertex}", "line": 2 }
+  ],
+  "calls": [
+    { "name": "new", "line": 24 },
+    { "name": "format", "line": 29 },
+    { "name": "join", "line": 35 },
+    { "name": "collect", "line": 35 },
+    { "name": "map", "line": 35 },
+    { "name": "iter", "line": 35 },
+    { "name": "label", "line": 35 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "Vec", "line": 12, "symbol": "edges" },
+    { "kind": "ref", "name": "String", "line": 19, "symbol": "label" },
+    { "kind": "ref", "name": "HashMap", "line": 32, "symbol": "Index" },
+    { "kind": "ref", "name": "Node", "line": 24, "symbol": "new" },
+    { "kind": "call", "name": "new", "line": 24, "symbol": "new" },
+    { "kind": "call", "name": "format", "line": 29, "symbol": "label" },
+    { "kind": "call", "name": "label", "line": 35, "symbol": "join_labels" },
+    { "kind": "ref", "name": "Vertex", "line": 34, "symbol": "join_labels" }
+  ]
+}

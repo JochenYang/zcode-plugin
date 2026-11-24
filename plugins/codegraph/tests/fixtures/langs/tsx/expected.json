@@ -1,0 +1,31 @@
+{
+  "symbols": [
+    { "kind": "interface", "name": "Props", "line": 4, "endLine": 6, "qual": "Props", "exported": false },
+    { "kind": "component", "name": "CartTotal", "line": 9, "endLine": 17, "qual": "CartTotal", "doc": "Shows the cart total with an expand toggle.", "exported": true },
+    { "kind": "class", "name": "CartList", "line": 19, "endLine": 23, "qual": "CartList", "exported": true },
+    { "kind": "method", "name": "render", "line": 20, "endLine": 22, "qual": "CartList.render", "exported": false },
+    { "kind": "component", "name": "PriceTag", "line": 25, "endLine": 25, "qual": "PriceTag", "exported": false }
+  ],
+  "imports": [
+    { "spec": "react", "line": 1 },
+    { "spec": "./cart", "line": 2 }
+  ],
+  "calls": [
+    { "name": "useState", "line": 10 },
+    { "name": "total", "line": 11 },
+    { "name": "setOpen", "line": 13 },
+    { "name": "map", "line": 21 },
+    { "name": "formatPrice", "line": 25 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "useState", "line": 10, "symbol": "CartTotal" },
+    { "kind": "call", "name": "total", "line": 11, "symbol": "CartTotal" },
+    { "kind": "call", "name": "setOpen", "line": 13, "symbol": "CartTotal" },
+    { "kind": "call", "name": "map", "line": 21, "symbol": "render" },
+    { "kind": "call", "name": "formatPrice", "line": 25, "symbol": "PriceTag" },
+    { "kind": "ref", "name": "Cart", "line": 5, "symbol": "Props" },
+    { "kind": "ref", "name": "Component", "line": 19, "symbol": "CartList" },
+    { "kind": "ref", "name": "Props", "line": 19, "symbol": "CartList" },
+    { "kind": "ref", "name": "CartList", "line": 27, "symbol": null }
+  ]
+}

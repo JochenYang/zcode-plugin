@@ -1,0 +1,39 @@
+{
+  "symbols": [
+    { "kind": "namespace", "name": "Shop", "line": 5, "endLine": 40, "qual": "Shop", "exported": false },
+    { "kind": "class", "name": "Money", "line": 8, "endLine": 31, "qual": "Shop.Money", "doc": "Fixed-precision money in minor units.", "exported": true },
+    { "kind": "constant", "name": "CentsPerUnit", "line": 10, "endLine": 10, "qual": "Shop.Money.CentsPerUnit", "exported": true },
+    { "kind": "field", "name": "currency", "line": 11, "endLine": 11, "qual": "Shop.Money.currency", "exported": false },
+    { "kind": "property", "name": "Cents", "line": 12, "endLine": 12, "qual": "Shop.Money.Cents", "exported": true },
+    { "kind": "method", "name": "Money", "line": 14, "endLine": 18, "qual": "Shop.Money.Money", "exported": true },
+    { "kind": "method", "name": "FromUnits", "line": 21, "endLine": 24, "qual": "Shop.Money.FromUnits", "doc": "Builds a Money from a whole-unit amount.", "exported": true },
+    { "kind": "method", "name": "Describe", "line": 26, "endLine": 30, "qual": "Shop.Money.Describe", "exported": true },
+    { "kind": "record", "name": "LineItem", "line": 33, "endLine": 33, "qual": "Shop.LineItem", "exported": true },
+    { "kind": "interface", "name": "IPriced", "line": 35, "endLine": 38, "qual": "Shop.IPriced", "exported": true },
+    { "kind": "method", "name": "Price", "line": 37, "endLine": 37, "qual": "Shop.IPriced.Price", "exported": false },
+    { "kind": "enum", "name": "Region", "line": 39, "endLine": 39, "qual": "Shop.Region", "exported": true },
+    { "kind": "constant", "name": "Us", "line": 39, "endLine": 39, "qual": "Shop.Region.Us", "exported": true },
+    { "kind": "constant", "name": "Eu", "line": 39, "endLine": 39, "qual": "Shop.Region.Eu", "exported": true }
+  ],
+  "imports": [
+    { "spec": "System", "line": 1 },
+    { "spec": "System.Collections.Generic", "line": 2 },
+    { "spec": "System.Globalization", "line": 3 }
+  ],
+  "calls": [
+    { "name": "Money", "line": 23 },
+    { "name": "Round", "line": 23 },
+    { "name": "List", "line": 28 },
+    { "name": "Join", "line": 29 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "Round", "line": 23, "symbol": "FromUnits" },
+    { "kind": "call", "name": "Money", "line": 23, "symbol": "FromUnits" },
+    { "kind": "call", "name": "Join", "line": 29, "symbol": "Describe" },
+    { "kind": "ref", "name": "Money", "line": 33, "symbol": "LineItem" },
+    { "kind": "ref", "name": "CentsPerUnit", "line": 29, "symbol": "Describe" },
+    { "kind": "ref", "name": "CultureInfo", "line": 26, "symbol": "Describe" },
+    { "kind": "ref", "name": "Cents", "line": 16, "symbol": "Money" },
+    { "kind": "ref", "name": "Money", "line": 37, "symbol": "Price" }
+  ]
+}

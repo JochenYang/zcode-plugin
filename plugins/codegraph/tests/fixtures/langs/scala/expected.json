@@ -1,0 +1,36 @@
+{
+  "symbols": [
+    { "kind": "namespace", "name": "com.example.shop", "line": 1, "endLine": 1, "qual": "com.example.shop", "exported": true },
+    { "kind": "class", "name": "Money", "line": 7, "endLine": 16, "qual": "Money", "doc": "Fixed-precision money in minor units.", "exported": true },
+    { "kind": "method", "name": "units", "line": 10, "endLine": 10, "qual": "Money.units", "doc": "Whole units, rounded to two decimals.", "exported": true },
+    { "kind": "method", "name": "add", "line": 12, "endLine": 15, "qual": "Money.add", "exported": true },
+    { "kind": "object", "name": "Pricer", "line": 18, "endLine": 23, "qual": "Pricer", "exported": true },
+    { "kind": "constant", "name": "TaxRate", "line": 19, "endLine": 19, "qual": "Pricer.TaxRate", "exported": true },
+    { "kind": "constant", "name": "cache", "line": 20, "endLine": 20, "qual": "Pricer.cache", "exported": false },
+    { "kind": "method", "name": "gross", "line": 22, "endLine": 22, "qual": "Pricer.gross", "exported": true },
+    { "kind": "function", "name": "formatAmounts", "line": 25, "endLine": 26, "qual": "formatAmounts", "exported": true }
+  ],
+  "imports": [
+    { "spec": "scala.collection.mutable", "line": 3 },
+    { "spec": "java.util.Locale", "line": 4 }
+  ],
+  "calls": [
+    { "name": "require", "line": 13 },
+    { "name": "Money", "line": 14 },
+    { "name": "empty", "line": 20 },
+    { "name": "Money", "line": 22 },
+    { "name": "mkString", "line": 26 },
+    { "name": "map", "line": 26 },
+    { "name": "format", "line": 26 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "require", "line": 13, "symbol": "add" },
+    { "kind": "call", "name": "Money", "line": 14, "symbol": "add" },
+    { "kind": "call", "name": "Money", "line": 22, "symbol": "gross" },
+    { "kind": "call", "name": "map", "line": 26, "symbol": "formatAmounts" },
+    { "kind": "ref", "name": "TaxRate", "line": 22, "symbol": "gross" },
+    { "kind": "ref", "name": "String", "line": 7, "symbol": "Money" },
+    { "kind": "ref", "name": "Money", "line": 12, "symbol": "add" },
+    { "kind": "ref", "name": "Double", "line": 10, "symbol": "units" }
+  ]
+}

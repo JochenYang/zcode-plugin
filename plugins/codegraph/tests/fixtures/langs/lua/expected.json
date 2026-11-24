@@ -1,0 +1,32 @@
+{
+  "symbols": [
+    { "kind": "variable", "name": "json", "line": 1, "endLine": 1, "qual": "json" },
+    { "kind": "variable", "name": "M", "line": 3, "endLine": 3, "qual": "M" },
+    { "kind": "constant", "name": "MAX_ITEMS", "line": 4, "endLine": 4, "qual": "MAX_ITEMS" },
+    { "kind": "function", "name": "encode", "line": 7, "endLine": 9, "qual": "encode", "doc": "Encodes a value, falling back to an empty object." },
+    { "kind": "function", "name": "decode", "line": 11, "endLine": 13, "qual": "decode" },
+    { "kind": "variable", "name": "Counter", "line": 15, "endLine": 15, "qual": "Counter" },
+    { "kind": "function", "name": "new", "line": 18, "endLine": 20, "qual": "new" },
+    { "kind": "method", "name": "increment", "line": 22, "endLine": 25, "qual": "increment" },
+    { "kind": "function", "name": "report", "line": 27, "endLine": 29, "qual": "report" }
+  ],
+  "imports": [
+    { "spec": "json", "line": 1 }
+  ],
+  "calls": [
+    { "name": "encode", "line": 8 },
+    { "name": "decode", "line": 12 },
+    { "name": "setmetatable", "line": 19 },
+    { "name": "format", "line": 28 },
+    { "name": "increment", "line": 28 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "encode", "line": 8, "symbol": "encode" },
+    { "kind": "call", "name": "decode", "line": 12, "symbol": "decode" },
+    { "kind": "call", "name": "setmetatable", "line": 19, "symbol": "new" },
+    { "kind": "call", "name": "increment", "line": 28, "symbol": "report" },
+    { "kind": "ref", "name": "json", "line": 8, "symbol": "encode" },
+    { "kind": "ref", "name": "Counter", "line": 19, "symbol": "new" },
+    { "kind": "ref", "name": "M", "line": 31, "symbol": null }
+  ]
+}

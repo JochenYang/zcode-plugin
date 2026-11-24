@@ -1,0 +1,29 @@
+{
+  "symbols": [
+    { "kind": "class", "name": "Vault", "line": 4, "endLine": 24, "qual": "Vault", "doc": "Keeps per-user balances", "exported": true },
+    { "kind": "property", "name": "fee", "line": 6, "endLine": 6, "qual": "Vault.fee" },
+    { "kind": "method", "name": "init", "line": 8, "endLine": 11, "qual": "Vault.init", "exported": true },
+    { "kind": "method", "name": "deposit", "line": 14, "endLine": 19, "qual": "Vault.deposit", "doc": "Credits an amount for a user.", "exported": true },
+    { "kind": "method", "name": "formatAmount", "line": 21, "endLine": 23, "qual": "Vault.formatAmount", "exported": false }
+  ],
+  "imports": [
+    { "spec": "lib.cfc", "line": 1 },
+    { "spec": "components.*", "line": 2 }
+  ],
+  "calls": [
+    { "name": "Lib", "line": 8 },
+    { "name": "writeDump", "line": 16 },
+    { "name": "log", "line": 17 },
+    { "name": "format", "line": 18 },
+    { "name": "Lib", "line": 18 },
+    { "name": "dollarFormat", "line": 22 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "logger", "line": 9, "symbol": "init" },
+    { "kind": "ref", "name": "owner", "line": 16, "symbol": "deposit" },
+    { "kind": "call", "name": "writeDump", "line": 16, "symbol": "deposit" },
+    { "kind": "call", "name": "log", "line": 17, "symbol": "deposit" },
+    { "kind": "ref", "name": "total", "line": 18, "symbol": "deposit" },
+    { "kind": "call", "name": "dollarFormat", "line": 22, "symbol": "formatAmount" }
+  ]
+}

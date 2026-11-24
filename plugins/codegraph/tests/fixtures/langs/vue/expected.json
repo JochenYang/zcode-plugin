@@ -1,0 +1,35 @@
+{
+  "symbols": [
+    { "kind": "interface", "name": "Props", "line": 11, "endLine": 13, "qual": "Props", "exported": false },
+    { "kind": "class", "name": "Line", "line": 15, "endLine": 21, "qual": "Line", "exported": false },
+    { "kind": "field", "name": "items", "line": 16, "endLine": 16, "qual": "Line.items", "exported": false },
+    { "kind": "method", "name": "add", "line": 17, "endLine": 20, "qual": "Line.add", "exported": false },
+    { "kind": "constant", "name": "props", "line": 23, "endLine": 23, "qual": "props", "exported": false },
+    { "kind": "constant", "name": "open", "line": 24, "endLine": 24, "qual": "open", "exported": false },
+    { "kind": "constant", "name": "total", "line": 27, "endLine": 27, "qual": "total", "doc": "Cart total in cents, formatted for display.", "exported": false },
+    { "kind": "function", "name": "toggle", "line": 29, "endLine": 31, "qual": "toggle", "exported": false },
+    { "kind": "constant", "name": "OPTIONS", "line": 3, "endLine": 3, "qual": "OPTIONS", "doc": "Options that cannot be declared in <script setup>.", "exported": false }
+  ],
+  "imports": [
+    { "spec": "vue", "line": 8 },
+    { "spec": "./cart", "line": 9 }
+  ],
+  "calls": [
+    { "name": "push", "line": 18 },
+    { "name": "defineProps", "line": 23 },
+    { "name": "ref", "line": 24 },
+    { "name": "computed", "line": 27 },
+    { "name": "total", "line": 27 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "push", "line": 18, "symbol": "add" },
+    { "kind": "call", "name": "defineProps", "line": 23, "symbol": "props" },
+    { "kind": "call", "name": "ref", "line": 24, "symbol": "open" },
+    { "kind": "call", "name": "computed", "line": 27, "symbol": "total" },
+    { "kind": "call", "name": "total", "line": 27, "symbol": "total" },
+    { "kind": "ref", "name": "Cart", "line": 12, "symbol": "Props" },
+    { "kind": "ref", "name": "Cart", "line": 16, "symbol": "items" },
+    { "kind": "ref", "name": "Cart", "line": 17, "symbol": "add" },
+    { "kind": "ref", "name": "OPTIONS", "line": 4, "symbol": null }
+  ]
+}

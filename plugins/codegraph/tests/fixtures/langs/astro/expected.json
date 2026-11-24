@@ -1,0 +1,35 @@
+{
+  "symbols": [
+    { "kind": "interface", "name": "Props", "line": 5, "endLine": 7, "qual": "Props", "exported": false },
+    { "kind": "constant", "name": "TAX_RATE", "line": 10, "endLine": 10, "qual": "TAX_RATE", "doc": "Tax for the whole cart.", "exported": false },
+    { "kind": "constant", "name": "total", "line": 12, "endLine": 12, "qual": "total", "exported": false },
+    { "kind": "function", "name": "reportTotal", "line": 24, "endLine": 26, "qual": "reportTotal", "doc": "Sends the cart total to analytics.", "exported": false },
+    { "kind": "class", "name": "Cart", "line": 28, "endLine": 35, "qual": "Cart", "exported": false },
+    { "kind": "field", "name": "items", "line": 29, "endLine": 29, "qual": "Cart.items", "exported": false },
+    { "kind": "method", "name": "add", "line": 31, "endLine": 34, "qual": "Cart.add", "exported": false }
+  ],
+  "imports": [
+    { "spec": "../cart", "line": 2 },
+    { "spec": "../money", "line": 3 },
+    { "spec": "../cart", "line": 20 },
+    { "spec": "../analytics", "line": 21 }
+  ],
+  "calls": [
+    { "name": "reduce", "line": 12 },
+    { "name": "track", "line": 25 },
+    { "name": "push", "line": 32 },
+    { "name": "forEach", "line": 37 },
+    { "name": "querySelectorAll", "line": 37 },
+    { "name": "addEventListener", "line": 38 },
+    { "name": "reportTotal", "line": 38 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "reduce", "line": 12, "symbol": "total" },
+    { "kind": "call", "name": "track", "line": 25, "symbol": "reportTotal" },
+    { "kind": "call", "name": "push", "line": 32, "symbol": "add" },
+    { "kind": "call", "name": "reportTotal", "line": 38, "symbol": null },
+    { "kind": "ref", "name": "CartItem", "line": 6, "symbol": "Props" },
+    { "kind": "ref", "name": "CartItem", "line": 29, "symbol": "items" },
+    { "kind": "ref", "name": "Astro", "line": 11, "symbol": null }
+  ]
+}

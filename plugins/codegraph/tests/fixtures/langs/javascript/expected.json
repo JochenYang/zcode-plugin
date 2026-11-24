@@ -1,0 +1,42 @@
+{
+  "symbols": [
+    { "kind": "function", "name": "formatPrice", "line": 5, "endLine": 8, "qual": "formatPrice", "doc": "Formats a price with currency.", "exported": true },
+    { "kind": "class", "name": "Cart", "line": 10, "endLine": 22, "qual": "Cart", "exported": true },
+    { "kind": "field", "name": "items", "line": 11, "endLine": 11, "qual": "Cart.items", "exported": false },
+    { "kind": "method", "name": "add", "line": 14, "endLine": 17, "qual": "Cart.add", "doc": "Adds an item and returns the new size.", "exported": false },
+    { "kind": "method", "name": "total", "line": 19, "endLine": 21, "qual": "Cart.total", "exported": false },
+    { "kind": "constant", "name": "TAX_RATE", "line": 24, "endLine": 24, "qual": "TAX_RATE", "exported": false },
+    { "kind": "function", "name": "calcTax", "line": 25, "endLine": 25, "qual": "calcTax", "exported": false },
+    { "kind": "component", "name": "PriceTag", "line": 27, "endLine": 27, "qual": "PriceTag", "exported": false },
+    { "kind": "function", "name": "checkout", "line": 29, "endLine": 31, "qual": "checkout", "exported": true }
+  ],
+  "imports": [
+    { "spec": "node:path", "line": 1 },
+    { "spec": "./money.js", "line": 2 }
+  ],
+  "calls": [
+    { "name": "formatMoney", "line": 7 },
+    { "name": "push", "line": 15 },
+    { "name": "reduce", "line": 20 },
+    { "name": "round", "line": 25 },
+    { "name": "formatPrice", "line": 27 },
+    { "name": "Cart", "line": 30 },
+    { "name": "add", "line": 30 },
+    { "name": "join", "line": 30 },
+    { "name": "String", "line": 30 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "formatMoney", "line": 7, "symbol": "formatPrice" },
+    { "kind": "call", "name": "push", "line": 15, "symbol": "add" },
+    { "kind": "call", "name": "reduce", "line": 20, "symbol": "total" },
+    { "kind": "call", "name": "round", "line": 25, "symbol": "calcTax" },
+    { "kind": "call", "name": "formatPrice", "line": 27, "symbol": "PriceTag" },
+    { "kind": "call", "name": "Cart", "line": 30, "symbol": "checkout" },
+    { "kind": "call", "name": "add", "line": 30, "symbol": "checkout" },
+    { "kind": "call", "name": "join", "line": 30, "symbol": "checkout" },
+    { "kind": "call", "name": "String", "line": 30, "symbol": "checkout" },
+    { "kind": "ref", "name": "TAX_RATE", "line": 25, "symbol": "calcTax" },
+    { "kind": "ref", "name": "Math", "line": 25, "symbol": "calcTax" },
+    { "kind": "ref", "name": "path", "line": 30, "symbol": "checkout" }
+  ]
+}

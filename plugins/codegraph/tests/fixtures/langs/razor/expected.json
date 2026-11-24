@@ -1,0 +1,26 @@
+{
+  "symbols": [
+    { "kind": "method", "name": "FormatPrice", "line": 10, "endLine": 13, "qual": "FormatPrice", "doc": "Formats a price for display.", "exported": true },
+    { "kind": "class", "name": "Line", "line": 15, "endLine": 24, "qual": "Line", "exported": false },
+    { "kind": "property", "name": "Qty", "line": 17, "endLine": 17, "qual": "Line.Qty", "exported": true },
+    { "kind": "method", "name": "Add", "line": 20, "endLine": 23, "qual": "Line.Add", "doc": "Adds one unit.", "exported": true },
+    { "kind": "method", "name": "AddItem", "line": 26, "endLine": 30, "qual": "AddItem", "exported": false },
+    { "kind": "function", "name": "logCart", "line": 36, "endLine": 38, "qual": "logCart", "doc": "Logs the cart.", "exported": false }
+  ],
+  "calls": [
+    { "name": "ToString", "line": 12 },
+    { "name": "AddItem", "line": 28 },
+    { "name": "FormatPrice", "line": 29 },
+    { "name": "FormatPrice", "line": 33 },
+    { "name": "log", "line": 37 },
+    { "name": "logCart", "line": 39 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "ToString", "line": 12, "symbol": "FormatPrice" },
+    { "kind": "call", "name": "AddItem", "line": 28, "symbol": "AddItem" },
+    { "kind": "call", "name": "FormatPrice", "line": 29, "symbol": "AddItem" },
+    { "kind": "call", "name": "FormatPrice", "line": 33, "symbol": null },
+    { "kind": "call", "name": "log", "line": 37, "symbol": "logCart" },
+    { "kind": "call", "name": "logCart", "line": 39, "symbol": null }
+  ]
+}

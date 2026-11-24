@@ -1,0 +1,46 @@
+{
+  "symbols": [
+    { "kind": "function", "name": "formatPrice", "line": 5, "endLine": 7, "qual": "formatPrice", "doc": "Formats a price in cents.", "exported": true },
+    { "kind": "class", "name": "Cart", "line": 9, "endLine": 16, "qual": "Cart", "exported": true },
+    { "kind": "field", "name": "items", "line": 10, "endLine": 10, "qual": "Cart.items", "exported": false },
+    { "kind": "method", "name": "add", "line": 12, "endLine": 15, "qual": "Cart.add", "exported": false },
+    { "kind": "constant", "name": "TAX_RATE", "line": 18, "endLine": 18, "qual": "TAX_RATE", "exported": false },
+    { "kind": "component", "name": "CartPage", "line": 21, "endLine": 39, "qual": "CartPage", "doc": "Shopping cart page.", "exported": false },
+    { "kind": "field", "name": "total", "line": 24, "endLine": 24, "qual": "CartPage.total", "exported": false },
+    { "kind": "field", "name": "cart", "line": 25, "endLine": 25, "qual": "CartPage.cart", "exported": false },
+    { "kind": "method", "name": "build", "line": 28, "endLine": 34, "qual": "CartPage.build", "doc": "Builds the page.", "exported": false },
+    { "kind": "method", "name": "addOne", "line": 36, "endLine": 38, "qual": "CartPage.addOne", "exported": false }
+  ],
+  "imports": [
+    { "spec": "@kit.ArkUI", "line": 1 },
+    { "spec": "../model/CartItem", "line": 2 }
+  ],
+  "calls": [
+    { "name": "toFixed", "line": 6 },
+    { "name": "push", "line": 13 },
+    { "name": "Cart", "line": 25 },
+    { "name": "Column", "line": 29 },
+    { "name": "Text", "line": 30 },
+    { "name": "formatPrice", "line": 30 },
+    { "name": "Button", "line": 32 },
+    { "name": "addOne", "line": 32 },
+    { "name": "add", "line": 37 },
+    { "name": "CartItem", "line": 37 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "toFixed", "line": 6, "symbol": "formatPrice" },
+    { "kind": "call", "name": "push", "line": 13, "symbol": "add" },
+    { "kind": "ref", "name": "CartItem", "line": 10, "symbol": "items" },
+    { "kind": "ref", "name": "CartItem", "line": 12, "symbol": "add" },
+    { "kind": "call", "name": "Cart", "line": 25, "symbol": "cart" },
+    { "kind": "ref", "name": "Cart", "line": 25, "symbol": "cart" },
+    { "kind": "call", "name": "Column", "line": 29, "symbol": "build" },
+    { "kind": "call", "name": "Text", "line": 30, "symbol": "build" },
+    { "kind": "call", "name": "formatPrice", "line": 30, "symbol": "build" },
+    { "kind": "call", "name": "Button", "line": 32, "symbol": "build" },
+    { "kind": "call", "name": "addOne", "line": 32, "symbol": "build" },
+    { "kind": "call", "name": "add", "line": 37, "symbol": "addOne" },
+    { "kind": "call", "name": "CartItem", "line": 37, "symbol": "addOne" },
+    { "kind": "ref", "name": "Component", "line": 22, "symbol": "CartPage" }
+  ]
+}

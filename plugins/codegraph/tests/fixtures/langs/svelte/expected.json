@@ -1,0 +1,36 @@
+{
+  "symbols": [
+    { "kind": "interface", "name": "Props", "line": 12, "endLine": 14, "qual": "Props", "exported": false },
+    { "kind": "variable", "name": "open", "line": 17, "endLine": 17, "qual": "open", "exported": false },
+    { "kind": "constant", "name": "TAX_RATE", "line": 18, "endLine": 18, "qual": "TAX_RATE", "exported": false },
+    { "kind": "class", "name": "Cart", "line": 20, "endLine": 27, "qual": "Cart", "exported": false },
+    { "kind": "field", "name": "items", "line": 21, "endLine": 21, "qual": "Cart.items", "exported": false },
+    { "kind": "method", "name": "add", "line": 23, "endLine": 26, "qual": "Cart.add", "exported": false },
+    { "kind": "constant", "name": "cart", "line": 29, "endLine": 29, "qual": "cart", "exported": false },
+    { "kind": "function", "name": "tax", "line": 32, "endLine": 34, "qual": "tax", "doc": "Tax for the whole cart.", "exported": false },
+    { "kind": "function", "name": "sumItems", "line": 3, "endLine": 5, "qual": "sumItems", "doc": "Sums item prices in cents.", "exported": true }
+  ],
+  "imports": [
+    { "spec": "svelte/transition", "line": 9 },
+    { "spec": "./cart", "line": 10 }
+  ],
+  "calls": [
+    { "name": "$props", "line": 16 },
+    { "name": "$state", "line": 17 },
+    { "name": "push", "line": 24 },
+    { "name": "Cart", "line": 29 },
+    { "name": "round", "line": 33 },
+    { "name": "sumItems", "line": 33 },
+    { "name": "reduce", "line": 4 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "reduce", "line": 4, "symbol": "sumItems" },
+    { "kind": "call", "name": "push", "line": 24, "symbol": "add" },
+    { "kind": "call", "name": "Cart", "line": 29, "symbol": "cart" },
+    { "kind": "call", "name": "round", "line": 33, "symbol": "tax" },
+    { "kind": "call", "name": "sumItems", "line": 33, "symbol": "tax" },
+    { "kind": "ref", "name": "CartItem", "line": 13, "symbol": "Props" },
+    { "kind": "ref", "name": "CartItem", "line": 21, "symbol": "items" },
+    { "kind": "ref", "name": "CartItem", "line": 23, "symbol": "add" }
+  ]
+}

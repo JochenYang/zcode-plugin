@@ -1,0 +1,10 @@
+component displayname="Broken" {
+
+    function gap( {
+        return ;
+    }
+
+    function ok() {
+        var x = 1;
+        return x;
+    }

@@ -24,6 +24,7 @@
 | `plugins/guardrails` | 0.2.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
+| `plugins/codegraph` | 0.1.0 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；零遥测、零外联、不执行项目代码 |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
@@ -166,6 +167,21 @@ plugins/<plugin-name>/
 
 引擎表、设置项细节、安全边界与已知限制见 `plugins/websearch/README.md`。
 
+## codegraph
+
+本地代码图谱插件，自带一个零 npm 依赖的 MCP server（`bin/server.mjs`，`node:sqlite` + 随包 tree-sitter wasm，无 node_modules）。模型看到的工具是 `mcp__plugin_codegraph_codegraph__codegraph_status` / `__codegraph_lookup` / `__codegraph_map`。
+
+- **35 行语言**（33 个有符号抽取的语言包 + COBOL、Liquid 文件级），覆盖 TypeScript/JavaScript、Python、Go、Rust、C/C++、Java/Kotlin/Scala、C#/VB.NET、PHP/Ruby、Vue/Svelte/Astro、Terraform、Solidity 等；语法 wasm 全部随包，来源与许可见 `plugins/codegraph/THIRD-PARTY-NOTICES.md`
+- `codegraph_lookup`（search / symbol / callers / callees / impact / outline）每行一个符号、带精确行段，替代「Grep 一轮 + 整文件 Read 一轮」；`codegraph_map` 替代 Glob + 逐个读文件头；关系带置信标记 `=` import 解析、`~` 同名唯一、`?` 未解析或动态
+- 索引存 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/indexes/<项目键>/`，项目目录内不写文件；符合条件（`autoIndex` 开、支持语言文件 ≥ 30、总数 ≤ 30000、非家目录/盘根）的项目在**会话打开时**就开始在后台建索引（MCP 握手完成即启动，不等模型调用工具），已索引的项目同时检查文件变化并增量同步；`codegraph_status` 报告进度与陈旧文件数
+- 之后的代码变更是**静默、惰性**更新的：文件监听（2 秒去抖）、`PostToolUse` 钩子、每次调用前的 mtime 扫描只把改过的文件标脏，真正重新解析发生在**下一次 codegraph 工具调用之前**（不到 200 个文件前台同步，更多则转后台构建）；没有工具调用就不会重新解析，也不会提醒模型
+- 三个钩子都是加速器：`SessionStart`（startup/resume/clear/compact/fork）注入 ≤ 120 token 的索引状态与「何时用图、何时用 Grep」指引；`UserPromptSubmit` 在索引于会话中途才建好时通知一次（每个会话一次）；`PostToolUse`（Edit/Write，含 ApplyPatch 别名）只在索引目录已存在时向 `dirty.log` 追加一行，绝不创建目录。没有钩子时 server 靠 mtime 扫描照样正确
+- **Node ≥ 22.13**。MCP 侧 ZCode 有内置 Node 回退（Electron 的 Node 22.22.1），**钩子只认 PATH**——PATH 里没有 `node` 时钩子静默失效，索引仍正确
+- 配置文件 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json`（`autoIndex` / `minFilesToAutoIndex` / `maxFiles` / `exclude` / `languages`），环境变量 `CODEGRAPH_AUTO_INDEX` / `CODEGRAPH_MIN_FILES` / `CODEGRAPH_MAX_FILES` / `CODEGRAPH_EXCLUDE` 仅在配置文件未设置该项时生效；手动入口 `/codegraph [refresh]`
+- 已知限制：COBOL 与 Liquid 只有文件级；`getattr`、动态 import、反射不连边；首次构建在后台、期间结果标 partial
+
+工具参数、配置键、语言表、隐私与限制见 `plugins/codegraph/README.md`。
+
 ## 校验
 
 仓库自带两个零依赖检查（需要 Python 3.8+ 与 bash），改动插件后手动跑：
@@ -178,6 +194,7 @@ node --test plugins/websearch/tests/*.test.mjs  # websearch 网络层：跨源�
 node --test plugins/git-conventions/tests/*.test.mjs  # 提交信息钩子：认得的命令写法、规范各条规则、读不出消息时放行
 python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、清理插件已下架的、兼容旧 state
 python plugins/dev-workflow/tests/test-review-gate.py  # 多轮审查闸门脚本：八道闸门、字段交叉校验与不合法状态的退出码（需要 node）
+node --test plugins/codegraph/tests/hooks/*.test.mjs  # codegraph 钩子：真实 spawn，SessionStart 文案/schema、dirty.log 协议、hooks.json 字段
 ```
 
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法、agent 描述把任务交给一个不存在的 agent 或与内置类型撞名。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。

@@ -1,0 +1,28 @@
+{
+  "symbols": [
+    { "kind": "struct", "name": "TAccount", "line": 8, "endLine": 11, "qual": "TAccount", "doc": "Holds deposits for one account.", "exported": true },
+    { "kind": "field", "name": "Owner", "line": 9, "endLine": 9, "qual": "TAccount.Owner", "exported": true },
+    { "kind": "field", "name": "Balance", "line": 10, "endLine": 10, "qual": "TAccount.Balance", "exported": true },
+    { "kind": "class", "name": "TVault", "line": 13, "endLine": 17, "qual": "TVault", "exported": true },
+    { "kind": "constant", "name": "MaxFee", "line": 20, "endLine": 20, "qual": "MaxFee", "exported": true },
+    { "kind": "function", "name": "FormatAmount", "line": 25, "endLine": 28, "qual": "FormatAmount", "exported": true },
+    { "kind": "method", "name": "TVault.Deposit", "line": 30, "endLine": 33, "qual": "TVault.Deposit", "exported": true },
+    { "kind": "method", "name": "TVault.BalanceOf", "line": 35, "endLine": 38, "qual": "TVault.BalanceOf", "exported": true }
+  ],
+  "imports": [
+    { "spec": "Classes", "line": 4 },
+    { "spec": "SysUtils", "line": 4 }
+  ],
+  "calls": [
+    { "name": "CurrToStrF", "line": 27 },
+    { "name": "StrToCurr", "line": 37 },
+    { "name": "FormatAmount", "line": 37 }
+  ],
+  "refs": [
+    { "kind": "ref", "name": "TObject", "line": 13, "symbol": "TVault" },
+    { "kind": "ref", "name": "MaxFee", "line": 27, "symbol": "FormatAmount" },
+    { "kind": "call", "name": "FormatAmount", "line": 37, "symbol": "TVault.BalanceOf" },
+    { "kind": "ref", "name": "Currency", "line": 21, "symbol": null },
+    { "kind": "ref", "name": "Amount", "line": 27, "symbol": "FormatAmount" }
+  ]
+}

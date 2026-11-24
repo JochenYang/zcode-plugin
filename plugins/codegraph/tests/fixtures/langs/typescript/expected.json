@@ -1,0 +1,38 @@
+{
+  "symbols": [
+    { "kind": "function", "name": "parseConfig", "line": 6, "endLine": 9, "qual": "parseConfig", "doc": "Parses a config string.", "exported": true },
+    { "kind": "class", "name": "Loader", "line": 11, "endLine": 22, "qual": "Loader", "exported": true },
+    { "kind": "field", "name": "cache", "line": 12, "endLine": 12, "qual": "Loader.cache", "exported": false },
+    { "kind": "method", "name": "load", "line": 15, "endLine": 21, "qual": "Loader.load", "doc": "Loads once and caches.", "exported": false },
+    { "kind": "function", "name": "validate", "line": 24, "endLine": 24, "exported": false },
+    { "kind": "interface", "name": "Config", "line": 26, "endLine": 29, "exported": false },
+    { "kind": "function", "name": "loadAll", "line": 31, "endLine": 33, "exported": true }
+  ],
+  "imports": [
+    { "spec": "node:fs", "line": 1 },
+    { "spec": "node:path", "line": 2 },
+    { "spec": "./options", "line": 3 }
+  ],
+  "calls": [
+    { "name": "readFile", "line": 7 },
+    { "name": "validate", "line": 8 },
+    { "name": "Map", "line": 12 },
+    { "name": "resolve", "line": 16 },
+    { "name": "has", "line": 17 },
+    { "name": "set", "line": 18 },
+    { "name": "parseConfig", "line": 18 },
+    { "name": "get", "line": 20 },
+    { "name": "Loader", "line": 32 },
+    { "name": "load", "line": 32 }
+  ],
+  "refs": [
+    { "kind": "call", "name": "readFile", "line": 7, "symbol": "parseConfig" },
+    { "kind": "call", "name": "validate", "line": 8, "symbol": "parseConfig" },
+    { "kind": "call", "name": "Map", "line": 12, "symbol": "cache" },
+    { "kind": "call", "name": "parseConfig", "line": 18, "symbol": "load" },
+    { "kind": "call", "name": "Loader", "line": 32, "symbol": "loadAll" },
+    { "kind": "call", "name": "load", "line": 32, "symbol": "loadAll" },
+    { "kind": "ref", "name": "Options", "line": 6, "symbol": "parseConfig" },
+    { "kind": "ref", "name": "Config", "line": 6, "symbol": "parseConfig" }
+  ]
+}
