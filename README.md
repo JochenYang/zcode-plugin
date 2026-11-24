@@ -21,7 +21,7 @@
 |---|---|---|
 | `plugins/git-conventions` | 0.1.0 | 提交信息规范钩子：`PreToolUse` 在 git 运行前校验 `git commit` 写下的提交信息（标题格式与 50 字符上限、正文 `-` 列表与末尾 `Verified:` 行），不合规直接拒绝 |
 | `plugins/dev-workflow` | 0.6.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 22 个专项子智能体自动安装到 `~/.zcode/agents` |
-| `plugins/guardrails` | 0.2.0 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
+| `plugins/guardrails` | 0.2.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.1.6 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 
@@ -121,13 +121,13 @@
 | 项目外（绝对路径越界、`../` 越界、`~/…`、`$env:…`、未展开变量） | `ask` |
 | 根级、盘根（`C:\`、`C:/*`）、系统目录、凭据目录 | `deny` |
 
-`rm -rf node_modules`、`del /s /q .\dist`、`Remove-Item -Recurse .\build`、`rm -rf /d/codes/<本项目>/build` 都不弹窗；`rm -rf ../another-project`、`Remove-Item -Recurse D:\codes\other` 会问一次。`git rm` 只作用于仓库内已跟踪文件，交给 git 自己把关，不触发判定。
+`rm -rf node_modules`、`del /s /q .\dist`、`Remove-Item -Recurse .\build`、`rm -rf /d/codes/<本项目>/build` 都不弹窗；`rm -rf ../another-project`、`Remove-Item -Recurse D:\codes\other` 会问一次。`git rm` 只作用于仓库内已跟踪文件，交给 git 自己把关，不触发判定。命令里的 `;`、`&&` 和换行不论前后有没有空格都按命令分隔处理，制表符按空格处理：前面的删除到分隔处结束，后面的命令按它自己的规则判定（`cd …` 换行后跟 `git push --force` 一样被拦）。`find` 以 `-delete`、`-exec rm …` 结尾或接 `| xargs rm …` 时按它的起点判定位置：删除动作之前有过滤条件的，起点只按危险位置拦（`find . -name "*.log" -delete` 不弹窗，`find /etc -type f -delete` 被拦）；没有过滤条件的，起点就是删除目标（`find . -delete` 等同 `rm -rf .`，被拦）。`git clean` 逐个读选项：带强制又有目录或忽略文件标志的拦，试运行和交互模式不拦。被反斜杠转义的分隔符（`find … -exec … \;`、`grep "a\|b"`）不算命令分隔。here-document 的正文也逐行照常检查，引号也不被解析（`echo 'rm -rf /'` 会被拦）——这两处是有意的保守取舍：正文常常就是随后要执行的脚本或提交信息。只想写入一段提到危险命令的文本时，用 Write 工具（不受这条规则影响）或逃生阀。
 
 设计要点：
 
 - 只扫描新写入的内容（`content` / `new_string`），**不扫 `old_string`** —— 否则「把硬编码密钥改成读环境变量」这个修复动作本身会被它拦住
 - 逃生阀：项目根 `.zcode/guardrails-allow`，每行一个 ERE，命中即放行（`#` 开头为注释）。例：某项目确实需要跑 `terraform apply`，写入 `^terraform apply` 即可
-- 单次检查约 8ms，两个钩子都是阻塞执行
+- 两个钩子都阻塞执行。能交给 bash 做的就不另起进程：每档规则没有命中时只跑一次 `grep`，取字段、去引号、盘符归一化都由 bash 完成。Windows 上实测每次 Bash 调用约 150ms、每次写入约 240ms，优化前分别约 1300ms 和 730ms（规则命中需要确认时约 300ms）
 
 ## 开发新插件
 
@@ -172,7 +172,7 @@ plugins/<plugin-name>/
 
 ```bash
 python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、agent 描述、引用、行尾、shell 语法
-python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，116 个用例（含权限模式维度）
+python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，198 个用例（含权限模式维度）
 python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
 node --test plugins/git-conventions/tests/*.test.mjs  # 提交信息钩子：认得的命令写法、规范各条规则、读不出消息时放行
 python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、清理插件已下架的、兼容旧 state

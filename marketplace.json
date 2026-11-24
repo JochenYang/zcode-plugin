@@ -39,7 +39,7 @@
     },
     {
       "name": "guardrails",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Deterministic safety hooks: blocks irreversible shell commands (POSIX, cmd.exe and PowerShell) and hardcoded credentials, routes publishing, deploys and migrations to a confirmation prompt. The prompt tier steps aside in full access mode; the blocks never do.",
       "author": {
         "name": "JochenYang"

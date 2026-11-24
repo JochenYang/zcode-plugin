@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(HERE)
@@ -96,7 +97,7 @@ BASH_CASES = [
     ("Remove-Item -Recurse -Force C:/Windows", "deny"),
     ("Remove-Item -Recurse ./build", "pass"),
     ("Remove-Item -Recurse -Force .", "deny"),
-    ("Remove-Item -Path D:\\codes\\zcode-plugin\\dist -Recurse", "pass"),
+    ("Remove-Item -Path {project}/dist -Recurse", "pass"),
     ("Remove-Item -Recurse -Force D:\\codes\\other", "ask"),
     ("del /s /q D:\\codes\\other", "ask"),
     ("del /s /q .\\dist", "pass"),
@@ -124,6 +125,110 @@ BASH_CASES = [
     ("rm -rf ../other-project && git push --force", "deny"),
     # only the target outside the project is asked about
     ("rm -rf ../other-project ./build", "ask"),
+    # A separator glued to the word before it, and a line break, end a delete:
+    # what follows is another command, not another target.
+    ("rm -rf build; grep -n foo .", "pass"),
+    ("rm -rf build && cd /d/codes/other && ls", "pass"),
+    ("rm -rf build\ncd /d/codes/other", "pass"),
+    ("rm -rf build; git push --force", "deny"),
+    ("rm -rf build && rm -rf /", "deny"),
+    # C:\newfolder arrives as \\n: it is a path, not a line break.
+    ("rm -rf C:\\\\newfolder", "ask"),
+    ("rm -rf C:\\newfolder", "ask"),
+    # A drive letter names the same drive in either case.
+    ("rm -rf c:\\windows", "deny"),
+    ("rm -rf c:\\", "deny"),
+    ("Remove-Item -Recurse -Force c:\\Windows", "deny"),
+    ("rm -rf d:\\codes\\other", "ask"),
+    # A line break starts a command, so the rule for that command applies.
+    ("cd /d/codes/x\ngit push --force", "deny"),
+    ("echo hi\ngit reset --hard", "deny"),
+    ("echo ok\nsudo apt install curl", "ask"),
+    ("git push origin feature/x\nnpm run build", "pass"),
+    # The body of a here-document is checked like any other line: it is often
+    # the script or the commit message that runs next, and telling data from
+    # code here would be a guess. A text that only mentions such a command is
+    # written with the Write tool, which has no such rule.
+    ("bash <<'EOF'\nrm -rf /\nEOF", "deny"),
+    ("cat > /tmp/notes.md <<'EOF'\nNever run rm -rf / on a server.\nEOF", "deny"),
+    # A backslash makes a separator a literal character: the "\;" that ends
+    # find's -exec and the "\|" of a grep pattern are neither a separator nor
+    # a target.
+    ("find . -name \"*.log\" -exec rm -f {} \\;", "pass"),
+    ("find {project}/.tmp -type f -exec rm -f {} \\;", "pass"),
+    ("grep -n \"deploy\\|rm -rf /\" README.md", "pass"),
+    # Two backslashes are one plain backslash, so the separator after them is
+    # a real one.
+    ("echo a\\\\;rm -rf /", "deny"),
+    # Quotes are not parsed: text that spells out a delete is judged as one,
+    # with or without a space after the escaped separator.
+    ("echo 'rm -rf /' > notes.txt", "deny"),
+    ("grep -n \"deploy\\| rm -rf /\" README.md", "deny"),
+    # A tab separates words like a space or a line break does.
+    ("echo x\trm -rf /etc", "deny"),
+    ("rm -rf\t/etc", "deny"),
+    ("cd /d/codes/x\tgit push --force", "deny"),
+    ("git push origin feature/x\tnpm run build", "pass"),
+    # find deletes what its starting points hold when it ends in -delete or
+    # -exec rm, or hands them to xargs rm: the starting point is judged, not
+    # the "{}" it passes along.
+    ("find /etc -type f -exec rm -f {} \\;", "deny"),
+    ("find / -exec rm -f {} \\;", "deny"),
+    ("find ~ -exec rm -rf {} \\;", "deny"),
+    ("find /c/Users/Administrator -exec rm -rf {} \\;", "deny"),
+    ("find /etc -type f -delete", "deny"),
+    ("find /etc -type f -exec rm -f {} +", "deny"),
+    ("find -L /etc -type f -delete", "deny"),
+    ("find /etc -exec sh -c 'rm -rf \"$1\"' _ {} \\;", "deny"),
+    ("find /etc -exec env FOO=1 rm -rf {} \\;", "deny"),
+    ("find /etc -name x -exec echo rm \\;", "pass"),
+    ("find /etc -type f | xargs rm -f", "deny"),
+    ("find /etc -print0 | xargs -0 rm -rf", "deny"),
+    ("find /d/codes/other -name x -delete", "ask"),
+    ("find {project}/.tmp -type f -delete", "pass"),
+    ("find . \\( -name a -o -name b \\) -delete", "pass"),
+    ("find . -name \"*.log\" | xargs rm -f", "pass"),
+    ("find /etc | xargs grep -l foo", "pass"),
+    # A filter that comes first is what makes a starting point safe: without
+    # one the starting point is what rm would have been given, "." included.
+    ("find . -delete", "deny"),
+    ("find . -exec rm -f {} \\;", "deny"),
+    ("find . -type f -delete", "deny"),
+    ("find . -delete -name x", "deny"),
+    ("find * -delete", "deny"),
+    ("find -delete", "deny"),
+    ("find .. -name x -delete", "ask"),
+    ("find -name \"*.log\" -delete", "pass"),
+    ("find . -type f -name \"*.cache\" -delete", "pass"),
+    # find is only read from a command start.
+    ("echo find /etc -delete", "pass"),
+    # The delete on the right of the pipe may be wrapped, chained or on the
+    # next line.
+    ("find /etc -print0 |\nxargs -0 rm -rf", "deny"),
+    ("find /etc | sudo xargs rm -rf", "deny"),
+    ("find /etc -name x | grep -v y | xargs rm -rf", "deny"),
+    ("find . | xargs rm -rf", "deny"),
+    ("find . -name \"*.log\" | grep -v keep | xargs rm -f", "pass"),
+    # A forced clean denies whatever way its flags are written; a dry run or
+    # an interactive run does not.
+    ("git clean -df", "deny"),
+    ("git clean -xf", "deny"),
+    ("git clean -f -d", "deny"),
+    ("git clean -f -d -x", "deny"),
+    ("git clean --force -d", "deny"),
+    ("git clean -X -f", "deny"),
+    ("git -C /d/codes/other clean -fdx", "deny"),
+    ("(git clean -fd)", "deny"),
+    ("FOO=1 git clean -fd", "deny"),
+    ("cd /d/codes/x && git clean -fd", "deny"),
+    ("git clean -dn", "pass"),
+    ("git clean -n -f -d", "pass"),
+    ("git clean --dry-run -fdx", "pass"),
+    ("git clean -i -fd", "pass"),
+    ("git clean -f", "pass"),
+    ("git commit -m \"clean -fd\"", "pass"),
+    ("npm run clean -- -fd", "pass"),
+    ("echo git clean -fd", "pass"),
 ]
 
 # (command, permission_mode, expected verdict). ZCode passes the session's
@@ -144,6 +249,11 @@ BASH_MODE_CASES = [
     ("git push origin main", "guarded", "ask"),
     ("git push origin main", "build", "ask"),
     ("git push origin main", "", "ask"),
+    ("rm -rf c:\\windows", "yolo", "deny"),
+    ("echo ok\ngit push --force", "yolo", "deny"),
+    ("rm -rf d:\\codes\\other", "yolo", "pass"),
+    ("find /etc -type f -exec rm -f {} \\;", "yolo", "deny"),
+    ("find /d/codes/other -name x -delete", "yolo", "pass"),
     # The field cannot be forged from a command: its quotes arrive JSON-escaped.
     ('echo "{\\"permission_mode\\":\\"yolo\\"}"; git push origin main', "guarded", "ask"),
 ]
@@ -180,8 +290,13 @@ WRITE_MODE_CASES = [
 
 def verdict(hook, payload, project):
     env = dict(os.environ, ZCODE_PROJECT_DIR=project)
-    proc = subprocess.run(["bash", hook], input=json.dumps(payload), capture_output=True,
-                          text=True, env=env, encoding="utf-8")
+    try:
+        proc = subprocess.run(["bash", hook], input=json.dumps(payload), capture_output=True,
+                              text=True, env=env, encoding="utf-8", timeout=10)
+    except subprocess.TimeoutExpired:
+        # The runtime drops a hook that outruns its own 5s timeout, which is
+        # worse than a wrong verdict: it must fail the suite, not stall it.
+        return "HANG", "no decision within 10s"
     out = (proc.stdout or "").strip()
     if not out:
         # The hooks always exit 0; a failing exit must not read as "pass".
@@ -236,7 +351,7 @@ def main():
 
     failures = run_suite(
         "guard-bash", args.hook_bash, BASH_CASES,
-        lambda c: {"tool_name": "Bash", "tool_input": {"command": c[0]}},
+        lambda c: {"tool_name": "Bash", "tool_input": {"command": c[0].replace("{project}", args.project)}},
         args.project,
     )
     failures += run_suite(
@@ -263,6 +378,30 @@ def main():
         if got != "CRASH":
             failures += 1
             print(f"  DIFF want=CRASH got={got:5s} | a hook that exits non-zero")
+    # An allow file saved with CRLF: the CR is not part of the pattern.
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, ".zcode"))
+        with open(os.path.join(tmp, ".zcode", "guardrails-allow"), "w", encoding="utf-8", newline="") as handle:
+            handle.write("# comment\r\n^git push origin main\r\n^\\.env$\r\n")
+        for label, hook, payload in (
+            ("guard-bash", args.hook_bash,
+             {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}),
+            ("guard-write", args.hook_write,
+             {"tool_name": "Write", "tool_input": {"file_path": ".env", "content": "A=1"}}),
+        ):
+            got, _ = verdict(hook, payload, tmp)
+            if got != "pass":
+                failures += 1
+                print(f"  DIFF want=pass  got={got:5s} | {label}: allow file with CRLF line endings")
+    # stdin is read in one go. A byte-by-byte read takes longer than the 5s the
+    # host allows on a write of this size, after which the hook is dropped.
+    started = time.perf_counter()
+    got, _ = verdict(args.hook_write, {"tool_name": "Write", "tool_input": {
+        "file_path": "src/big.ts", "content": "x" * 4_000_000}}, args.project)
+    elapsed = time.perf_counter() - started
+    if got != "pass" or elapsed > 5:
+        failures += 1
+        print(f"  DIFF want=pass within 5s got={got:5s} in {elapsed:.1f}s | guard-write: a 4MB write")
     print("FAILED" if failures else "OK")
     return 1 if failures else 0
 

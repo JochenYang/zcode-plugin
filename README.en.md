@@ -21,7 +21,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 |---|---|---|
 | `plugins/git-conventions` | 0.1.0 | Commit message guard: a `PreToolUse` hook validates the message a `git commit` writes before git runs (subject format and the 50-character limit, body as `-` bullets ending with a `Verified:` line) and denies a non-compliant one |
 | `plugins/dev-workflow` | 0.6.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + a gated multi-round review protocol + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
-| `plugins/guardrails` | 0.2.0 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
+| `plugins/guardrails` | 0.2.1 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
 | `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
 
@@ -121,13 +121,13 @@ Deletes are judged by **location**, not by command shape, so cleaning up inside 
 | Outside the project (absolute path elsewhere, `../` escape, `~/…`, `$env:…`, unexpanded variable) | `ask` |
 | Root-ish, a drive root (`C:\`, `C:/*`), system, or credential directories | `deny` |
 
-`rm -rf node_modules`, `del /s /q .\dist`, `Remove-Item -Recurse .\build` and `rm -rf /d/codes/<this-project>/build` all pass without a prompt; `rm -rf ../another-project` and `Remove-Item -Recurse D:\codes\other` ask once. `git rm` only touches tracked files inside the repository, so it is left to git and never judged here.
+`rm -rf node_modules`, `del /s /q .\dist`, `Remove-Item -Recurse .\build` and `rm -rf /d/codes/<this-project>/build` all pass without a prompt; `rm -rf ../another-project` and `Remove-Item -Recurse D:\codes\other` ask once. `git rm` only touches tracked files inside the repository, so it is left to git and never judged here. A `;`, `&&` or line break is a command separator whether or not it is surrounded by spaces, and a tab counts as a space: the delete before it ends there, and what follows is judged by its own rules (a `git push --force` on the line after a `cd` is denied as well). A find that ends in `-delete` or `-exec rm …`, or feeds `| xargs rm …`, is judged by its starting points. With a filter ahead of the deleting action only a dangerous position counts (`find . -name "*.log" -delete` passes, `find /etc -type f -delete` is denied); without one the starting point is the target (`find . -delete` is `rm -rf .` and is denied). git clean is read flag by flag: force together with the directory or ignored-files flag is denied, a dry run or an interactive run is not. A separator made a literal by a backslash (`find … -exec … \;`, `grep "a\|b"`) is not a command separator. The body of a here-document is checked line by line and quotes are not parsed (`echo 'rm -rf /'` is denied) — both are deliberate, because the body is often the script or the commit message that runs next. To write a text that merely mentions such a command, use the Write tool (not subject to this rule) or the escape hatch.
 
 Design notes:
 
 - Only newly written text is scanned (`content` / `new_string`), **never `old_string`** — otherwise replacing a hardcoded secret with an env lookup would be blocked by the very secret it removes
 - Escape hatch: `.zcode/guardrails-allow` in the project root, one ERE per line, a match passes the command through (`#` starts a comment). For a project that genuinely runs `terraform apply`, add `^terraform apply`
-- A check takes about 8ms; both hooks run inline and block
+- Both hooks run inline and block. Nothing starts a process where bash alone can do the job: a tier with no hit costs one `grep`, and the payload fields, quote stripping and drive letters are handled by bash. Measured on Windows: about 150ms per Bash call and 240ms per write, from about 1300ms and 730ms (about 300ms when a rule asks for confirmation)
 
 ## Developing a new plugin
 
@@ -172,7 +172,7 @@ Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them a
 
 ```bash
 python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax
-python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 116 cases including the permission-mode dimension
+python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 198 cases including the permission-mode dimension
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
 node --test plugins/git-conventions/tests/*.test.mjs  # the commit message hook: recognised command forms, every rule, and passing on what cannot be read
 python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
