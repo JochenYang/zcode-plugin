@@ -95,6 +95,14 @@ def check_versions():
             check(f"{name}: {readme} row == {version}",
                   bool(row) and row.group(1) == version,
                   row.group(1) if row else "row not found")
+        # Plugins that carry their version in code (serverInfo.version) keep a second
+        # copy in src/version.mjs; a bump that misses it makes the MCP handshake lie.
+        version_file = os.path.join(ROOT, "plugins", name, "src", "version.mjs")
+        if os.path.isfile(version_file):
+            declared = re.search(r"PLUGIN_VERSION\s*=\s*['\"]([^'\"]+)['\"]", read(f"plugins/{name}/src/version.mjs"))
+            check(f"{name}: src/version.mjs == {version}",
+                  bool(declared) and declared.group(1) == version,
+                  declared.group(1) if declared else "PLUGIN_VERSION not found")
 
 
 def check_agent_count():
@@ -223,11 +231,22 @@ def check_stale_markers():
 
 
 def check_line_endings():
-    binary_suffixes = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp")
+    # .wasm legitimately contains \r\n bytes. codegraph's grammars/LICENSES and
+    # grammars/queries are verbatim upstream files (license texts, reference .scm) kept
+    # byte-for-byte on purpose, so their line endings are not ours to normalise.
+    binary_suffixes = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".wasm")
+    vendored = [os.path.normcase(os.path.join(ROOT, "plugins", "codegraph", "grammars", part))
+                for part in ("LICENSES", "queries")]
+
+    def is_vendored(path):
+        normalized = os.path.normcase(os.path.normpath(path))
+        return any(normalized.startswith(f"{prefix}{os.sep}") for prefix in vendored)
+
     crlf = [os.path.relpath(path, ROOT)
             for path in glob.glob(os.path.join(ROOT, "plugins", "**", "*"), recursive=True)
             if os.path.isfile(path)
             and not path.endswith(binary_suffixes)
+            and not is_vendored(path)
             and b"\r\n" in open(path, "rb").read()]
     check("no CRLF in plugins", not crlf, "; ".join(crlf))
 
