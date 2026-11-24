@@ -458,6 +458,45 @@ describe('Indexer', () => {
     assert.equal(readStatus(dir).filesDone, 12);
   });
 
+  test('a lost status.json does not hide an index that holds content: status() reads the database, the next refresh writes the file back', async () => {
+    const dir = project('ix-status-lost', { 'a.ts': SAMPLE, 'b.ts': SAMPLE, 'notes.txt': 'not code' });
+    const ix = create(dir, { minFilesToAutoIndex: 0 });
+    await ix.buildAll();
+    fs.rmSync(statusPath(dir));
+    assert.equal(readStatus(dir), null);
+    // Before this the default state ('empty') was reported, and every tool answered "not indexed".
+    const seen = ix.status();
+    assert.equal(seen.state, 'ready');
+    assert.equal(seen.filesTotal, 2);
+    assert.ok(seen.symbols > 0);
+    assert.deepEqual(seen.languages, { typescript: 2 });
+    assert.ok(seen.indexedAt > 0 && seen.indexedAt <= Date.now(), "the age is the database file's");
+
+    // A read-only session (another process holds the lock) answers the same way but writes nothing.
+    const foreign = await acquireLock(lockPath(dir));
+    const other = create(dir, { minFilesToAutoIndex: 0 });
+    assert.equal((await other.ensureFresh()).readOnly, true);
+    assert.equal(other.status().state, 'ready');
+    assert.equal(readStatus(dir), null, 'a read-only session must not write status.json');
+    foreign.release();
+
+    await ix.ensureFresh({ maxWaitMs: 20000 });
+    const stored = readStatus(dir);
+    assert.equal(stored.state, 'ready', 'the lock holder writes the file back for the hooks');
+    assert.equal(stored.filesTotal, 2);
+    assert.ok(stored.indexedAt > 0 && stored.indexedAt <= Date.now());
+  });
+
+  test('a project file that switches indexing off is the reason an empty index reports', async () => {
+    const dir = project('ix-project-off', { 'a.ts': SAMPLE });
+    const ix = create(dir, { autoIndex: false, autoIndexOffBy: 'project', minFilesToAutoIndex: 0 });
+    const res = await ix.ensureFresh({ maxWaitMs: 20000 });
+    assert.equal(res.state, 'empty');
+    assert.equal(res.reason, 'auto-index-disabled');
+    assert.match(ix.status().reasonDetail, /\.zcode\/codegraph\.json/, 'the message names the project file');
+    assert.equal(countFiles(ix.db), 0, 'nothing is indexed');
+  });
+
   test('a build that died after committing every file but before resolving is completed without re-parsing', async () => {
     const dir = project('ix-killed-late', { 'a.ts': SAMPLE, 'b.ts': SAMPLE });
     const ix = create(dir, { minFilesToAutoIndex: 0 });

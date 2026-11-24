@@ -7,7 +7,7 @@
 // failure. `queries` / `map` are injection points for tests and default to the
 // real graph modules.
 import { dbPath, resolveProjectRoot } from '../paths.mjs';
-import { loadConfig } from '../config.mjs';
+import { loadConfig, loadProjectConfig } from '../config.mjs';
 import { openDatabase } from '../store/db.mjs';
 
 const INDEXER_MODULE = '../index/indexer.mjs';
@@ -47,7 +47,8 @@ async function createContext() {
   // server there (zcode-facts.md §1.2); cwd is the fallback for manual runs.
   const start = (process.env.ZCODE_PROJECT_DIR ?? '').trim() || process.cwd();
   const { root, unsafe } = resolveProjectRoot(start);
-  const config = loadConfig();
+  // The project's own file (<root>/.zcode/codegraph.json) can only tighten the user's settings.
+  const config = loadConfig({ project: loadProjectConfig(root) });
   const indexer = await createIndexer({ root, config });
   // The indexer owns the write connection and exposes it for the query layers;
   // a second connection would only add lock traffic within one process.

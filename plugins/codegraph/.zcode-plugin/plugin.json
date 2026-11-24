@@ -18,7 +18,9 @@
         "CODEGRAPH_MIN_FILES": "${user_config.minFiles}",
         "CODEGRAPH_MAX_FILES": "${user_config.maxFiles}",
         "CODEGRAPH_EXCLUDE": "${user_config.exclude}",
-        "CODEGRAPH_LIFTOFF_ONLY": "${user_config.liftoffOnly}"
+        "CODEGRAPH_LIFTOFF_ONLY": "${user_config.liftoffOnly}",
+        "CODEGRAPH_MAX_IDLE_DAYS": "${user_config.maxIdleDays}",
+        "CODEGRAPH_MAX_TOTAL_MB": "${user_config.maxTotalMB}"
       }
     }
   },
@@ -52,6 +54,18 @@
       "title": "仅用 Liftoff 编译 wasm",
       "description": "保险开关：V8 TurboFan 升级让 Node 崩溃时打开，索引会慢约 1.6 倍；写入 CODEGRAPH_LIFTOFF_ONLY",
       "default": false
+    },
+    "maxIdleDays": {
+      "type": "number",
+      "title": "索引闲置多少天后删除",
+      "description": "一个项目的索引超过这么多天没有服务过会话，就在下次会话打开时删除（需要时自动重建）；0 表示一直保留。写入 CODEGRAPH_MAX_IDLE_DAYS",
+      "default": 90
+    },
+    "maxTotalMB": {
+      "type": "number",
+      "title": "全部索引的总大小上限（MB）",
+      "description": "超过后删除最久没用的几个索引；0 表示不限制。写入 CODEGRAPH_MAX_TOTAL_MB",
+      "default": 0
     }
   }
 }

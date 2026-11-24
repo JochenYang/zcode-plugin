@@ -14,6 +14,8 @@ import { BUDGET_RANGE, DEPTH_RANGE, LIMIT_RANGE, OPERATIONS, TOOLS, callTool, re
 import * as graphQueries from '../../src/graph/queries.mjs';
 import * as graphMap from '../../src/graph/map.mjs';
 import { DEFAULT_CONFIG } from '../../src/config.mjs';
+import { planSweep } from '../../src/index/storage.mjs';
+import { projectKey } from '../../src/paths.mjs';
 import { close, openDatabase } from '../../src/store/db.mjs';
 import { findSymbolsByName, importsOfFile, refsByName, replaceFile, symbolsInFile } from '../../src/store/repo.mjs';
 import { extractFile, initEngine, loadSpecs, specForPath } from '../../src/extract/engine.mjs';
@@ -34,7 +36,7 @@ const CONTRACT_DESCRIPTIONS = {
   codegraph_map:
     'Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.',
   codegraph_status:
-    'Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. When the project is not indexed, fall back to Read/Grep.',
+    'Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. storage=true lists every project\'s index on this machine; clean removes indexes (only with confirm=true). When the project is not indexed, fall back to Read/Grep.',
 };
 
 let db;
@@ -167,6 +169,11 @@ describe('TOOLS', () => {
     assert.deepEqual([map.properties.budget.minimum, map.properties.budget.maximum], [BUDGET_RANGE.min, BUDGET_RANGE.max]);
     assert.equal(map.properties.path.type, 'string');
     assert.equal(TOOLS[0].inputSchema.properties.refresh.type, 'boolean');
+    const status = TOOLS[0].inputSchema;
+    assert.deepEqual(Object.keys(status.properties), ['refresh', 'storage', 'clean', 'project', 'confirm']);
+    assert.deepEqual(status.properties.clean.enum, ['stale', 'all', 'current', 'project']);
+    for (const key of ['storage', 'confirm']) assert.equal(status.properties[key].type, 'boolean', key);
+    assert.equal(status.properties.project.type, 'string');
   });
 
   test('tools/list over JSON-RPC returns them; instructions mention the three tools', async () => {
@@ -246,9 +253,150 @@ describe('freshness flow', () => {
     });
     assert.ok(text(await call(lookup, 'codegraph_lookup', { operation: 'outline', file: SAMPLE })).includes(`· ${FRESH} · sync failed: lock timeout`));
   });
+
+  test('indexing off: a call leaves the index alone and says so; only refresh=true syncs', async () => {
+    const off = { ...DEFAULT_CONFIG, autoIndex: false };
+    const lookup = fakeCtx(READY(), { config: off, queries: storeQueries() });
+    const out = text(await call(lookup, 'codegraph_lookup', { operation: 'outline', file: SAMPLE }));
+    assert.deepEqual(lookup.calls, [['status']], 'ensureFresh is not called');
+    assert.ok(out.includes(`· ${FRESH} · not synced: auto-indexing is off, refresh=true syncs`), out.split('\n')[0]);
+    for (const name of ['codegraph_status', 'codegraph_map']) {
+      assert.deepEqual(fakeCtx(READY(), { config: off }).calls, [], 'nothing until the tool is called');
+      const ctx = fakeCtx(READY(), { config: off });
+      await call(ctx, name, {});
+      assert.deepEqual(ctx.calls, [['status']], `${name} does not sync either`);
+    }
+    const refreshed = fakeCtx(READY(), { config: off, queries: storeQueries() });
+    const status = text(await call(refreshed, 'codegraph_status', { refresh: true }));
+    assert.deepEqual(refreshed.calls, [['ensureFresh', { maxWaitMs: 3000, force: true }], ['status']]);
+    assert.equal(status.includes('not synced'), false, 'a refresh did sync');
+    assert.ok(status.includes('note: auto-indexing is off (codegraph.json); the index is only refreshed by codegraph_status (refresh=true)'));
+    // Indexing on again: every call syncs, and nothing mentions switching it off.
+    const on = fakeCtx(READY(), { queries: storeQueries() });
+    assert.equal(text(await call(on, 'codegraph_lookup', { operation: 'outline', file: SAMPLE })).includes('auto-indexing is off'), false);
+  });
 });
 
 describe('codegraph_status', () => {
+  test('switched off by the project: the hint names the project file, not the user\'s configuration', async () => {
+    const config = { ...DEFAULT_CONFIG, autoIndex: false, autoIndexOffBy: 'project' };
+    const ctx = fakeCtx({ state: 'empty', filesTotal: 0, filesDone: 0, symbols: 0, reason: 'auto-index-disabled', reasonDetail: 'autoIndex is false in .zcode/codegraph.json of the project' }, { config });
+    const out = text(await call(ctx, 'codegraph_status', {}));
+    assert.match(out, /reason: autoIndex is false in \.zcode\/codegraph\.json of the project \[auto-index-disabled\]/);
+    assert.match(out, /hint: auto-indexing is off in \.zcode\/codegraph\.json of this project; delete "autoIndex": false there to index it\./);
+    assert.doesNotMatch(out, /Set autoIndex true/);
+    const kept = text(await call(fakeCtx(READY(), { config }), 'codegraph_status', {}));
+    assert.ok(kept.includes('note: auto-indexing is off for this project (.zcode/codegraph.json); the index is only refreshed by codegraph_status (refresh=true)'));
+  });
+
+  // The store as a fake: three indexes, one of them the project of the session. The real module
+  // is covered in tests/index/storage.test.mjs; here it is about what the tool makes of it.
+  function fakeStore() {
+    const now = Date.now();
+    const entries = [
+      { key: '1111111111111111', dir: path.join('store', '1111111111111111'), root: 'D:/gone/old', state: 'ready', files: 40, symbols: 90, bytes: 220 * 1024 * 1024, lastUsedAt: now - 200 * 86400000, inUse: false, orphan: true },
+      { key: '2222222222222222', dir: path.join('store', '2222222222222222'), root: 'D:/codes/other', state: 'ready', files: 9, symbols: 30, bytes: 300 * 1024, lastUsedAt: now - 2 * 3600000, inUse: true, orphan: false },
+      { key: projectKey(root), dir: path.join('store', 'current'), root: root.split(path.sep).join('/'), state: 'ready', files: 2, symbols: 5, bytes: 8 * 1024 * 1024, lastUsedAt: now - 125_000, inUse: false, orphan: false },
+    ];
+    const log = [];
+    const storage = {
+      indexesDir: () => path.join('store-data', 'indexes'),
+      listIndexes: () => entries,
+      planSweep: (list, options) => planSweep(list, options),
+      removeListed: (entry) => { log.push(['removeListed', entry.key]); return true; },
+      removeIndex: (dir) => { log.push(['removeIndex', path.basename(dir)]); return true; },
+    };
+    return { storage, log };
+  }
+
+  test('storage=true lists every index with size and last use, and the policy in force', async () => {
+    const { storage } = fakeStore();
+    const out = text(await call(fakeCtx(READY(), { storage, config: { ...DEFAULT_CONFIG, maxTotalMB: 2048 } }), 'codegraph_status', { storage: true }));
+    const lines = out.split('\n');
+    assert.equal(lines[0], `# status · ready · 2 files · 5 symbols · ${FRESH}`);
+    assert.deepEqual(lines.slice(1), [
+      'languages: typescript 2',
+      `indexes: 3 projects · 228 MB in all`,
+      'under store-data/indexes',
+      ` D:/gone/old · project folder missing · 220 MB · used 200d ago`,
+      ` D:/codes/other · 9 files · 300 KB · used 2h ago · in use`,
+      ` ${root.split(path.sep).join('/')} · 2 files · 8.0 MB · used 2m ago`,
+      'policy: indexes unused for more than 90 days are removed when a session opens; the least recently used go above 2048 MB in total; an index whose project folder is gone goes by the same age rule',
+    ]);
+    const plain = text(await call(fakeCtx(READY(), { storage }), 'codegraph_status', {}));
+    assert.equal(plain.includes('indexes:'), false, 'the store is listed only on request');
+  });
+
+  test('clean without confirm=true removes nothing and lists what would go', async () => {
+    const { storage, log } = fakeStore();
+    const out = text(await call(fakeCtx(READY(), { storage }), 'codegraph_status', { clean: 'stale' }));
+    assert.deepEqual(log, [], 'nothing was removed');
+    assert.equal(out.split('\n')[0], '# status clean=stale · 1 of 3 indexes would be removed · 220 MB');
+    assert.match(out, / D:\/gone\/old · project folder missing · 220 MB · used 200d ago · orphan/);
+    assert.match(out, /hint: nothing was removed\. Call again with confirm=true, and only when the user asked for it\./);
+  });
+
+  test('clean=stale with confirm=true removes what the policy allows and reports it', async () => {
+    const { storage, log } = fakeStore();
+    const out = text(await call(fakeCtx(READY(), { storage }), 'codegraph_status', { clean: 'stale', confirm: true }));
+    assert.deepEqual(log, [['removeListed', '1111111111111111']]);
+    assert.equal(out.split('\n')[0], '# status clean=stale · removed 1 of 3 indexes · 220 MB freed');
+    assert.match(out, / D:\/gone\/old .* · orphan/);
+    assert.match(out, /hint: an index that was removed is rebuilt the next time a session opens its project/);
+  });
+
+  test('clean=all keeps the project of the session and any index in use', async () => {
+    const { storage, log } = fakeStore();
+    const out = text(await call(fakeCtx(READY(), { storage }), 'codegraph_status', { clean: 'all', confirm: true }));
+    assert.deepEqual(log, [['removeListed', '1111111111111111']], 'the index in use is not touched');
+    assert.equal(out.split('\n')[0], '# status clean=all · removed 1 of 3 indexes · 220 MB freed');
+    assert.match(out, / D:\/codes\/other · 9 files · 300 KB · used 2h ago · in use · kept: in use/);
+  });
+
+  test('clean=project removes the named one, by path or key, but never the project of this session', async () => {
+    const { storage, log } = fakeStore();
+    const ctx = fakeCtx(READY(), { storage });
+    const out = text(await call(ctx, 'codegraph_status', { clean: 'project', project: 'D:\\codes\\other\\', confirm: true }));
+    assert.deepEqual(log, [['removeListed', '2222222222222222']]);
+    assert.equal(out.split('\n')[0], '# status clean=project · removed 1 of 3 indexes · 300 KB freed');
+    assert.match(text(await call(ctx, 'codegraph_status', { clean: 'project', project: root.split(path.sep).join('/'), confirm: true })), /is the project of this session: use clean="current"/);
+    assert.match(text(await call(ctx, 'codegraph_status', { clean: 'project', project: 'D:/nowhere', confirm: true })), /no index of "D:\/nowhere" in this store; codegraph_status \(storage=true\) lists them/);
+  });
+
+  // The rebuild of the process context after clean=current is covered end to end in
+  // tests/e2e/warm-start.test.mjs; an injected context is never reset.
+  test('clean=current closes this session\'s index before the files go', async () => {
+    const { storage, log } = fakeStore();
+    const closed = [];
+    const ctx = fakeCtx(READY(), { storage });
+    ctx.indexer = {
+      ensureFresh: async (opts) => ctx.calls.push(['ensureFresh', opts]),
+      status: () => { ctx.calls.push(['status']); return READY(); },
+      close: async () => { closed.push('closed'); },
+    };
+    const out = text(await call(ctx, 'codegraph_status', { clean: 'current', confirm: true }));
+    assert.deepEqual(closed, ['closed'], 'the handle is closed before the files go');
+    assert.deepEqual(log, [['removeListed', projectKey(root)]]);
+    assert.equal(out.split('\n')[0], '# status clean=current · removed 1 of 3 indexes · 8.0 MB freed');
+    // A clean request neither syncs nor refreshes: it asks the indexer once whether this
+    // session is building, then acts on the store.
+    assert.deepEqual(ctx.calls, [['status']]);
+    // A value outside the enum is an argument error (in-band for the model, a TypeError here).
+    await assert.rejects(callTool('codegraph_status', { clean: 'everything' }, fakeCtx(READY(), { storage })), /"clean" must be one of stale, all, current, project/);
+  });
+
+  test('clean=current refuses while this session is building: closing would wait for the whole build', async () => {
+    const { storage, log } = fakeStore();
+    const ctx = fakeCtx({ ...READY(), building: true, filesTotal: 700, filesDone: 300 }, { storage });
+    const out = text(await call(ctx, 'codegraph_status', { clean: 'current', confirm: true }));
+    assert.equal(out, '# status clean=current\nthe index of this project is being built in this session (300 of 700 files); call again once codegraph_status says ready');
+    assert.deepEqual(log, [], 'nothing was removed');
+    assert.deepEqual(ctx.calls, [['status']], 'the indexer was asked, not closed');
+    // A build another process left behind on disk is not a build of this session: it may go.
+    const stale = fakeCtx({ ...READY(), state: 'building', filesTotal: 700, filesDone: 300, building: false }, { storage });
+    stale.indexer.close = async () => {};
+    assert.match(text(await call(stale, 'codegraph_status', { clean: 'current', confirm: true })), /removed 1 of 3 indexes/);
+  });
   test('ready, empty and building render as text (no isError)', async () => {
     const ready = await call(fakeCtx(), 'codegraph_status', {});
     assert.equal(ready.isError, undefined);

@@ -11,6 +11,9 @@
 // therefore a lock being taken right now and is waited for; an empty file older
 // than that (or stamped further into the future) is a writer that died in between
 // and counts as stale.
+//
+// `lockHeld` is the read-only counterpart: it answers whether a live process holds the
+// lock and leaves the file alone. The store uses it to decide whether an index may be removed.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -118,6 +121,23 @@ function makeRelease(lockPath) {
 }
 
 const noop = () => {};
+
+/**
+ * Is a live process holding this lock right now? Read-only: a stale lock file is
+ * left in place for the next writer to reclaim. A lock that cannot be read counts
+ * as held, so a caller deciding whether an index may be removed stays on the safe side.
+ *
+ * @param {string} lockPath
+ * @returns {boolean}
+ */
+export function lockHeld(lockPath) {
+  try {
+    const pid = readPid(lockPath);
+    return pid !== null && (pid === FRESH || pid === process.pid || isAlive(pid));
+  } catch {
+    return true;
+  }
+}
 
 function prepare(lockPath) {
   if (typeof lockPath !== 'string' || lockPath.trim().length === 0) {

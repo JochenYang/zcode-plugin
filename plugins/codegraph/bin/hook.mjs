@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { announcedPath, configPath, dirtyLogPath, displayPath, indexDir, resolveProjectRoot, statusPath } from '../src/paths.mjs';
+import { loadProjectConfig } from '../src/config.mjs';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'ApplyPatch']);
 // `cwd` is the documented field; the camel/snake variants keep the hook working if the host
@@ -98,11 +99,21 @@ function reasonOf(status, fallback) {
   return text.length > 160 ? `${text.slice(0, 157)}…` : text;
 }
 
-function describeStatus(status, unsafe, { omitStale = false, omitLanguages = false } = {}) {
+// The project's own file (<root>/.zcode/codegraph.json) can switch indexing off. Without
+// reading it the hook would promise a background build that never starts. Problems in that
+// file are the server's to report; the hook only wants the one answer.
+function indexingOffByProject(root) {
+  return loadProjectConfig(root, { stderr: { write() {} } })?.autoIndex === false;
+}
+
+function describeStatus(status, unsafe, { omitStale = false, omitLanguages = false, projectOff = false } = {}) {
+  const offMessage =
+    '[codegraph] Not indexed: auto-indexing is off for this project (.zcode/codegraph.json); use Grep/Read here.';
   if (!status) {
     if (unsafe) {
       return '[codegraph] Not indexed: this folder is a home or drive root and is never auto-indexed; use Grep/Read here.';
     }
+    if (projectOff) return offMessage;
     return (
       '[codegraph] Not indexed: no index for this project yet. If it qualifies for auto-indexing ' +
       `(autoIndex on and at least ${DEFAULT_MIN_FILES} supported files), a background build starts by itself with this session ` +
@@ -128,6 +139,7 @@ function describeStatus(status, unsafe, { omitStale = false, omitLanguages = fal
     return `[codegraph] Index error: ${reasonOf(status, 'build failed')}. Use Grep/Read until it is fixed; codegraph_status (refresh=true) retries.`;
   }
   // state 'empty' (or anything unknown): the index exists as a record but holds nothing.
+  if (projectOff) return offMessage;
   return (
     `[codegraph] Not indexed: ${reasonOf(status, 'auto-index conditions not met')}. ` +
     `Set autoIndex true or lower minFilesToAutoIndex in ${configPath().split(path.sep).join('/')}, ` +
@@ -181,10 +193,10 @@ function markAnnounced(root, sessionId) {
 // exceed it and then nothing at all was injected, exactly when the model needed the guidance:
 // when it does not fit, drop the least important parts in order (the stale note, then the
 // language list) and only give up if even that does not fit.
-function contextWithinBudget(status, unsafe) {
+function contextWithinBudget(status, unsafe, projectOff) {
   const fits = (text) => Math.ceil(Buffer.byteLength(text, 'utf8') / 4) <= MAX_CONTEXT_TOKENS;
   for (const options of [{}, { omitStale: true }, { omitStale: true, omitLanguages: true }]) {
-    const context = describeStatus(status, unsafe, options);
+    const context = describeStatus(status, unsafe, { ...options, projectOff });
     if (fits(context)) return context;
   }
   return '';
@@ -211,7 +223,7 @@ function sessionStart(payload) {
   if (event !== undefined && event !== 'SessionStart') return;
   const { root, unsafe } = resolveProjectRoot(workspaceOf(payload));
   const status = readStatus(root);
-  const context = contextWithinBudget(status, unsafe);
+  const context = contextWithinBudget(status, unsafe, indexingOffByProject(root));
   if (!context) return;
   emit({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } });
   // This line already tells the model the index is ready: the prompt hook must not repeat it.

@@ -109,6 +109,98 @@ test('a never-indexed project is indexed by the handshake alone, and the index a
   }
 });
 
+// An index of another project, written the way an old one looks: status, a usage stamp and file
+// times `ageMs` back. Its database is never opened, since no session of these tests works there.
+function seedIndex(data, project, ageMs = 0) {
+  const dir = path.join(data, 'indexes', projectKey(project));
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = Date.now() - ageMs;
+  const when = new Date(stamp);
+  const files = {
+    'status.json': JSON.stringify({ root: project.split(path.sep).join('/'), state: 'ready', filesTotal: 1, filesDone: 1, symbols: 1, indexedAt: stamp }),
+    'graph.db': 'not a database',
+    'used.at': String(stamp),
+  };
+  for (const [name, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, name), content);
+    fs.utimesSync(path.join(dir, name), when, when);
+  }
+  return dir;
+}
+
+async function call(session, id, name, args) {
+  session.request(id, 'tools/call', { name, arguments: args });
+  const res = await session.next();
+  assert.equal(res.error, undefined, `protocol error: ${JSON.stringify(res.error)}`);
+  return res.result.content[0].text;
+}
+
+test('the session start tidies the store: an index unused for long goes, a recently used one stays even if its folder is gone, this one is stamped', { timeout: 120_000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-store-'));
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-store-data-'));
+  fs.writeFileSync(path.join(data, 'codegraph.json'), JSON.stringify({ autoIndex: true, minFilesToAutoIndex: 1 }));
+  write(root, 'a.ts', 'export function alpha(): number {\n  return 1;\n}\n');
+  const goneOldRoot = path.join(data, 'deleted-long-ago');
+  const goneRecentRoot = path.join(data, 'deleted-project');
+  const otherRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-other-'));
+  // Unused for 200 days and its folder is gone: due.
+  const goneOld = seedIndex(data, goneOldRoot, 200 * 86_400_000);
+  // Its folder is gone too, but it served a session an hour ago: a drive that is not mounted
+  // right now must not cost this index.
+  const goneRecent = seedIndex(data, goneRecentRoot, 3600_000);
+  const other = seedIndex(data, otherRoot, 3600_000);
+  const session = start(root, data);
+  try {
+    session.request(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
+    assert.equal((await session.next()).result.serverInfo.name, 'codegraph');
+    const status = await waitUntilReady(root, data, 1);
+    assert.equal(status?.state, 'ready', `index was not built by the handshake (status ${JSON.stringify(status)})`);
+    // The sweep follows the refresh dispatch; give it a moment.
+    assert.equal(await waitFor(() => !fs.existsSync(goneOld), (value) => value === true, 10_000), true, 'the index unused for 200 days is still there');
+    assert.equal(fs.existsSync(goneRecent), true, 'an index used an hour ago stays, folder or no folder');
+    assert.equal(fs.existsSync(other), true, 'an index of a project that is still there stays');
+    assert.equal(fs.existsSync(path.join(indexFiles(root, data), 'used.at')), true, 'the index of this session is stamped as in use');
+    session.notify('notifications/initialized', {});
+  } finally {
+    const stderr = await session.stop();
+    assert.match(stderr, /codegraph: removed the index of .*deleted-long-ago \((orphan|idle), \d+ bytes\)/);
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    fs.rmSync(otherRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    fs.rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('clean=current removes the index of this session and the next call rebuilds it, in the same process', { timeout: 120_000 }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-clean-'));
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-clean-data-'));
+  fs.writeFileSync(path.join(data, 'codegraph.json'), JSON.stringify({ autoIndex: true, minFilesToAutoIndex: 1 }));
+  write(root, 'a.ts', 'export function alpha(): number {\n  return 1;\n}\n');
+  write(root, 'b.ts', "import { alpha } from './a';\nexport const beta = (): number => alpha(2);\n");
+  const session = start(root, data);
+  try {
+    session.request(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
+    await session.next();
+    const status = await waitUntilReady(root, data, 2);
+    assert.equal(status?.state, 'ready', `index was not built by the handshake (status ${JSON.stringify(status)})`);
+    session.notify('notifications/initialized', {});
+    const dir = indexFiles(root, data);
+    assert.equal(fs.existsSync(dir), true);
+    assert.match(await call(session, 2, 'codegraph_status', { clean: 'current' }), /1 of 1 index would be removed/, 'without confirm nothing goes');
+    assert.equal(fs.existsSync(dir), true);
+    assert.match(await call(session, 3, 'codegraph_status', { clean: 'current', confirm: true }), /removed 1 of 1 index · \d+ KB freed/);
+    assert.equal(fs.existsSync(dir), false, 'the index directory is gone');
+    // The process context was rebuilt by the previous call: this one indexes the project again.
+    assert.match(await call(session, 4, 'codegraph_lookup', { operation: 'search', query: 'beta' }), /(# search beta · 1 match|indexing \d+% \(results partial\))/);
+    assert.equal((await waitFor(() => readStatus(root, data), (value) => value?.state === 'ready' && value.filesTotal >= 2, 60_000))?.state, 'ready', 'the index was rebuilt');
+    assert.match(await call(session, 5, 'codegraph_lookup', { operation: 'search', query: 'beta' }), /# search beta · 1 match/);
+  } finally {
+    const stderr = await session.stop();
+    assert.doesNotMatch(stderr, /uncaught|Indexer is closed|codegraph error/, 'the rebuild after the removal raised nothing');
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    fs.rmSync(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
 test('a project below the auto-index floor is left alone by the handshake', { timeout: 60_000 }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-small-'));
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-warm-small-data-'));

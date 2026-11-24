@@ -5,7 +5,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { statusPath, normalizeRoot } from '../paths.mjs';
+import { statusPath, dbPath, normalizeRoot } from '../paths.mjs';
+import { countFiles, dirtyCount } from '../store/repo.mjs';
 import { PLUGIN_VERSION } from '../version.mjs';
 
 export const STATUS_SCHEMA = 1;
@@ -73,9 +74,14 @@ export function atomicWriteFile(file, data) {
  *   caller then treats the index as having no status yet and rewrites it.
  */
 export function readStatus(root) {
+  return readStatusFile(statusPath(root));
+}
+
+/** `readStatus` for a status file addressed directly (the store lists index directories). */
+export function readStatusFile(file) {
   let text;
   try {
-    text = fs.readFileSync(statusPath(root), 'utf8');
+    text = fs.readFileSync(file, 'utf8');
   } catch (err) {
     if (err.code === 'ENOENT') return null;
     throw err;
@@ -87,6 +93,39 @@ export function readStatus(root) {
     // torn or corrupt file: same as absent
     return null;
   }
+}
+
+/**
+ * The status of an index taken from its database, for a status file that was
+ * lost while the database kept its content. Without it the hooks and the tools
+ * take the default state ('empty') for an index that can answer queries.
+ * `indexedAt` is the database file's modification time: the last time anything
+ * was written to the index, which is all the filesystem still knows.
+ *
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {string} root
+ * @returns {object}
+ */
+export function statusFromDatabase(db, root) {
+  const files = countFiles(db);
+  const languages = {};
+  for (const row of db.prepare('SELECT lang, COUNT(*) AS count FROM files GROUP BY lang').all()) languages[row.lang] = Number(row.count);
+  let indexedAt = 0;
+  try {
+    indexedAt = Math.trunc(fs.statSync(dbPath(root)).mtimeMs);
+  } catch {
+    // no database file on disk (in-memory): the age is unknown
+  }
+  return {
+    ...defaultStatus(root),
+    state: files > 0 ? 'ready' : 'empty',
+    indexedAt,
+    filesTotal: files,
+    filesDone: files,
+    symbols: Number(db.prepare('SELECT COUNT(*) AS count FROM symbols').get().count),
+    languages,
+    stale: dirtyCount(db),
+  };
 }
 
 function requireInt(name, value) {

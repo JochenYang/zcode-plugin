@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DEFAULT_CONFIG, loadConfig } from '../../src/config.mjs';
+import { DEFAULT_CONFIG, applyProjectConfig, loadConfig, loadProjectConfig, projectConfigPath } from '../../src/config.mjs';
 import { configPath } from '../../src/paths.mjs';
 
 const dirs = [];
@@ -40,6 +40,8 @@ const CONTRACT_DEFAULTS = {
   languages: null,
   defaultBudgetTokens: { lookup: 1500, map: 1200 },
   frontload: false,
+  maxIdleDays: 90,
+  maxTotalMB: 0,
 };
 
 describe('DEFAULT_CONFIG', () => {
@@ -83,7 +85,26 @@ describe('loadConfig', () => {
       defaultBudgetTokens: { lookup: 900, map: 1200 },
       frontload: false,
       liftoffOnly: false,
+      maxIdleDays: 90,
+      maxTotalMB: 0,
     });
+  });
+
+  test('store policy: maxIdleDays and maxTotalMB are non-negative integers, from the file or the environment', () => {
+    const set = load(JSON.stringify({ maxIdleDays: 0, maxTotalMB: 2048 }));
+    assert.deepEqual(set.lines, []);
+    assert.deepEqual([set.config.maxIdleDays, set.config.maxTotalMB], [0, 2048], '0 switches a limit off');
+    const fromEnv = load('{}', { CODEGRAPH_MAX_IDLE_DAYS: '30', CODEGRAPH_MAX_TOTAL_MB: '' });
+    assert.deepEqual(fromEnv.lines, []);
+    assert.deepEqual([fromEnv.config.maxIdleDays, fromEnv.config.maxTotalMB], [30, 0], 'the empty string userConfig renders for an unset number means "not set"');
+    const fileWins = load(JSON.stringify({ maxIdleDays: 7 }), { CODEGRAPH_MAX_IDLE_DAYS: '30' });
+    assert.equal(fileWins.config.maxIdleDays, 7, 'the file wins over the environment');
+    const bad = load(JSON.stringify({ maxIdleDays: -1, maxTotalMB: 1.5 }), { CODEGRAPH_MAX_TOTAL_MB: '-4' });
+    assert.equal(bad.config.maxIdleDays, 90);
+    assert.equal(bad.config.maxTotalMB, 0);
+    assert.match(bad.lines[0], /ignoring "maxIdleDays" .*must be an integer >= 0/);
+    assert.match(bad.lines[1], /ignoring "maxTotalMB" .*must be an integer >= 0/);
+    assert.match(bad.lines[2], /ignoring CODEGRAPH_MAX_TOTAL_MB="-4": must be an integer >= 0/);
   });
 
   test('file wins over the environment; the environment only fills unset fields', () => {
@@ -208,5 +229,89 @@ describe('loadConfig', () => {
     assert.deepEqual(first, second);
     assert.notEqual(first, second);
     assert.notEqual(first.exclude, second.exclude);
+  });
+});
+
+// <project root>/.zcode/codegraph.json: the file a repository carries to keep itself out of
+// the index, or to exclude what it does not want parsed.
+describe('project settings', () => {
+  function project(text) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-project-'));
+    dirs.push(root);
+    if (text !== null) {
+      fs.mkdirSync(path.join(root, '.zcode'));
+      fs.writeFileSync(path.join(root, '.zcode', 'codegraph.json'), text);
+    }
+    const out = capture();
+    return { root, config: loadProjectConfig(root, { stderr: out.stderr }), lines: out.lines };
+  }
+
+  test('the file is <root>/.zcode/codegraph.json; a project without it says nothing', () => {
+    const { root, config, lines } = project(null);
+    assert.equal(projectConfigPath(root), path.join(root, '.zcode', 'codegraph.json'));
+    assert.equal(config, null);
+    assert.deepEqual(lines, []);
+    assert.throws(() => projectConfigPath(' '), /"root" must be a non-empty string/);
+  });
+
+  test('reads the five fields a project may set; unknown keys and wrong types are reported and dropped', () => {
+    const { config, lines } = project(JSON.stringify({ autoIndex: false, exclude: ['vendor/'], minFilesToAutoIndex: 400, maxFiles: 900, languages: ['typescript'], maxIdleDays: 1, frontload: true, maxFiles2: 3 }));
+    assert.deepEqual(config, { autoIndex: false, exclude: ['vendor/'], minFilesToAutoIndex: 400, maxFiles: 900, languages: ['typescript'] });
+    assert.equal(lines.length, 3, 'maxIdleDays, frontload and maxFiles2 are not project settings');
+    for (const line of lines) assert.match(line, /not a project setting\n$/);
+  });
+
+  test('a value of the wrong type falls back to "not set" for that field, with a warning', () => {
+    const { config, lines } = project(JSON.stringify({ autoIndex: 'no', exclude: 'dist', minFilesToAutoIndex: -2 }));
+    assert.deepEqual(config, {});
+    assert.equal(lines.length, 3);
+    assert.match(lines[0], /ignoring "autoIndex" .*must be a boolean/);
+    assert.match(lines[1], /ignoring "minFilesToAutoIndex" .*must be an integer >= 0/);
+    assert.match(lines[2], /ignoring "exclude" .*must be an array/);
+  });
+
+  test('a malformed file is null with one warning: the project is indexed by the user\'s settings', () => {
+    const { config, lines } = project('{ "autoIndex": false, ');
+    assert.equal(config, null);
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /is not valid JSON/);
+  });
+
+  test('a project can switch indexing off, and is then the place the user is told about', () => {
+    const user = { ...DEFAULT_CONFIG, exclude: [], defaultBudgetTokens: { ...DEFAULT_CONFIG.defaultBudgetTokens } };
+    const off = applyProjectConfig(user, { autoIndex: false });
+    assert.equal(off.autoIndex, false);
+    assert.equal(off.autoIndexOffBy, 'project');
+    assert.equal(user.autoIndex, true, 'the user\'s configuration object is not modified');
+    // The user switched it off: a project cannot switch it back on, and the user stays the reason.
+    const userOff = applyProjectConfig({ ...user, autoIndex: false }, { autoIndex: true });
+    assert.equal(userOff.autoIndex, false);
+    assert.equal('autoIndexOffBy' in userOff, false);
+  });
+
+  test('excludes add up; limits, the file floor and the languages only tighten', () => {
+    const user = { ...DEFAULT_CONFIG, exclude: ['dist'], defaultBudgetTokens: { ...DEFAULT_CONFIG.defaultBudgetTokens } };
+    const merged = applyProjectConfig(user, { exclude: ['dist', 'vendor/'], minFilesToAutoIndex: 5, maxFiles: 900000, languages: ['typescript'] });
+    assert.deepEqual(merged.exclude, ['dist', 'vendor/']);
+    assert.equal(merged.minFilesToAutoIndex, 30, 'a project cannot lower the floor the user set');
+    assert.equal(merged.maxFiles, 30000, 'nor raise the ceiling');
+    assert.deepEqual(merged.languages, ['typescript']);
+    assert.equal(merged.maxIdleDays, 90, 'the store policy is not a project setting');
+    const raised = applyProjectConfig(user, { minFilesToAutoIndex: 400, maxFiles: 900 });
+    assert.equal(raised.minFilesToAutoIndex, 400);
+    assert.equal(raised.maxFiles, 900);
+    const narrowed = applyProjectConfig({ ...user, languages: ['typescript', 'python'] }, { languages: ['python', 'go'] });
+    assert.deepEqual(narrowed.languages, ['python']);
+  });
+
+  test('loadConfig applies the project settings after the user\'s file and the environment', () => {
+    const file = tmpFile();
+    fs.writeFileSync(file, JSON.stringify({ autoIndex: true, exclude: ['dist'] }));
+    const out = capture();
+    const config = loadConfig({ file, project: { autoIndex: false, exclude: ['vendor/'] }, env: {}, stderr: out.stderr });
+    assert.equal(config.autoIndex, false);
+    assert.equal(config.autoIndexOffBy, 'project');
+    assert.deepEqual(config.exclude, ['dist', 'vendor/']);
+    assert.deepEqual(loadConfig({ file, env: {}, stderr: capture().stderr }).exclude, ['dist'], 'without a project nothing changes');
   });
 });

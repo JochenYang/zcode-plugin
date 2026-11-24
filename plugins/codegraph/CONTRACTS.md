@@ -30,6 +30,8 @@
 - `resolveProjectRoot(start?)` → `{ root, reason: 'git'|'cwd', unsafe }`：向上找最近的 `.git`；`unsafe` 表示家目录或盘根（索引器必须拒绝自动索引）
 - `projectKey(root)`、`indexDir(root)`、`dbPath(root)`、`statusPath(root)`、`dirtyLogPath(root)`、`dirtyOffsetPath(root)`、`lockPath(root)`、`configPath()`
 - `announcedPath(root, sessionId)`：`<indexDir>/announced/<sessionId>`，空文件，标记「这个会话已经被告知索引就绪」（`UserPromptSubmit` 钩子写与读）
+- `projectConfigPath(root)`（`src/config.mjs`）：`<项目根>/.zcode/codegraph.json`，项目自己的设置，见 §12
+- `indexesDir()`（`src/index/storage.mjs`）：`<dataDir>/indexes`，全部项目索引的根，见 §3.4
 - `displayPath(root, abs)`：相对路径，`/` 分隔
 
 ## 3. 磁盘格式
@@ -54,6 +56,26 @@ UTF-8 追加行：`<mtimeMs>\t<相对路径，/ 分隔>\n`。索引器记录已�
 内容为 pid；存在且该 pid 存活即视为有人持有写锁，等待最多 5 s。pid 不存在则视为陈旧锁可删除。
 
 零字节锁文件（`O_EXCL` 已创建、pid 尚未写入的瞬间，或写入前进程已死）：mtime 与当前时间相差 < 2 s 视为正在加锁，等待而不删除；相差 ≥ 2 s（含明显来自未来的时间戳）视为陈旧，可删除。非 pid 的垃圾内容同样视为陈旧。
+
+### 3.4 索引存储（`<data>/indexes/<项目键>/`，`src/index/storage.mjs`）
+
+每个项目的索引是 `indexes/` 下一个以项目键（16 位十六进制）命名的目录，里面是 3.1–3.3 的文件、`graph.db`（及 `-wal` / `-shm`）和 `announced/`。另有一个文件属于存储整理：
+
+- `used.at`：内容是毫秒时间戳，表示这个索引最近一次服务会话的时刻。服务在会话开始时和工具调用时写（至多每小时一次，且只在索引目录已存在时写，绝不为此创建目录）。
+- 「最近使用」取以下各项的最大值：`used.at` 的内容、`status.json` 的 `indexedAt`、`status.json` / `dirty.log` / `lock` / `used.at` / `announced/*` 的 mtime。一个开着但很久没动的会话，只要钩子写过编辑日志或会话标记，就算最近用过。
+
+清理策略（`planSweep`，纯函数；`sweepIndexes` / `removeListed` 负责执行）：
+
+| 原因 | 条件 |
+|---|---|
+| `idle` | `maxIdleDays > 0` 且最近使用早于 `maxIdleDays` 天 |
+| `orphan` | 同上，并且清单知道项目目录已不存在（只是 `idle` 的另一种说法，不是独立的规则） |
+| `over-quota` | `maxTotalMB > 0`，按最近使用从旧到新删，直到总量不超过上限 |
+| `requested` | 显式请求 `clean: "all"` |
+
+项目目录找不到（没插的移动硬盘、没挂载的网络盘）本身不是删除理由：它和别的索引一样只看闲置了多久，所以正在用的项目不会因为盘暂时不可达而丢索引。探测目录是否存在（`listIndexes({ probe: true })`，默认开）是对每个项目一次文件系统调用，路径在网络盘上可能等到超时，所以**自动清理不探测**（`sweepIndexes` 默认 `probe: false`，原因只会是 `idle`）；手动 `clean` 与 `storage: true` 才探测，为的是清单里标出 `project folder missing`。读不出来的 `status.json` 不影响列出这个索引（按项目键显示，`root` 为 null）。
+
+永不删除：调用方要求保留的项目键（当前会话的项目），以及 `lock` 正被存活进程持有的索引（`lockHeld`）。删除前再读一次锁。删除顺序是先删数据库三个文件、再删目录：数据库被别的进程占用时整个索引原样保留（Windows 会拒绝删除打开的文件；类 Unix 上会删掉，持有一方继续用已解除链接的文件，下一次会话重建）。`removeIndex` 只接受 `indexes/` 的直接子目录且名字是项目键，别的路径直接抛错；其它文件系统错误一律返回 false，由调用方记为「到期但没删掉」并继续处理下一个（`sweepIndexes` 与 `clean` 都逐项隔离）。
 
 ## 4. 语法包（G 产出）
 
@@ -237,7 +259,10 @@ export class Indexer {
 - 自动索引条件：`config.autoIndex` 且 `!unsafe` 且支持语言的文件数 ≥ `config.minFilesToAutoIndex` 且总数 ≤ `config.maxFiles`；否则 `state: 'empty'`，`status.json` 的 `reason` 给机器可读原因（`auto-index-disabled` / `unsafe-root` / `below-min-files` / `too-many-files` / `no-supported-files` / `build-failed`）；只读进程（拿不到锁）不写 status.json，只在 `status()` 返回里给出 `lock-held-read-only`。`total` 指枚举到的全部文件数（任意语言，已应用 ignore/exclude），`supportedCount` 为语言包命中的文件数，`maxFiles` 截断只作用于后者。
 - 语言包装载是容错的：任一包语法/引用错误时打一行 stderr 并跳过（`registry.loadErrors` 记录），索引照常；契约测试用 `initEngine({ strict: true })` 让坏包直接失败。
 - 多进程写：`lockPath` 的 pid 锁；拿不到锁走只读（查询照常，不同步）。
-- **会话开始即刷新**（`src/mcp/server.mjs` 的 `silentIndexStart`）：每会话一个服务进程，`initialize` 请求一到就在后台调 `ensureFresh({ maxWaitMs: 0 })`，不等它完成、失败只写 stderr。于是新项目在会话打开时就开始建第一次索引（而不是等模型第一次调用工具——`SessionStart` 钩子让未索引项目的模型「就绪前用 Grep/Read」，照做的模型永远不会触发构建），已索引项目则在会话打开时做一次增量检查。钩子进程短命，进程内的构建会随它退出，所以构建只能由服务进程发起。2026-11-24 实测：握手后不发任何工具调用，99 个文件的项目 1.6 s 就绪、2 个文件的项目 0.5 s 就绪；低于自动索引门槛的项目只写 `state: 'empty'` 的记录，不索引。
+- **会话开始即刷新**（`src/mcp/server.mjs` 的 `silentIndexStart`）：每会话一个服务进程，`initialize` 请求一到就在后台调 `ensureFresh({ maxWaitMs: 1 })`，不等它完成、失败只写 stderr。于是新项目在会话打开时就开始建第一次索引（而不是等模型第一次调用工具——`SessionStart` 钩子让未索引项目的模型「就绪前用 Grep/Read」，照做的模型永远不会触发构建），已索引项目则在会话打开时做一次增量检查。钩子进程短命，进程内的构建会随它退出，所以构建只能由服务进程发起。2026-11-24 实测：握手后不发任何工具调用，99 个文件的项目 1.6 s 就绪、2 个文件的项目 0.5 s 就绪；低于自动索引门槛的项目只写 `state: 'empty'` 的记录，不索引。
+- **会话开始即整理存储**（同一个函数，刷新派出之后）：给当前项目的索引盖 `used.at`，再按 §3.4 的策略清理；删了什么、什么因为在用而保留，各写一行 stderr。`autoIndex` 关闭（用户的设置或项目的 `.zcode/codegraph.json`）、或项目根不安全时，这一步整个不做。
+- **自动索引关闭时工具不同步**：`autoIndex` 为 false（无论来自用户还是项目）时，工具调用不再先调 `ensureFresh`，只有带 `refresh: true` 的 `codegraph_status` 才动索引；其余调用按库里现有的内容回答，首行注明 `not synced: auto-indexing is off, refresh=true syncs`。
+- **`status.json` 丢失不影响已有索引**：库里有文件而状态文件缺失或损坏时，`status()` 直接从库里的计数给出 `ready` 状态（`indexedAt` 取 `graph.db` 的 mtime）；持有锁的进程在下一次刷新开头把状态文件按库里的内容写回。只读进程照样能回答，但不写文件。
 
 ## 10. MCP 与工具（C 实现协议层与渲染；工具名与 schema 冻结）
 
@@ -251,13 +276,13 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 - 工具名：`mcp__plugin_codegraph_codegraph__<tool>`。
 - `"command": "node"` 在 MCP 侧有内置回退（Electron 的 Node 22.22.1），钩子侧没有。
 - 钩子 stdin 带通用字段 `session_id`、`cwd`、`hook_event_name`，env 带 `ZCODE_SESSION_ID`、`ZCODE_PROJECT_DIR`；`UserPromptSubmit` 的输出 `{ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext } }` 生效，钩子配置里不写 `matcher` 即全匹配。三个钩子：
-  - `session-start`：读 `status.json` 注入状态与指引（≤ 120 token）。索引已就绪时顺带写 `announced/<sessionId>`，因为它已经告诉过模型。
+  - `session-start`：读 `status.json` 注入状态与指引（≤ 120 token）。索引已就绪时顺带写 `announced/<sessionId>`，因为它已经告诉过模型。没有索引或索引为空、而项目的 `.zcode/codegraph.json` 把 `autoIndex` 关掉时，改说 `Not indexed: auto-indexing is off for this project (.zcode/codegraph.json); use Grep/Read here.`——否则它会承诺一个不会开始的后台构建。钩子只读文件（`loadProjectConfig` 静音告警），不加载语法运行时。
   - `user-prompt`：状态为 `ready` 且本会话没有 `announced/<sessionId>` 时，注入同样的就绪状态与指引并写标记；否则静默退出。它负责「索引在会话开始后才建完」的通知，每个会话一次；没有 session id 时保持静默（分不清「说过」与「没说过」）；标记超过一天的被清掉。单次约 60 ms。
   - `post-tool`：见 §3.2。
 
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `codegraph_status` | `refresh?: boolean` | 索引状态；`refresh` 强制同步一次 |
+| `codegraph_status` | `refresh?: boolean`，`storage?: boolean`，`clean?: 'stale'\|'all'\|'current'\|'project'`，`project?: string`，`confirm?: boolean` | 索引状态；`refresh` 强制同步一次；`storage` 附带本机全部索引的清单（§3.4）；`clean` 删除索引——`stale` 按 §3.4 的策略，`all` 除当前项目外全部，`current` 当前项目（先关掉本会话的句柄，下一次调用重建），`project` 由 `project` 指定的那个；不带 `confirm: true` 时只列出会删什么 |
 | `codegraph_lookup` | `operation: 'search'|'symbol'|'callers'|'callees'|'impact'|'outline'`，`query?: string`，`name?: string`，`file?: string`，`depth?: int(1–6, 默认 2)`，`limit?: int(1–200, 默认 20)`，`body?: boolean` | `search` 用 `query`（符号名、前缀或任意词序的描述）；其余用 `name`（`outline` 用 `file`）。`body=true` 且函数体 ≤ 30 行时内联源码，否则给 Read 行段 |
 | `codegraph_map` | `path?: string`，`budget?: int(200–4000 tokens, 默认 1200)` | 仓库地图 |
 
@@ -266,7 +291,10 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 - `codegraph_lookup`：`Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. symbol with body=true returns the definition source in the same call. Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. Index may lag a few seconds after external edits; codegraph_status reports staleness.`
 - `query` 参数：`search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). When no name holds every word, the longest ones anchor a partial-match search, best match first. Required for search.`
 - `codegraph_map`：`Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.`
-- `codegraph_status`：`Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. When the project is not indexed, fall back to Read/Grep.`
+- `codegraph_status`：`Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. storage=true lists every project's index on this machine; clean removes indexes (only with confirm=true). When the project is not indexed, fall back to Read/Grep.`
+- `storage` / `clean` / `project` / `confirm` 参数描述见 `src/mcp/tools.mjs` 的 `PARAMETER`（`tools.test.mjs` 钉住了 `clean` 的枚举与参数顺序）。
+
+`codegraph_status` 的 `clean` 请求不调 `ensureFresh`，只读一次 `status()`：`clean: "current"` 要看本会话是否正在构建（`status().building`，是就拒绝并说明进度——关闭索引器会等整个构建结束）。进程自己的上下文上执行 `clean: "current"` 后会 `resetContext()`，下一次调用重新建索引器；注入的上下文（测试）不会被重置。
 
 `initialize.instructions`（约 700 字符）：说明三个工具、何时用 Grep（文本、配置、字符串、未支持语言）、未索引时用内置工具。
 
@@ -283,6 +311,9 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 - `search`：行格式同上，但**保持相关度顺序**（完全同名优先；其余先看名字是否以查询开头，同一层内源码先于测试与脚本，再 bm25，最后 LIKE 兜底），不按 path 重排——小预算截断时留下的是最相关的行。首行在部分匹配时写 `# search "sign-in cookie" · 18 partial matches (no name has all words; best match: sign + cookie) · indexed 0s ago`（`matched` 是排在最前的那个名字含的词，多个词用 ` + ` 连接；靠后的行未必含这些词，所以首行只说「最佳匹配含什么」，不说整个结果集都含）；无命中写 `no matches` 并给 `hint: search matches symbol names only (text, configs and string literals belong to Grep); a word of one or two letters must be a whole word.`。
 - 页脚提示（`hint:` / `next:`）排在图例行之后。`search` 有结果时固定给一行 `next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); impact <name> shows what a change breaks.`。**行优先于提示**：预算装不下「首行 + 页脚 + 几行结果」时先丢页脚提示（从最后一个起，页脚剩给行的空间少于 48 token 即丢），再丢截断提示；行与首行始终保留。
 - `map`：按目录分组，`dir/` 行后缩进 `<file>  <kind> <name>:<line> ...`，每文件最多 6 个符号。
+- `status` 的存储清单（`storage: true` 时接在其它行之后）：`indexes: 4 projects · 1.2 GB in all`、`under <数据目录>/indexes`、每个索引一行 ` <项目根> · <N files | building | empty> · <大小> · used <多久前>[ · in use]`（项目目录不存在的写 `project folder missing`），最后一行 `policy: <闲置策略>; <总量策略>; an index whose project folder is gone goes by the same age rule`。大小写作 `7.6 MB` / `471 MB` / `1.2 GB`（不足 1 MB 写 KB）。
+- `status` 的 `clean` 输出：首行 `# status clean=<目标> · <N of M indexes would be removed · 大小>`（未带 `confirm`）或 `# status clean=<目标> · removed N of M indexes · 大小 freed`；随后每个索引一行，行尾是原因（`orphan` / `idle` / `over-quota` / `requested`），因在用而保留的写 `kept: in use`；页脚未执行时是 `hint: nothing was removed. Call again with confirm=true, and only when the user asked for it.`，执行后是重建与查看剩余的提示。`clean: "project"` 找不到、或指向当前项目时，各返回一行说明（后者提示改用 `clean="current"`）。
+- `status` 在自动索引关闭且已有索引时多一行 `note: auto-indexing is off <(codegraph.json) | for this project (.zcode/codegraph.json)>; the index is only refreshed by codegraph_status (refresh=true)`；`empty` 且是项目文件关掉的，提示改为 `hint: auto-indexing is off in .zcode/codegraph.json of this project; delete "autoIndex": false there to index it. Until then use Read/Grep.`。
 - 截断：末行 `(N of M shown)`；陈旧：首行末尾 ` · stale: N files changed since index`；构建中：` · indexing 43% (results partial)`。
 - token 估算：`Math.ceil(Buffer.byteLength(text) / 4)`，超出预算先截行数再补截断行。
 - 所有文本纯文本，不输出 JSON；`tool_result` 的 `content[0].text` 即全文。
@@ -293,10 +324,23 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 
 ```json
 { "autoIndex": true, "minFilesToAutoIndex": 30, "maxFiles": 30000, "maxFileBytes": 4194304, "exclude": [],
-  "languages": null, "defaultBudgetTokens": { "lookup": 1500, "map": 1200 }, "frontload": false, "liftoffOnly": false }
+  "languages": null, "defaultBudgetTokens": { "lookup": 1500, "map": 1200 }, "frontload": false, "liftoffOnly": false,
+  "maxIdleDays": 90, "maxTotalMB": 0 }
 ```
 
-环境变量覆盖（字段为空才回落）：`CODEGRAPH_AUTO_INDEX`、`CODEGRAPH_MAX_FILES`、`CODEGRAPH_MIN_FILES`、`CODEGRAPH_EXCLUDE`（逗号分隔）、`CODEGRAPH_LIFTOFF_ONLY`。宿主把 userConfig 的布尔渲染成 `"true"/"false"`（不是 `"1"/"0"`），空串表示未设，所以布尔解析接受 `true/1/yes/on` 与 `false/0/no/off/""`。`Indexer.ensureFresh({ force })` 的 `force`（`codegraph_status{refresh:true}` 用）绕过 stat 扫描的 5 s 节流，并无条件执行一次 §9 的文件枚举对账；它不强制重新解析未变化的文件（那是 `buildAll({ force: true })`）。
+环境变量覆盖（字段为空才回落）：`CODEGRAPH_AUTO_INDEX`、`CODEGRAPH_MAX_FILES`、`CODEGRAPH_MIN_FILES`、`CODEGRAPH_EXCLUDE`（逗号分隔）、`CODEGRAPH_LIFTOFF_ONLY`、`CODEGRAPH_MAX_IDLE_DAYS`、`CODEGRAPH_MAX_TOTAL_MB`。宿主把 userConfig 的布尔渲染成 `"true"/"false"`（不是 `"1"/"0"`），空串表示未设，所以布尔解析接受 `true/1/yes/on` 与 `false/0/no/off/""`。`Indexer.ensureFresh({ force })` 的 `force`（`codegraph_status{refresh:true}` 用）绕过 stat 扫描的 5 s 节流，并无条件执行一次 §9 的文件枚举对账；它不强制重新解析未变化的文件（那是 `buildAll({ force: true })`）。
+
+**项目自己的设置**：`<项目根>/.zcode/codegraph.json`（`loadProjectConfig(root)`，`projectConfigPath(root)`）。读取顺序是 用户的 `codegraph.json` → 环境变量 → 默认值，再由 `applyProjectConfig(config, project)` 叠加项目文件；`loadConfig({ project })` 一步完成。项目文件认 `autoIndex`、`exclude`、`minFilesToAutoIndex`、`maxFiles`、`languages` 五个键，其它键告警并忽略；缺文件是常态、不告警，文件损坏则当作没有（告警一行）。**项目只能收紧**：
+
+| 键 | 叠加规则 |
+|---|---|
+| `autoIndex` | 项目为 `false` 且用户为 `true` 时关闭，并在配置里标 `autoIndexOffBy: 'project'`；用户已关闭时项目写 `true` 无效，也不改原因 |
+| `exclude` | 并集（用户的在前） |
+| `minFilesToAutoIndex` | 取较大者 |
+| `maxFiles` | 取较小者 |
+| `languages` | 交集；只有一方设置时取设置了的一方 |
+
+`defaultBudgetTokens`、`frontload`、`maxIdleDays`、`maxTotalMB` 不是项目设置。`autoIndexOffBy` 不在 §12 的文件 schema 里，只在项目关闭时出现在结果对象上；`Indexer` 在 `applyDefaults` 之前读它，用来说明是谁关的（`reasonDetail`）。
 
 ## 13. 测试约定
 

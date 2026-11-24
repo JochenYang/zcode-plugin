@@ -95,14 +95,23 @@ export function createServer({ tools = TOOLS, onCall = callTool, instructions = 
 // SessionStart hook tells the model of an unindexed project to use Grep/Read until the index is
 // ready, and a model that obeys never calls a tool. Only this per-session process can start a
 // build that outlives the call, because hooks are short-lived processes.
+//
+// The same moment tidies the index store (src/index/storage.mjs): stamps this project's index
+// as in use, then removes what the policy allows — indexes of projects that no longer exist,
+// of projects not opened for `maxIdleDays`, and the least recently used ones while the store
+// is over `maxTotalMB`.
 async function silentIndexStart() {
   // A home or drive root is never indexed: decide that before anything opens a database there.
-  const { resolveProjectRoot } = await import('../paths.mjs');
+  const [{ resolveProjectRoot, projectKey }, { loadConfig, loadProjectConfig }] = await Promise.all([import('../paths.mjs'), import('../config.mjs')]);
   const start = (process.env.ZCODE_PROJECT_DIR ?? '').trim() || process.cwd();
-  if (resolveProjectRoot(start).unsafe) return;
-  // autoIndex off means "only a manual refresh touches the index" (the plugin's own wording).
-  const { loadConfig } = await import('../config.mjs');
-  if (loadConfig().autoIndex === false) return;
+  const { root, unsafe } = resolveProjectRoot(start);
+  if (unsafe) return;
+  // Read silently: the context below reads the same files again and reports what is wrong with them once.
+  const quiet = { write() {} };
+  const config = loadConfig({ project: loadProjectConfig(root, { stderr: quiet }), stderr: quiet });
+  // autoIndex off means "only a manual refresh touches the index" (the plugin's own wording):
+  // then nothing happens by itself here, the store included.
+  if (config.autoIndex === false) return;
   const { getContext } = await import('./context.mjs');
   const { indexer } = await getContext();
   if (typeof indexer?.ensureFresh !== 'function') return;
@@ -111,6 +120,11 @@ async function silentIndexStart() {
   // the chain is released at once and the sweep (and any build it starts) goes on in the
   // background.
   await indexer.ensureFresh({ maxWaitMs: 1 });
+  const { touchUsage, sweepIndexes } = await import('../index/storage.mjs');
+  touchUsage(root);
+  const { removed, busy } = sweepIndexes({ keep: [projectKey(root)], maxIdleDays: config.maxIdleDays, maxTotalBytes: config.maxTotalMB * 1024 * 1024 });
+  for (const entry of removed) process.stderr.write(`codegraph: removed the index of ${entry.root ?? entry.key} (${entry.reason}, ${entry.bytes} bytes)\n`);
+  for (const entry of busy) process.stderr.write(`codegraph: index of ${entry.root ?? entry.key} is in use and was kept\n`);
 }
 
 // Wire the pure handler to stdin/stdout. stdout is protocol-only; diagnostics go to stderr.

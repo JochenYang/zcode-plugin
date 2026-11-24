@@ -182,6 +182,37 @@ test('session-start: empty state without error falls back to a generic reason', 
   assert.match(context, /Not indexed: auto-index conditions not met/);
 });
 
+test('session-start: a project file that switches indexing off is named instead of promising a build', async () => {
+  // <root>/.zcode/codegraph.json is the project's own word on indexing; it can only switch it off.
+  fs.mkdirSync(path.join(PROJECT, '.zcode'), { recursive: true });
+  const file = path.join(PROJECT, '.zcode', 'codegraph.json');
+  try {
+    fs.writeFileSync(file, JSON.stringify({ autoIndex: false }));
+    removeIndex();
+    const context = expectContext(await run('session-start', START), 'SessionStart');
+    assert.match(context, /Not indexed: auto-indexing is off for this project \(\.zcode\/codegraph\.json\); use Grep\/Read here\./);
+    assert.doesNotMatch(context, /background build starts by itself/);
+    writeStatus({ state: 'empty' });
+    assert.match(expectContext(await run('session-start', START), 'SessionStart'), /auto-indexing is off for this project/);
+    // A malformed file is the server's to report; the hook falls back to the usual text.
+    fs.writeFileSync(file, '{ "autoIndex": false, ');
+    removeIndex();
+    assert.match(expectContext(await run('session-start', START), 'SessionStart'), /Not indexed: no index for this project yet/);
+    // Switched off by the user instead: the usual text, nothing about a project file.
+    fs.rmSync(file);
+    const config = path.join(DATA, 'codegraph.json');
+    fs.writeFileSync(config, JSON.stringify({ autoIndex: false }));
+    try {
+      removeIndex();
+      assert.match(expectContext(await run('session-start', START), 'SessionStart'), /Not indexed: no index for this project yet/);
+    } finally {
+      fs.rmSync(config);
+    }
+  } finally {
+    fs.rmSync(path.join(PROJECT, '.zcode'), { recursive: true, force: true });
+  }
+});
+
 test('session-start: error state surfaces the indexer error, truncated to the budget', async () => {
   writeStatus({ state: 'error', error: `${'boom '.repeat(80)}` });
   const context = expectContext(await run('session-start', START), 'SessionStart');
@@ -335,12 +366,15 @@ test('plugin.json: every ${user_config.*} reference is declared and no hooks fie
   assert.deepEqual([...referenced].sort(), Object.keys(manifest.userConfig).sort());
   assert.deepEqual(
     Object.keys(server.env).sort(),
-    ['CODEGRAPH_AUTO_INDEX', 'CODEGRAPH_EXCLUDE', 'CODEGRAPH_LIFTOFF_ONLY', 'CODEGRAPH_MAX_FILES', 'CODEGRAPH_MIN_FILES'],
+    ['CODEGRAPH_AUTO_INDEX', 'CODEGRAPH_EXCLUDE', 'CODEGRAPH_LIFTOFF_ONLY', 'CODEGRAPH_MAX_FILES', 'CODEGRAPH_MAX_IDLE_DAYS', 'CODEGRAPH_MAX_TOTAL_MB', 'CODEGRAPH_MIN_FILES'],
   );
   assert.equal(manifest.userConfig.autoIndex.type, 'boolean');
   assert.equal(manifest.userConfig.liftoffOnly.type, 'boolean');
   assert.equal(manifest.userConfig.minFiles.default, 30);
   assert.equal(manifest.userConfig.maxFiles.default, 30000);
+  // The store policy is a pair of settings like the others: a form field or the environment.
+  assert.equal(manifest.userConfig.maxIdleDays.type, 'number');
+  assert.deepEqual([manifest.userConfig.maxIdleDays.default, manifest.userConfig.maxTotalMB.default], [90, 0]);
   assert.equal(manifest.commands, 'commands');
   assert.ok(fs.existsSync(path.join(PLUGIN_ROOT, manifest.commands, 'codegraph.md')));
   // hooks/hooks.json is loaded by convention; declaring it again in the manifest makes the

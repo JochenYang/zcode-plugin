@@ -17,7 +17,7 @@ import { hashSource } from '../extract/engine.mjs';
 import { applyDefaults } from './defaults.mjs';
 import { listFiles, compileExclude, isIndexablePath } from './walker.mjs';
 import { acquireLock } from './lock.mjs';
-import { readStatus, writeStatus, defaultStatus } from './status.mjs';
+import { readStatus, writeStatus, defaultStatus, statusFromDatabase } from './status.mjs';
 import { consumeDirtyLog, statSweep, watch } from './sync.mjs';
 import { createPool } from './pool.mjs';
 
@@ -112,6 +112,8 @@ export class Indexer {
     }
     this.root = path.resolve(root);
     this.config = applyDefaults(config);
+    // Who switched indexing off, for the message that says so: the project's own file or the user.
+    this.#autoIndexOffBy = config?.autoIndexOffBy === 'project' ? 'project' : null;
     this.workers = workers;
     this.#db = openIndexDatabase(this.root);
 
@@ -147,7 +149,9 @@ export class Indexer {
    */
   status() {
     this.#assertOpen();
-    const stored = readStatus(this.root) ?? defaultStatus(this.root);
+    // A lost status file must not hide an index that holds content: the tools would answer
+    // "not indexed" for a database that can serve the query.
+    const stored = readStatus(this.root) ?? (countFiles(this.#db) > 0 ? statusFromDatabase(this.#db, this.root) : defaultStatus(this.root));
     const parseErrors = Number(this.#db.prepare('SELECT COUNT(*) AS count FROM files WHERE parse_ok = 0').get().count);
     // A read-only session must not write status.json (it would overwrite the lock
     // holder's building/ready state), so its own reason lives only here.
@@ -161,6 +165,9 @@ export class Indexer {
       // True while a background refresh (sweep/reconcile/sync) is still running: what
       // the index holds may predate the working tree until the next call.
       syncing: this.#refreshing !== null,
+      // True while this process is building. Unlike the stored state it does not stay
+      // 'building' after a process died: a tool that must not race a build asks this.
+      building: this.#building !== null,
       parseErrors,
     };
   }
@@ -238,6 +245,7 @@ export class Indexer {
   #refreshing = null;
   #unsafe;
   #matchers;
+  #autoIndexOffBy = null;
   #specsPromise;
   #closed = false;
   #pool = null;
@@ -335,6 +343,11 @@ export class Indexer {
   async #refreshWork({ force }) {
     if (this.#building) return;
     consumeDirtyLog(this.root, this.#db);
+    // Only the lock holder gets here, so this is the one place a lost status file can be
+    // rewritten for the hooks and the other sessions. Its age is the database file's.
+    if (!readStatus(this.root) && countFiles(this.#db) > 0) {
+      this.#writeReadyStatus(statusFromDatabase(this.#db, this.root).indexedAt || Date.now());
+    }
     const stored = readStatus(this.root);
     // Only a lock holder writes 'building'; holding the lock without a build of our
     // own means the process that wrote it died mid-build. Resume it instead of
@@ -455,7 +468,10 @@ export class Indexer {
   }
 
   async #autoIndexDecision() {
-    if (!this.config.autoIndex) return { ok: false, reason: REASONS.autoIndexDisabled, detail: 'autoIndex is false' };
+    if (!this.config.autoIndex) {
+      const detail = this.#autoIndexOffBy === 'project' ? 'autoIndex is false in .zcode/codegraph.json of the project' : 'autoIndex is false';
+      return { ok: false, reason: REASONS.autoIndexDisabled, detail };
+    }
     if (this.#unsafe) return { ok: false, reason: REASONS.unsafeRoot, detail: 'home directory or drive root' };
     const listing = await this.#listFiles();
     const decision = shouldAutoIndex({
@@ -790,13 +806,13 @@ export class Indexer {
 
   // status.json from the database after an incremental change. An errored index
   // keeps 'error' so the build retry path keeps ownership of it.
-  #writeReadyStatus() {
+  #writeReadyStatus(indexedAt = Date.now()) {
     if (readStatus(this.root)?.state === 'error') return;
     const n = countFiles(this.#db);
     writeStatus(this.root, {
       state: n > 0 ? 'ready' : 'empty',
       reason: n > 0 ? null : REASONS.noSupportedFiles,
-      indexedAt: Date.now(),
+      indexedAt,
       filesTotal: n,
       filesDone: n,
       symbols: this.#symbolCount(),

@@ -8,7 +8,7 @@ ZCode 的本地代码图谱插件：一个零 npm 依赖的 MCP server，用随�
 
 | 工具 | 参数 | 做什么 |
 |---|---|---|
-| `codegraph_status` | `refresh?: boolean` | 索引状态：`ready` / `building` / `empty`、文件数、符号数、覆盖语言、陈旧文件数；`refresh: true` 强制增量同步（符合自动索引条件的项目会借此启动后台构建） |
+| `codegraph_status` | `refresh?: boolean`，`storage?: boolean`，`clean?: stale \| all \| current \| project`，`project?: string`，`confirm?: boolean` | 索引状态：`ready` / `building` / `empty`、文件数、符号数、覆盖语言、陈旧文件数；`refresh: true` 强制增量同步（符合自动索引条件的项目会借此启动后台构建）；`storage: true` 列出本机所有项目的索引与清理策略；`clean` 删除索引，不带 `confirm: true` 时只列出会删什么 |
 | `codegraph_lookup` | `operation: search \| symbol \| callers \| callees \| impact \| outline`，`query?`、`name?`、`file?`、`depth?`（1–6，默认 2）、`limit?`（1–200，默认 20）、`body?: boolean` | 定位符号、调用者、被调用者、改动影响面、文件大纲；每行一个符号，带精确行段，`body=true` 且函数体 ≤ 30 行时内联源码，否则给出要 Read 的行段 |
 | `codegraph_map` | `path?`、`budget?`（200–4000 tokens，默认 1200） | 仓库地图：目录 → 文件 → 关键符号，按引用数排序，按 token 预算截断 |
 
@@ -23,8 +23,27 @@ ZCode 的本地代码图谱插件：一个零 npm 依赖的 MCP server，用随�
 - **会话一打开就开始，不等模型调用工具。** 每个会话有自己的 codegraph 服务进程，握手完成时它在后台做一次刷新：项目还没索引且符合自动索引条件就建第一次索引，已索引就检查文件变化并增量同步。模型什么都不用做。
 - **模型随时能看到状态。** 会话开头由钩子注入一行状态和指引（见下）；如果索引是在会话中途才建完的，下一条用户消息处会再注入一次就绪通知，每个会话只通知一次。
 - 首次构建的耗时取决于项目大小：几百个文件几秒，一千多个文件十几秒，上万文件一两分钟。构建期间的查询带着 `indexing N% (results partial)` 标记照常返回已有的部分。
-- 低于自动索引门槛（默认 30 个受支持文件）或关闭了 `autoIndex` 的项目不会自动建；家目录和盘根从不自动索引。
-- **代价**：这是一项默认开启的行为，适用于每个打开过的项目，不管模型有没有用到 codegraph。首次构建占 CPU（4 个工作线程，构建期间与自己的构建 / 测试争抢），索引留在插件数据目录里，实测约 26 KB 每个文件（1.8 万文件的项目约 471 MB）。不想要就在设置里关掉 `autoIndex`；要回收磁盘就删除数据目录下 `indexes/<项目键>/`，下次会话需要时会重建。目前没有按项目单独关闭的开关。
+- 低于自动索引门槛（默认 30 个受支持文件）、关闭了 `autoIndex`、或项目自己的 `.zcode/codegraph.json` 里写了 `"autoIndex": false` 的项目不会自动建；家目录和盘根从不自动索引。
+- **代价**：这是一项默认开启的行为，适用于每个打开过的项目，不管模型有没有用到 codegraph。首次构建占 CPU（4 个工作线程，构建期间与自己的构建 / 测试争抢），索引留在插件数据目录里，实测约 26 KB 每个文件（1.8 万文件的项目约 471 MB）。不想要就在设置里关掉 `autoIndex`，或在项目根放一个 `.zcode/codegraph.json`（见「配置」）。关闭之后只有手动 `refresh` 会动索引：查询首行注明没有同步，`codegraph_status` 多一行说明。
+
+## 磁盘占用与清理
+
+索引都在 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/indexes/<项目键>/`，项目目录里不写任何文件。每个会话打开时服务会顺带整理一次这个目录：
+
+| 情况 | 处理 |
+|---|---|
+| 超过 `maxIdleDays`（默认 90 天）没有服务过任何会话 | 删除，下次打开该项目时自动重建；`0` 表示一直保留 |
+| 全部索引加起来超过 `maxTotalMB`（默认 `0`，不限制） | 从最久没用的删起，直到低于上限 |
+| 项目的目录已经不存在 | 按同一条闲置规则处理，只是清单里会标出来；不会因为目录暂时找不到（没插的移动硬盘、没挂载的网络盘）就提前删 |
+| 某个会话正在写这个索引 | 不删 |
+
+「最近使用」取索引目录里最新的一次写入（会话开始时的 `used.at`、状态文件、钩子写的编辑日志和会话标记）。被删的只是派生数据，重建即可。
+
+要看和手动清理，用斜杠命令：
+
+- `/codegraph`：当前项目的索引状态。`/codegraph storage`：再加上本机所有项目的索引（路径、状态、大小、上次使用）和当前策略。
+- `/codegraph clean`：按上面的策略清理；`clean all`：除当前项目外全部删除；`clean current`：删掉当前项目的索引，下一次调用时重建（索引看起来不对时用它从头来过）；`clean <项目路径>`：删指定项目的。清理分两步：先列出会删什么，再由模型带着确认执行，所以命令一发出去就会完成，模型不会自作主张地清理。
+- `codegraph_status` 工具对应 `storage: true` 与 `clean` / `project` / `confirm` 参数。
 
 ## 钩子
 
@@ -63,12 +82,22 @@ macOS/Linux  ~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json
 | `languages` | `null` | 只启用列出的语言包 id；`null` = 全部 |
 | `defaultBudgetTokens` | `{ "lookup": 1500, "map": 1200 }` | 单次输出的 token 预算 |
 | `frontload` | `false` | 预留 |
+| `maxIdleDays` | `90` | 一个项目的索引超过这么多天没服务过会话，就在会话打开时删除；`0` 一直保留 |
+| `maxTotalMB` | `0` | 全部索引的总大小上限，超过后删最久没用的；`0` 不限制 |
 
 自动索引条件：`autoIndex` 开、项目根不是家目录或盘根、支持语言的文件数 ≥ `minFilesToAutoIndex`、总文件数 ≤ `maxFiles`。四条都满足才建，否则 `codegraph_status` 说明原因。
 
-环境变量（配置文件里对应字段为空时生效）：`CODEGRAPH_AUTO_INDEX`、`CODEGRAPH_MIN_FILES`、`CODEGRAPH_MAX_FILES`、`CODEGRAPH_EXCLUDE`（逗号分隔）、`CODEGRAPH_LIFTOFF_ONLY`（`1` 打开 V8 的 `--liftoff-only` 保险开关，索引慢约 1.6 倍）。
+环境变量（配置文件里对应字段为空时生效）：`CODEGRAPH_AUTO_INDEX`、`CODEGRAPH_MIN_FILES`、`CODEGRAPH_MAX_FILES`、`CODEGRAPH_EXCLUDE`（逗号分隔）、`CODEGRAPH_LIFTOFF_ONLY`（`1` 打开 V8 的 `--liftoff-only` 保险开关，索引慢约 1.6 倍）、`CODEGRAPH_MAX_IDLE_DAYS`、`CODEGRAPH_MAX_TOTAL_MB`。
 
-清单里的 `userConfig`（`autoIndex` / `minFiles` / `maxFiles` / `exclude` / `liftoffOnly`）通过 `${user_config.*}` 展开成上面这些变量。当前版本的 ZCode 插件详情页没有配置表单，这些值实际取默认；等 ZCode 支持表单后无需改插件。
+清单里的 `userConfig`（`autoIndex` / `minFiles` / `maxFiles` / `exclude` / `liftoffOnly` / `maxIdleDays` / `maxTotalMB`）通过 `${user_config.*}` 展开成上面这些变量，对应 ZCode 插件详情页里的一组配置项。
+
+**项目自己的设置**：项目根目录下的 `.zcode/codegraph.json`，可以提交进仓库，让一个项目对索引提出要求：
+
+```json
+{ "autoIndex": false, "exclude": ["vendor/", "*.generated.ts"] }
+```
+
+可写的键是 `autoIndex`、`exclude`、`minFilesToAutoIndex`、`maxFiles`、`languages`。项目文件**只能收紧，不能放宽**：可以关掉索引、追加排除、提高自动索引的文件门槛、降低文件上限、收窄语言；不能在用户关掉索引的情况下打开它，也不能突破用户设的上限。输出预算和磁盘策略只能在用户的配置文件里改。
 
 ## 语言
 
@@ -157,4 +186,4 @@ plugins/codegraph/
 
 ## English summary
 
-codegraph is a local code-graph plugin for ZCode: a zero-dependency MCP server that indexes 35 language rows (33 symbol-extracting packs plus COBOL and Liquid at file level) with bundled tree-sitter wasm into SQLite under the plugin data folder, and exposes three tools — `codegraph_status`, `codegraph_lookup` (search / symbol / callers / callees / impact / outline) and `codegraph_map` — returning exact `file:line` ranges so the model reads only what it needs; the leading rows of a search also say who uses them (` · 12 uses in 4 files (3 in source)`, `~` when some of those links are by unique name). The index is built or refreshed silently when a session opens, so a new project is indexed without the model asking. Three hooks (`SessionStart` for the status and guidance, `UserPromptSubmit` to announce an index that became ready mid-session, `PostToolUse` to append edited files to `dirty.log`) are accelerators only; the server's mtime scan keeps the index correct without them. Requirements: Node ≥ 22.13; the MCP side has ZCode's built-in Node fallback, the hooks resolve `node` from PATH only. No network, no telemetry, no project code execution. Configuration: `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json` (`autoIndex`, `minFilesToAutoIndex`, `maxFiles`, `exclude`, `languages`) with `CODEGRAPH_*` environment variables that only apply when the file leaves the field unset. Known limits: COBOL and Liquid are file-level, dynamic language features stay unresolved (`?`), the first build runs in the background.
+codegraph is a local code-graph plugin for ZCode: a zero-dependency MCP server that indexes 35 language rows (33 symbol-extracting packs plus COBOL and Liquid at file level) with bundled tree-sitter wasm into SQLite under the plugin data folder, and exposes three tools — `codegraph_status`, `codegraph_lookup` (search / symbol / callers / callees / impact / outline) and `codegraph_map` — returning exact `file:line` ranges so the model reads only what it needs; the leading rows of a search also say who uses them (` · 12 uses in 4 files (3 in source)`, `~` when some of those links are by unique name). The index is built or refreshed silently when a session opens, so a new project is indexed without the model asking. Indexes live under the plugin data folder, one per project; when a session opens the store is tidied (indexes unused for `maxIdleDays` are deleted, as are the least recently used ones while the store is over `maxTotalMB`; each is rebuilt when its project is opened again), `/codegraph storage` lists them with size and last use, `/codegraph clean` removes them, and a project can switch indexing off or exclude paths with its own `.zcode/codegraph.json`. Three hooks (`SessionStart` for the status and guidance, `UserPromptSubmit` to announce an index that became ready mid-session, `PostToolUse` to append edited files to `dirty.log`) are accelerators only; the server's mtime scan keeps the index correct without them. Requirements: Node ≥ 22.13; the MCP side has ZCode's built-in Node fallback, the hooks resolve `node` from PATH only. No network, no telemetry, no project code execution. Configuration: `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json` (`autoIndex`, `minFilesToAutoIndex`, `maxFiles`, `exclude`, `languages`, `maxIdleDays`, `maxTotalMB`) with `CODEGRAPH_*` environment variables that only apply when the file leaves the field unset. Known limits: COBOL and Liquid are file-level, dynamic language features stay unresolved (`?`), the first build runs in the background.

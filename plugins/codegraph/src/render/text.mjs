@@ -48,6 +48,16 @@ const IMPACT_TRUNCATED_HINT = 'hint: impact was cut; raise depth (max 6) or limi
 const EMPTY_INDEX_HINT =
   'hint: use Read/Grep until the project is indexed; auto-index is skipped when autoIndex is off, the root is unsafe ' +
   '(home or drive root) or the supported-file count is outside minFilesToAutoIndex..maxFiles (codegraph.json).';
+// A project's file can only switch indexing off, so it is also the only place to switch it back on.
+const PROJECT_OFF_HINT =
+  'hint: auto-indexing is off in .zcode/codegraph.json of this project; delete "autoIndex": false there to index it. ' +
+  'Until then use Read/Grep.';
+// A clean request without confirm=true only lists (CONTRACTS.md §10 `clean`).
+const CLEAN_CONFIRM_HINT =
+  'hint: nothing was removed. Call again with confirm=true, and only when the user asked for it.';
+const CLEAN_DONE_HINT =
+  'hint: an index that was removed is rebuilt the next time a session opens its project; ' +
+  'codegraph_status (storage=true) lists what is left.';
 
 // ---------- small helpers ----------
 
@@ -400,13 +410,74 @@ export function renderStatus(status, meta = {}) {
     const detail = oneLine(status.reasonDetail ?? status.message ?? status.error);
     const code = oneLine(status.reason);
     if (detail || code) rows.push(`reason: ${detail || code}${detail && code && detail !== code ? ` [${code}]` : ''}`);
-    rows.push(EMPTY_INDEX_HINT);
+    rows.push(meta.offBy === 'project' ? PROJECT_OFF_HINT : EMPTY_INDEX_HINT);
+  }
+  if (meta.offBy && state !== 'empty') {
+    const where = meta.offBy === 'project' ? 'off for this project (.zcode/codegraph.json)' : 'off (codegraph.json)';
+    rows.push(`note: auto-indexing is ${where}; the index is only refreshed by codegraph_status (refresh=true)`);
   }
   if (status.readOnly === true) rows.push('note: read-only; another session holds the index lock, this one only queries');
   if (count(status.parseErrors) > 0) rows.push(`parse errors: ${count(status.parseErrors)} file(s) indexed with syntax errors`);
+  if (meta.storage) rows.push(...storageRows(meta.storage, now));
   return finish({
     header: headerLine('status', args, `${state} · ${summary}`, { freshness }),
     rows,
+    budget: Infinity,
+  });
+}
+
+// `7.6 MB`, `471 MB`, `1.2 GB`: one decimal below ten of a unit, none above.
+export function sizeText(bytes) {
+  const n = count(bytes);
+  const MB = 1024 * 1024;
+  if (n <= 0) return '0 KB';
+  if (n < MB) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  if (n < 10 * MB) return `${(n / MB).toFixed(1)} MB`;
+  if (n < 1024 * MB) return `${Math.round(n / MB)} MB`;
+  return `${(n / (1024 * MB)).toFixed(1)} GB`;
+}
+
+// One index of the store: where, what state, how big, when it last served a session.
+function indexLine(entry, now, reason = null) {
+  const parts = [oneLine(entry.root) || entry.key];
+  if (entry.orphan) parts.push('project folder missing');
+  else if (entry.state === 'ready') parts.push(`${count(entry.files)} ${plural(count(entry.files), 'file')}`);
+  else parts.push(oneLine(entry.state) || 'unknown');
+  parts.push(sizeText(entry.bytes), `used ${ageText(entry.lastUsedAt, now)}`);
+  if (entry.inUse) parts.push('in use');
+  if (reason) parts.push(reason);
+  return parts.join(' · ');
+}
+
+function storageRows(storage, now) {
+  const entries = Array.isArray(storage.entries) ? storage.entries : [];
+  const total = entries.reduce((sum, entry) => sum + count(entry.bytes), 0);
+  const rows = [`indexes: ${entries.length} ${plural(entries.length, 'project', 'projects')} · ${sizeText(total)} in all`];
+  if (storage.dir) rows.push(`under ${oneLine(storage.dir)}`);
+  for (const entry of entries) rows.push(` ${indexLine(entry, now)}`);
+  if (storage.policy) rows.push(`policy: ${oneLine(storage.policy)}`);
+  return rows;
+}
+
+/**
+ * The result of a clean request (CONTRACTS.md §10 `clean`): what went, or what would go.
+ *
+ * @param {{ target: string, remove: object[], removed?: object[], busy?: object[], total: number, done: boolean, now?: number }} input
+ */
+export function renderClean({ target, remove, removed = [], busy = [], total, done, now = Date.now() }) {
+  const due = Array.isArray(remove) ? remove : [];
+  const gone = done ? removed : [];
+  const listed = done ? gone : due;
+  const size = (entries) => sizeText(entries.reduce((sum, entry) => sum + count(entry.bytes), 0));
+  const summary = done
+    ? `removed ${gone.length} of ${count(total)} ${plural(count(total), 'index', 'indexes')} · ${size(gone)} freed`
+    : `${due.length} of ${count(total)} ${plural(count(total), 'index', 'indexes')} would be removed · ${size(due)}`;
+  const rows = listed.map((entry) => ` ${indexLine(entry, now, entry.reason)}`);
+  for (const entry of busy) rows.push(` ${indexLine(entry, now, 'kept: in use')}`);
+  return finish({
+    header: headerLine('status', `clean=${target}`, summary, {}),
+    rows,
+    footer: [done ? CLEAN_DONE_HINT : CLEAN_CONFIRM_HINT],
     budget: Infinity,
   });
 }

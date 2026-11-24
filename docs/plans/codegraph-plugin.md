@@ -67,6 +67,7 @@
 | W22 | P2 | 文档与市场：图标已定稿（`assets/codegraph.png`，SVG 源 `assets/codegraph.svg`），市场条目的 `icon` 已是用户上传的 CDN 地址；市场描述（zh-CN）、安装说明、Node ≥ 22.13 说明；11-24 把市场条目与根 README 的中英文描述同步到当前行为（会话打开即建 / 刷新索引、三个钩子） | 主 agent | [x] |
 | W23 | P1 | search 质量 v2（来自 W19 基线发现）：兜底每词一条谓词（词序无关）、≤2 字符的 ASCII 词须整词且该规则下推到 SQL 候选池、完全同名优先且源码先于测试/脚本、结果保持相关度顺序（不再按 path 重排）、非可调用 kind 的入边写作 `used by`；空结果的处理在 v2.1 改为锚定最长的两个词做部分匹配（子集重试对 4–5 个词的查询轮不到两词组合）；SessionStart 指南按**任务类型**触发并带「需求 → 操作」映射（写成「查名字」时模型直接用 `rg`）；顺带修带 `kind` 时 SQL 参数绑定错位。11-24 晚补修：「源码先于测试 / 脚本」的目录规则此前在**仓库根目录**下不生效（索引里的路径没有前导斜杠），`tests/`、`scripts/`、`spec/`、`e2e/`、`benchmarks/` 都被当成源码；现匹配前补斜杠，清单补 Go / pytest / Django / C# / 快照目录，每一项都有用例 | 主 agent | [x] |
 | W24 | P2 | search 结果的前 3 行带「谁依赖它」（` · 12 uses in 4 files (3 in source)`）；理由：定向的那一次调用就带上一片图谱，T20 的 13 个会话里模型在第一次编辑后从没回来查过 `callers` / `impact`。按唯一名字连上的引用让数字带 `~`；被引用超过 2000 处的符号只给总数（否则单词查询在 cindy 上多花 100–150 ms） | 主 agent | [x] |
+| W25 | P1 | 索引存储管理与按项目关闭（用户 11-24 晚：「都知道缺陷，为什么不去调研环境和同类做法再优化好；索引清理功能显示在哪里、ZCode 有没有扩展接口」）。同类做法：JetBrains 自动清 180 天没更新的目录、Cursor / Roo 都有「列出索引 + 删除」入口；ZCode 有未公开文档的扩展接口（输入框状态位、侧边栏入口、HTML 面板、通知、插件设置）。本轮做与界面无关的核心：`src/index/storage.mjs`（清单、最近使用、清理：孤儿 / 闲置 `maxIdleDays` / 总量 `maxTotalMB`，永不删当前项目与在用的索引）；会话开始时自动整理；`codegraph_status` 的 `storage` / `clean` / `project` / `confirm` 与 `/codegraph storage|clean`；项目根 `.zcode/codegraph.json` 只能收紧；状态文件丢失自愈；`autoIndex` 关闭时工具不再自动同步。审查 `review-7-store-management.md`（无阻塞；4 条 P2：孤儿不绕过闲置期、自动清理不探测远端路径、逐项隔离删除错误、补 `clean=current` 重建的端到端）。界面入口（状态位 + 面板）另开 | 主 agent | [x] |
 
 类目：P0 不做就走不通 · P1 静默失败或数据风险 · P2 清理与一致性 · OPT 可选（不做要写明理由）。
 
@@ -81,7 +82,7 @@
 | 0 契约与骨架 | W1–W5 | T1–T5 PASS；35 种语法全部可加载；子智能体审查无阻塞 |
 | 1 并行开发 | W6–W14 | T6–T15 PASS；每条 lane 的文件边界未被越界；子智能体审查无阻塞 |
 | 2 集成与验证 | W15–W19 | T16–T20 PASS（T20 由用户执行，未完成前不得标 done） |
-| 3 收尾 | W21、W22、W23、W24（W20 视 W19 数据：未开启） | T21–T25 PASS；安装进 ZCode 跑通 |
+| 3 收尾 | W21、W22、W23、W24、W25（W20 视 W19 数据：未开启） | T21–T26 PASS；安装进 ZCode 跑通 |
 
 ## Parallel lanes（阶段 1）
 
@@ -137,6 +138,7 @@
 | 23 (W23) | search 质量 | 单元测试（含 8 条真实首查的表驱动用例、SQL 候选池与词过滤一致性用例约 1,700 种组合、变异验证）；两个真实索引上新旧对比；从工作树启动真实 MCP server 端到端 | 模型实际用过的查询得到相关结果；精确名查询结果不变；最坏查询 ≤ 400 ms | `node --test plugins/codegraph/tests/`；`node .devflow/codegraph-plugin/first-query-replay.mjs`；`node .tmp/e2e/mcp-search.mjs "<query>"…` | PASS（v2.1：首查回放 7/7 指向真值包；`"sign in auth cookie browser"` 0 → 60 行、`"reasoning efforts discovery merge"` 0 → 60 行；耗时 70–490 ms；审查 `.devflow/codegraph-plugin/review-3-search.md`、`review-4-search-relaxation.md`。11-24 晚修复根目录测试 / 脚本目录不被识别后：dsh 真实索引 `search "map"` 的第一行不再是 `scripts/…`，七条首查回放仍 7/7，见 `review-6-usage-summary.md`） |
 | 24 (W21) | 会话开始即索引 | 真实进程只握手不发工具调用；真实 ZCode 会话 | 未索引项目的索引自己建好并能回答；建完后的第一条用户消息处注入就绪状态，且每个会话只注入一次；家目录与 `autoIndex: false` 不创建任何东西；握手后立刻发起的查询保持 3 s 上界 | `node --test plugins/codegraph/tests/e2e/warm-start.test.mjs plugins/codegraph/tests/hooks/`；`node .tmp/e2e/silent-start-guards.mjs` | PASS（2026-11-24：真实会话 `sess_adf11df9` 17:12:51 注入 building、17:15:49 就绪、17:16:07 注入 ready；1,661 文件项目握手后首查 3.16 s 返回；审查 `review-5-silent-start.md`） |
 | 25 (W24) | search 带依赖摘要 | 单元测试；真实索引输出 | 前 3 行带 `uses in N files (M in source)`，其余行与其它操作不受影响 | `node --test plugins/codegraph/tests/store/usage.test.mjs plugins/codegraph/tests/graph/ plugins/codegraph/tests/render/` | PASS（2026-11-24：491 项 485 过 0 失败 6 跳过；真实索引上统计语句 0.05–0.16 ms，带 usage 的前三行里 61–86% 完全由 import 连上；已安装副本经真实协议输出 ` · 3 uses in 2 files (1 in source)`。审查 `review-6-usage-summary.md` 三轮收敛：第二轮抓到 1 条本轮引入的 P1（清单里 `/e2e/` 被打错）并顺带查出一个更早的缺陷——仓库根目录下的 `tests/`、`scripts/` 从未被识别为测试 / 脚本，都已修。未做：没有再用真实会话验证模型行为） |
+| 26 (W25) | 索引存储管理与按项目关闭 | 单元测试（存储策略纯函数、真实目录、被占用索引）；真实服务进程端到端（握手后清理、预演与确认、删当前项目后重建、按项目关闭的三种情形）；变异验证 | 孤儿与闲置索引被删、当前项目与在用的索引永不删；`clean` 不带 `confirm` 只列不删；项目文件只能收紧；状态文件丢失后工具照常回答 | `node --test plugins/codegraph/tests/index/storage.test.mjs plugins/codegraph/tests/e2e/warm-start.test.mjs plugins/codegraph/tests/mcp/`；`node .tmp/e2e/storage-probe.mjs`；`node .tmp/e2e/project-off-probe.mjs` | PASS（2026-11-24 深夜：526 项 520 过 0 失败 6 跳过；三轮共 11 处变异都被抓住；已安装副本经真实协议验证清单、预演、确认清理、`clean=current` 后重建、按项目关闭的三种情形；审查 `review-7-store-management.md` 无阻塞。本机真实存储只读预演：两个索引 15 MB，下次会话开始不删任何东西。未做：界面入口；macOS / Linux 没有环境；真实会话里 `/codegraph storage` 的那次调用在等用户点授权弹窗） |
 
 ## Verification commands
 
@@ -160,6 +162,8 @@
 | 向量检索、SCIP 后端、`explore`、前置注入 | 见 W20/W21 与 Ruled out | W19 数据出来后 |
 | search 无符号命中时回退查 `refs` | W23 先解决空结果与排序；模型 grep 的 `membershipKind`、`requirePersonalAccount` 是 `refs` 表里的引用名而非符号，回退能直接答「谁引用了它」 | W23 装进 ZCode 的开臂数据出来后 |
 | Bash 检索时由钩子提醒改用 codegraph | 多一个每条 Bash 都会起的 node 进程；先看 W23 的开臂是否已经把退回 grep 的比例降下来 | W23 开臂数据出来后 |
+| 索引管理的界面入口（输入框状态位显示索引状态与大小、侧边栏入口、列出各项目索引并可删除的面板） | ZCode 有扩展接口（`extension` + `slots["composer.status"]` / `sidePane.launcher` / `contributes.views`，HTML 面板走 MCP Apps），但没有公开文档，首次激活要用户在弹窗里确认，我这边没法点；文字入口 `/codegraph storage` / `clean` 已能用 | 用户确认要做之后 |
+| 文件变化后在后台立即增量同步（上游 codegraph 的做法：监听 + 2 秒去抖后直接重解析） | 现在是标脏后等下一次工具调用；T20 的会话里没有观察到「调用时等同步」成为问题 | 用户反馈首次调用变慢时 |
 
 ## Rollback
 

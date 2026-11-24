@@ -8,12 +8,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as graphQueries from '../graph/queries.mjs';
 import * as graphMap from '../graph/map.mjs';
+import * as graphStorage from '../index/storage.mjs';
 import { DEFAULT_CONFIG, BUDGET_TOKENS_MAX, BUDGET_TOKENS_MIN } from '../config.mjs';
-import { displayPath } from '../paths.mjs';
-import { getContext } from './context.mjs';
+import { displayPath, projectKey } from '../paths.mjs';
+import { getContext, resetContext } from './context.mjs';
 import * as render from '../render/text.mjs';
 
 export const OPERATIONS = Object.freeze(['search', 'symbol', 'callers', 'callees', 'impact', 'outline']);
+// What `codegraph_status` may be asked to remove (CONTRACTS.md §10).
+export const CLEAN_TARGETS = Object.freeze(['stale', 'all', 'current', 'project']);
 export const DEPTH_RANGE = Object.freeze({ min: 1, max: 6, default: 2 });
 export const LIMIT_RANGE = Object.freeze({ min: 1, max: 200, default: 20 });
 export const BUDGET_RANGE = Object.freeze({ min: BUDGET_TOKENS_MIN, max: BUDGET_TOKENS_MAX });
@@ -52,6 +55,19 @@ const PARAMETER = {
     type: 'boolean',
     description: `symbol only: include the source body (inline when at most ${render.INLINE_BODY_MAX_LINES} lines, otherwise a Read line with offset/limit). Default false.`,
   },
+  storage: {
+    type: 'boolean',
+    description: 'status only: also list every project\'s index on this machine (path, state, size, last use) and the cleanup policy.',
+  },
+  clean: {
+    type: 'string',
+    enum: [...CLEAN_TARGETS],
+    description:
+      'status only: remove indexes. stale = what the policy allows (as when a session opens); all = every index but this project\'s; ' +
+      'current = this project\'s (the next call rebuilds it); project = the one named by "project". Nothing goes without confirm=true.',
+  },
+  project: { type: 'string', description: 'status only, clean=project: path of the project whose index is removed.' },
+  confirm: { type: 'boolean', description: 'status only, clean: must be true to remove anything; without it the call only lists what would go.' },
 };
 
 export const TOOLS = Object.freeze([
@@ -60,11 +76,16 @@ export const TOOLS = Object.freeze([
     description:
       'Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. ' +
       'Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. ' +
+      'storage=true lists every project\'s index on this machine; clean removes indexes (only with confirm=true). ' +
       'When the project is not indexed, fall back to Read/Grep.',
     inputSchema: Object.freeze({
       type: 'object',
       properties: Object.freeze({
         refresh: { type: 'boolean', description: 'Force an incremental sync (dirty log + mtime scan) before reporting.' },
+        storage: PARAMETER.storage,
+        clean: PARAMETER.clean,
+        project: PARAMETER.project,
+        confirm: PARAMETER.confirm,
       }),
     }),
   }),
@@ -136,7 +157,7 @@ function checkBoolean(tool, field, value) {
 const REQUIRED_BY_OPERATION = Object.freeze({ search: 'query', symbol: 'name', callers: 'name', callees: 'name', impact: 'name', outline: 'file' });
 // Only the parameters a tool declares are validated; anything else is ignored.
 const FIELDS_BY_TOOL = Object.freeze({
-  codegraph_status: Object.freeze(['refresh']),
+  codegraph_status: Object.freeze(['refresh', 'storage', 'clean', 'project', 'confirm']),
   codegraph_lookup: Object.freeze(['operation', 'query', 'name', 'file', 'depth', 'limit', 'budget', 'body']),
   codegraph_map: Object.freeze(['path', 'budget']),
 });
@@ -169,7 +190,16 @@ function validate(tool, args) {
         break;
       case 'body':
       case 'refresh':
+      case 'storage':
+      case 'confirm':
         out[field] = checkBoolean(tool, field, value);
+        break;
+      case 'clean':
+        if (!CLEAN_TARGETS.includes(value)) throw invalid(tool, field, `must be one of ${CLEAN_TARGETS.join(', ')}`, value);
+        out.clean = value;
+        break;
+      case 'project':
+        out.project = checkString(tool, field, value);
         break;
       default:
         break; // unknown keys are ignored: the schema documents what is used
@@ -201,10 +231,12 @@ export function resolveGraph(context) {
 export async function callTool(name, args, ctx) {
   if (!TOOLS.some((t) => t.name === name)) throw new TypeError(`callTool: unknown tool ${describe(name)}`);
   const params = validate(name, args);
+  // An injected context belongs to the caller; only the process context may be rebuilt by a tool.
+  const owned = ctx === undefined || ctx === null;
   const context = await (ctx ?? getContext());
   switch (name) {
     case 'codegraph_status':
-      return statusTool(params, context);
+      return statusTool(params, context, owned);
     case 'codegraph_lookup':
       return lookupTool(params, context);
     default:
@@ -214,6 +246,7 @@ export async function callTool(name, args, ctx) {
 
 const text = (s) => ({ content: [{ type: 'text', text: s }] });
 const message = (err) => String(err?.message ?? err).replace(/\s+/g, ' ').trim();
+const count = (value) => (Number.isFinite(value) ? Math.trunc(value) : 0);
 const head = (rows, n) => (Array.isArray(rows) ? rows.slice(0, n) : []);
 const quote = (s) => (/\s/.test(s) ? JSON.stringify(s) : s);
 
@@ -221,12 +254,17 @@ const quote = (s) => (/\s/.test(s) ? JSON.stringify(s) : s);
 // freshness) and then reads the status for the header. A sync failure does not
 // abort the call — the query still runs on whatever is indexed — but is
 // reported in the freshness segment.
+// With indexing switched off (by the user, or by the project's own file) only a
+// call that asks for a refresh touches the index; the others answer from what is stored.
 async function prepare(context, { refresh = false } = {}) {
   const indexer = context.indexer;
   let syncError = null;
-  if (typeof indexer?.ensureFresh === 'function') {
+  const off = context.config?.autoIndex === false;
+  if ((!off || refresh) && typeof indexer?.ensureFresh === 'function') {
     try {
       // `force` asks the indexer to skip its mtime-scan throttle (contract request).
+      // The usage stamp tells the store this index is in use (src/index/storage.mjs).
+      graphStorage.touchUsage(context.root);
       await indexer.ensureFresh(refresh ? { maxWaitMs: 3000, force: true } : undefined);
     } catch (err) {
       syncError = err;
@@ -240,12 +278,14 @@ async function prepare(context, { refresh = false } = {}) {
       syncError ??= err;
     }
   }
-  return { status, syncError };
+  return { status, syncError, off };
 }
 
-function freshnessText(status, syncError) {
-  const base = render.freshnessLabel(status);
-  return syncError ? `${base} · sync failed: ${message(syncError)}` : base;
+function freshnessText(status, syncError, { off = false, refreshed = false } = {}) {
+  const parts = [render.freshnessLabel(status)];
+  if (off && !refreshed) parts.push('not synced: auto-indexing is off, refresh=true syncs');
+  if (syncError) parts.push(`sync failed: ${message(syncError)}`);
+  return parts.join(' · ');
 }
 
 function budgetOf(context, value, kind) {
@@ -267,15 +307,97 @@ function normalizePath(root, value) {
   return p.replace(/^\.\//, '').replace(/^\/+/, '');
 }
 
-async function statusTool(p, context) {
+const storageOf = (context) => {
+  const storage = context.storage ?? graphStorage;
+  const config = context.config ?? {};
+  const idle = Number(config.maxIdleDays) > 0 ? `indexes unused for more than ${config.maxIdleDays} days are removed when a session opens` : 'indexes are never removed for being unused';
+  const quota = Number(config.maxTotalMB) > 0 ? `the least recently used go above ${config.maxTotalMB} MB in total` : 'there is no size limit';
+  return {
+    entries: storage.listIndexes(),
+    dir: storage.indexesDir().split(path.sep).join('/'),
+    policy: `${idle}; ${quota}; an index whose project folder is gone goes by the same age rule`,
+  };
+};
+
+// Fold a project path the way the store compares them (separators, trailing slash, case on Windows).
+function foldPath(value) {
+  const folded = String(value).trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  return process.platform === 'win32' ? folded.toLowerCase() : folded;
+}
+
+/**
+ * `clean`: remove indexes on request. Without `confirm: true` nothing is deleted; the call
+ * lists what would go, so the model can show it and ask first.
+ */
+async function cleanTool(p, context, owned) {
+  const storage = context.storage ?? graphStorage;
+  const config = context.config ?? {};
+  const current = projectKey(context.root);
+  const entries = storage.listIndexes();
+  const target = p.clean;
+  let remove = [];
+  if (target === 'current') {
+    // Closing the indexer waits for a build in flight (a minute or more on a large project),
+    // and the index would only be deleted when it is finished: refuse instead of hanging.
+    const live = typeof context.indexer?.status === 'function' ? context.indexer.status() : null;
+    if (live?.building === true) {
+      return text(`# status clean=current\nthe index of this project is being built in this session (${count(live.filesDone)} of ${count(live.filesTotal)} files); call again once codegraph_status says ready`);
+    }
+    const mine = entries.find((entry) => entry.key === current);
+    if (mine) remove = [{ ...mine, reason: 'requested' }];
+  } else if (target === 'project') {
+    const wanted = foldPath(p.project ?? '');
+    const hit = entries.find((entry) => entry.key === wanted || (entry.root && foldPath(entry.root) === wanted));
+    if (!hit) {
+      return text(`# status clean=project\nno index of ${JSON.stringify(String(p.project ?? ''))} in this store; codegraph_status (storage=true) lists them`);
+    }
+    if (hit.key === current) return text(`# status clean=project\n${JSON.stringify(String(p.project ?? ''))} is the project of this session: use clean="current"`);
+    remove = [{ ...hit, reason: 'requested' }];
+  } else {
+    remove = storage.planSweep(entries, {
+      keep: [current],
+      all: target === 'all',
+      maxIdleDays: config.maxIdleDays ?? 0,
+      maxTotalBytes: (config.maxTotalMB ?? 0) * 1024 * 1024,
+    }).remove;
+  }
+  const input = { target, remove, total: entries.length, done: false };
+  // An index a live process holds is never a candidate; for "all" and "stale" the user should
+  // still see that it exists and why it stayed.
+  const held = entries.filter((entry) => entry.inUse && entry.key !== current);
+  if (p.confirm !== true) return text(render.renderClean({ ...input, busy: target === 'all' || target === 'stale' ? held : [] }));
+
+  const removed = [];
+  const busy = [];
+  for (const entry of remove) {
+    try {
+      // This session's own index: close the handle first, or Windows keeps the files locked.
+      if (entry.key === current) await context.indexer?.close?.();
+      (storage.removeListed(entry) ? removed : busy).push(entry);
+    } catch (err) {
+      busy.push({ ...entry, error: err?.code ?? String(err?.message ?? err) });
+      process.stderr.write(`codegraph: could not remove the index of ${entry.root ?? entry.key} (${err?.message ?? err})\n`);
+    }
+  }
+  // The process context held the closed indexer: the next call has to build a new one.
+  if (owned && removed.some((entry) => entry.key === current)) await resetContext();
+  return text(render.renderClean({ ...input, removed, busy: [...held, ...busy], done: true }));
+}
+
+async function statusTool(p, context, owned = false) {
+  if (p.clean !== undefined) return cleanTool(p, context, owned);
   const refresh = p.refresh === true;
-  const { status, syncError } = await prepare(context, { refresh });
-  return text(render.renderStatus(status, { refresh, syncError }));
+  const { status, syncError, off } = await prepare(context, { refresh });
+  // Who switched indexing off decides where the user is told to turn it back on.
+  const offBy = off ? context.config.autoIndexOffBy ?? 'config' : null;
+  const meta = { refresh, syncError, offBy };
+  if (p.storage === true) meta.storage = storageOf(context);
+  return text(render.renderStatus(status, meta));
 }
 
 async function lookupTool(p, context) {
-  const { status, syncError } = await prepare(context);
-  const freshness = freshnessText(status, syncError);
+  const { status, syncError, off } = await prepare(context);
+  const freshness = freshnessText(status, syncError, { off });
   const budget = budgetOf(context, p.budget, 'lookup');
   const { operation } = p;
   const file = normalizePath(context.root, p.file);
@@ -331,8 +453,8 @@ async function lookupTool(p, context) {
 }
 
 async function mapTool(p, context) {
-  const { status, syncError } = await prepare(context);
-  const freshness = freshnessText(status, syncError);
+  const { status, syncError, off } = await prepare(context);
+  const freshness = freshnessText(status, syncError, { off });
   const budget = budgetOf(context, p.budget, 'map');
   const target = normalizePath(context.root, p.path);
   if (status?.state === 'empty') {
