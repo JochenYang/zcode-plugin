@@ -1,11 +1,11 @@
 {
   "name": "zcode-plugin",
-  "description": "Personal ZCode plugin collection: git-workflow (conventional commits), dev-workflow (development flow skills), guardrails (safety hooks) and websearch (keyless multi-engine search).",
+  "description": "Personal ZCode plugin collection: git-conventions (commit message guard), dev-workflow (development flow skills), guardrails (safety hooks) and websearch (keyless multi-engine search).",
   "plugins": [
     {
-      "name": "git-workflow",
-      "version": "0.1.5",
-      "description": "Conventional commit workflow: /gcommit generates spec-compliant commit messages, /gpr writes PR descriptions, /gchangelog builds changelogs; a PostToolUse hook checks the message after each commit.",
+      "name": "git-conventions",
+      "version": "0.1.0",
+      "description": "Commit message guard: a PreToolUse hook reads the message out of each git commit command and denies it before git runs when it breaks the convention - <type>(<scope>): <subject> within 50 characters, body as dash bullets ending with a Verified: line. Needs node on PATH.",
       "author": {
         "name": "JochenYang"
       },
@@ -14,10 +14,10 @@
         "git",
         "commit",
         "conventional-commits",
-        "changelog"
+        "hooks"
       ],
       "icon": "https://static.geluman.cn/icon/icon.png",
-      "source": "./plugins/git-workflow"
+      "source": "./plugins/git-conventions"
     },
     {
       "name": "dev-workflow",

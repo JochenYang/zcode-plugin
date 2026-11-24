@@ -14,6 +14,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -45,7 +46,8 @@ BUILTIN_AGENTS = {"general-purpose", "Explore"}
 # scannable next to the others.
 AGENT_DESCRIPTION_LIMIT = 200
 # Mechanisms this repo removed on purpose; a mention means a stale reference.
-STALE_MARKERS = ["Anti-rationalization", "AR-1", "KIMI_SKILL_DIR", "git_conventions", "whenToUse"]
+STALE_MARKERS = ["Anti-rationalization", "AR-1", "KIMI_SKILL_DIR", "git_conventions", "whenToUse",
+                 "gcommit", "git-workflow"]
 
 
 def check(name, ok, detail=""):
@@ -198,8 +200,11 @@ def check_agent_descriptions():
 
 def check_stale_markers():
     hits = []
+    # Local scratch and plan directories are not part of the repository even
+    # when they sit inside it, so what they mention is nobody's drift.
+    skipped = {".git", "node_modules", ".tmp", ".devflow"}
     for path in glob.glob(os.path.join(ROOT, "**", "*"), recursive=True):
-        if not os.path.isfile(path) or ".git" in path or "node_modules" in path:
+        if not os.path.isfile(path) or skipped & set(os.path.normpath(path).split(os.sep)):
             continue
         if path.endswith((".png", ".ico", "check-consistency.py", "test-hooks.py", "agents-sync.md")):
             continue
@@ -211,7 +216,7 @@ def check_stale_markers():
         for marker in STALE_MARKERS:
             if marker in text:
                 hits.append(f"{rel}: {marker}")
-        # $ARGUMENTS is legitimate in git-workflow commands, not in skills.
+        # $ARGUMENTS is legitimate in slash commands, not in skills.
         if "$ARGUMENTS" in text and os.sep + "dev-workflow" in path:
             hits.append(f"{rel}: $ARGUMENTS")
     check("no stale references", not hits, "; ".join(hits))
@@ -234,6 +239,34 @@ def check_shell_syntax():
         if proc.returncode != 0:
             bad.append(f"{os.path.relpath(path, ROOT)}: {proc.stderr.strip()}")
     check("hook shell syntax", not bad, "; ".join(bad))
+
+
+def check_hook_scripts():
+    """Every script a hooks.json points at must exist and parse.
+
+    A hook whose script is missing or broken fails silently at runtime, and
+    for a hook-only plugin that is the whole plugin."""
+    missing, broken = [], []
+    node = shutil.which("node")
+    prefix = "${ZCODE_PLUGIN_ROOT}/"
+    for path in glob.glob(os.path.join(ROOT, "plugins/*/hooks/hooks.json")):
+        plugin = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        for groups in load(os.path.relpath(path, ROOT)).get("hooks", {}).values():
+            for group in groups:
+                for hook in group.get("hooks", []):
+                    for arg in hook.get("args", []):
+                        if not arg.startswith(prefix):
+                            continue
+                        target = os.path.join(ROOT, "plugins", plugin, arg[len(prefix):])
+                        if not os.path.isfile(target):
+                            missing.append(f"{plugin}: {arg}")
+                        elif node and target.endswith(".mjs"):
+                            proc = subprocess.run(["node", "--check", target], capture_output=True, text=True)
+                            if proc.returncode != 0:
+                                broken.append(f"{plugin}/{os.path.basename(target)}: "
+                                              f"{proc.stderr.strip()[:120]}")
+    check("hook scripts resolve", not missing, "; ".join(missing))
+    check("hook scripts parse", not broken, "; ".join(broken))
 
 
 def check_skill_references():
@@ -282,7 +315,7 @@ def main():
     for probe in (check_json, check_versions, check_marketplace_sources,
                   check_agent_count, check_frontmatter, check_agent_descriptions,
                   check_stale_markers, check_line_endings, check_shell_syntax,
-                  check_skill_references):
+                  check_hook_scripts, check_skill_references):
         probe()
     if FAILS:
         print(f"\n{len(FAILS)} CHECK(S) FAILED: {', '.join(FAILS)}")

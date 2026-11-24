@@ -19,13 +19,13 @@
 
 | 插件 | 版本 | 说明 |
 |---|---|---|
-| `plugins/git-workflow` | 0.1.5 | Git 工作流：`/gcommit` 规范提交、`/gpr` PR 描述、`/gchangelog` 变更日志；`PostToolUse` 钩子在提交后校验消息 |
+| `plugins/git-conventions` | 0.1.0 | 提交信息规范钩子：`PreToolUse` 在 git 运行前校验 `git commit` 写下的提交信息（标题格式与 50 字符上限、正文 `-` 列表与末尾 `Verified:` 行），不合规直接拒绝 |
 | `plugins/dev-workflow` | 0.6.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 22 个专项子智能体自动安装到 `~/.zcode/agents` |
 | `plugins/guardrails` | 0.2.0 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.1.6 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 
-四个插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
+各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
 ## 安装
 
@@ -33,7 +33,7 @@
 
 1. 打开 ZCode **设置 → 插件**，右上角「创建/添加」→ **添加插件市场**，选 **GitHub 源**
 2. 填仓库：`JochenYang/zcode-plugin`（公开仓库，无需额外配置）
-3. 在列表中按需**启用** `git-workflow` / `dev-workflow` / `guardrails`
+3. 在列表中按需**启用** `git-conventions` / `dev-workflow` / `guardrails`
 4. `dev-workflow` 启用后，下次会话启动时 22 个子智能体会自动安装到 `~/.zcode/agents`
 
 **方式二：本地开发目录**
@@ -42,18 +42,21 @@
 2. 在「个人」分段按需启用
 3. 改完插件代码后回「市场源」面板刷新。注意：安装缓存以 `<插件名>/<version>` 为键，**改了插件必须同时提升 `plugin.json` 的 `version`**，否则刷新后仍是旧版本
 
-## git-workflow
+## git-conventions
 
-- `/gcommit` — 先做就绪检查（单一职责 / 敏感信息 / 验证证据 / 契约对照），检查通过后才 `git add`，再生成 `<type>(<scope>): <subject>` 消息，用户确认后提交
-- `/gcommit [scope]` — 指定 scope（如 `auth`、`api`）
-- `/gcommit --amend` — 修改上一次提交
-- `/gcommit --no-add` — 不自动 `git add`，只提交已暂存内容
-- `/gpr [--base <branch>]` — 基于当前分支与基础分支的差异生成 PR 描述（摘要 / 分组变更 / 验证 / 风险）
-- `/gchangelog [--from <ref> --to <ref> | --count <n>] [--file <path>]` — 按版本 tag 分组生成 changelog；带 `--file` 时先预览再合并写入
+在提交落库之前拦住不合规的提交信息。一个 `PreToolUse` 钩子挂在 Bash 上：命令里有带新写信息的 `git commit` 时，先取出提交信息按规范校验，不合规就直接拒绝并说明原因，git 根本不会运行。相比「提交之后再提醒」，它不依赖模型自觉去改。
 
-提交消息用 `git commit -F -` + heredoc 写入，以保证空行与 bullet 布局不被破坏（多个 `-m` 会把每段压成单行）。
+| 部分 | 要求 |
+|---|---|
+| 标题 | `<type>(<scope>): <subject>`；type 取 `feat` `fix` `docs` `style` `refactor` `perf` `test` `chore` `build` `ci` `revert`，scope 可省略，冒号前可带 `!` 表示破坏性变更；英文、首字母小写、不以句号结尾、不超过 50 字符 |
+| 正文（可省略） | 每行一条 `- ` 开头的改动点，缩进的续行除外；末尾一行 `Verified: <验证结论>`，结论折行也算。`Co-authored-by:` 这类 trailer 不算列表项，会被拒 |
 
-`PostToolUse` 钩子只在这次 Bash 调用确实是 `git commit`、且 HEAD 提交在 120 秒内产生时才校验，校验 type/scope 格式、50 字符上限和结尾句号；不合规时在会话中提醒，**不拦截提交**。
+- 认得的写法：`-m "…"`（可多个）、`-F <文件>`、`-F -` 配 heredoc 或 here-string；`cd … &&`、`git -C <目录>`、`-am` 这类合并短选项；`if`、`for`、`sudo`、`eval`、子 shell 里的提交；同一行里先赋值的变量（`MSG="…"; git commit -m "$MSG"`）与 `"$(cat <<'MSG' … MSG)"`。路径按 shell 的规则解析：相对路径以 `cd` 或 `git -C` 之后的目录为准，Git Bash 风格的 `/d/…` 和 `~` 也能认。
+- 不校验的情况：没有新写信息的提交（不带信息的 `git commit`——它从不从标准输入读消息、`--amend --no-edit`、`-C`、`--fixup`）；消息原文里还留着解析不了的变量或命令替换；读不到的 `-F` 文件；喂给 `bash`/`sh` 的脚本正文和 `xargs` 里的提交。规范钩子永远不该成为提交失败的原因，这些一律放行。
+- 合并、revert 产生的提交不经过 `git commit`，不校验。`--no-verify` 绕不过它，那是 git 自己的钩子开关。
+- 只在 ZCode 的 Bash 工具里生效；终端或 IDE 里提交不经过它。完全访问模式下同样拦截。
+- 需要 PATH 里有 Node 14 及以上，钩子没有内置回退，没有时它静默不运行。
+- 「英文祈使」无法机械判定，只检查首字母小写。
 
 ## dev-workflow
 
@@ -80,9 +83,9 @@
 
 多轮审查收敛：审查进入第二轮，或改动为高风险时，`reviewer` 只产出 findings 与证据，主会话逐条核实并把裁决写进 `.devflow/<slug>/review-<round>.json`，`scripts/review-gate.mjs` 按八道闸门判出 `converged` / `needs_user_confirmation` / `stop_max_rounds` / `continue`。存在状态文件时，`commit-review` 只在最新一轮 `converged` 后放行。
 
-推荐生命周期：`change-plan → 实现 → test-changed → review → gcommit → release-check → doc-gen`
+推荐生命周期：`change-plan → 实现 → test-changed → review → 提交 → release-check → doc-gen`
 
-提交前检查已并入 `/gcommit`；`commit-review` 保留给「一批改动需要拆成多个提交」的场景。
+提交前的改动范围检查用 `commit-review` skill；提交信息由 `git-conventions` 插件的钩子在提交前校验。
 
 ## guardrails
 
@@ -171,6 +174,7 @@ plugins/<plugin-name>/
 python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、agent 描述、引用、行尾、shell 语法
 python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，116 个用例（含权限模式维度）
 python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
+node --test plugins/git-conventions/tests/*.test.mjs  # 提交信息钩子：认得的命令写法、规范各条规则、读不出消息时放行
 python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、清理插件已下架的、兼容旧 state
 python plugins/dev-workflow/tests/test-review-gate.py  # 多轮审查闸门脚本：八道闸门、字段交叉校验与不合法状态的退出码（需要 node）
 ```

@@ -19,13 +19,13 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 
 | Plugin | Version | Description |
 |---|---|---|
-| `plugins/git-workflow` | 0.1.5 | Git workflow: `/gcommit` conventional commits, `/gpr` PR descriptions, `/gchangelog` changelogs; a `PostToolUse` hook checks the message after each commit |
+| `plugins/git-conventions` | 0.1.0 | Commit message guard: a `PreToolUse` hook validates the message a `git commit` writes before git runs (subject format and the 50-character limit, body as `-` bullets ending with a `Verified:` line) and denies a non-compliant one |
 | `plugins/dev-workflow` | 0.6.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + a gated multi-round review protocol + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
 | `plugins/guardrails` | 0.2.0 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
 | `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
 
-The four plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
+The plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
 
 ## Installation
 
@@ -33,7 +33,7 @@ The four plugins are independent and can be enabled separately. `guardrails` blo
 
 1. Open ZCode **Settings → Plugins**, click **Add marketplace** (top-right), choose the **GitHub** source
 2. Enter the repo: `JochenYang/zcode-plugin` (public, no extra config needed)
-3. Enable whichever of `git-workflow` / `dev-workflow` / `guardrails` you want
+3. Enable whichever of `git-conventions` / `dev-workflow` / `guardrails` you want
 4. After enabling `dev-workflow`, the 22 subagents are automatically installed into `~/.zcode/agents` on the next session start
 
 **Option 2: Local development directory**
@@ -42,18 +42,21 @@ The four plugins are independent and can be enabled separately. `guardrails` blo
 2. Enable what you need from the personal section
 3. After editing plugin code, refresh the marketplace panel. Note that the install cache is keyed by `<plugin>/<version>`, so **any change must also bump `version` in `plugin.json`** or the refresh keeps serving the old copy
 
-## git-workflow
+## git-conventions
 
-- `/gcommit` — runs the readiness check first (single responsibility / sensitive content / verification evidence / contract alignment), stages only after it passes, then generates a `<type>(<scope>): <subject>` message and commits after confirmation
-- `/gcommit [scope]` — specify a scope (e.g. `auth`, `api`)
-- `/gcommit --amend` — amend the last commit
-- `/gcommit --no-add` — commit only what is already staged
-- `/gpr [--base <branch>]` — PR description from the diff against the base branch (summary / grouped changes / verification / risks)
-- `/gchangelog [--from <ref> --to <ref> | --count <n>] [--file <path>]` — changelog grouped by version tag; with `--file` it previews before merging into the file
+Stops a non-compliant commit message before git records it. A `PreToolUse` hook on Bash: when a command carries a `git commit` that writes a new message, the hook extracts the message, checks it against the convention and denies the call with the reason, so git never runs. Unlike a reminder after the fact, it does not depend on the model going back to fix anything.
 
-The message is written with `git commit -F -` plus a heredoc so the blank line and bullet layout survive intact — repeated `-m` flags collapse each section into one unwrapped paragraph.
+| Part | Requirement |
+|---|---|
+| Subject | `<type>(<scope>): <subject>` with type one of `feat` `fix` `docs` `style` `refactor` `perf` `test` `chore` `build` `ci` `revert`, an optional scope and an optional `!` before the colon for a breaking change; English, lowercase first letter, no trailing period, at most 50 characters |
+| Body (optional) | one `- ` bullet per change, indented continuation lines aside; ends with a `Verified: <what was run>` line, which may wrap. A trailer such as `Co-authored-by:` is not a bullet and is denied |
 
-The `PostToolUse` hook only runs when the Bash call really was a `git commit` and HEAD is less than 120 seconds old. It checks the type/scope format, the 50-character limit and a trailing period, then reports in-session. It never blocks the commit.
+- Recognised forms: `-m "…"` (one or more), `-F <file>`, `-F -` fed by a heredoc or a here-string; `cd … &&`, `git -C <dir>`, clusters such as `-am`; a commit inside `if`, `for`, `sudo`, `eval` or a subshell; a variable assigned earlier on the same line (`MSG="…"; git commit -m "$MSG"`) and `"$(cat <<'MSG' … MSG)"`. Paths resolve the way the shell would: relative ones against the directory after `cd` or `git -C`, and Git Bash's `/d/…` and `~` are understood.
+- Not judged: a commit that writes no new message (a bare `git commit`, which never takes its message from stdin, `--amend --no-edit`, `-C`, `--fixup`); a message that still holds a variable or command substitution this hook cannot resolve; an `-F` file that cannot be read; a script fed to `bash`/`sh` and anything behind `xargs`. A convention guard must never be the reason a commit fails, so these all pass.
+- Merge and revert commits never go through `git commit` and are not judged. `--no-verify` does not bypass it: that switch belongs to git's own hooks.
+- It only applies to commits made through ZCode's Bash tool; a terminal or IDE commit does not pass through it. Full access mode does not turn it off either.
+- It needs Node 14 or later on PATH. Hooks get no built-in fallback, so without it the hook silently does not run.
+- "English imperative" cannot be checked mechanically; only the lowercase first letter is.
 
 ## dev-workflow
 
@@ -80,9 +83,9 @@ Core mechanics: `change-plan` writes the plan and acceptance criteria to `.devfl
 
 Multi-round review convergence: once a review reaches its second round, or the change is high risk, `reviewer` only produces findings and evidence, the main session verifies each one and writes its decision to `.devflow/<slug>/review-<round>.json`, and `scripts/review-gate.mjs` decides `converged` / `needs_user_confirmation` / `stop_max_rounds` / `continue` through eight gates. When a state file exists, `commit-review` only passes once the latest round is `converged`.
 
-Recommended lifecycle: `change-plan → implement → test-changed → review → gcommit → release-check → doc-gen`
+Recommended lifecycle: `change-plan → implement → test-changed → review → commit → release-check → doc-gen`
 
-Pre-commit checks now live in `/gcommit`; `commit-review` is kept for the case where one batch of changes needs to become several commits.
+The pre-commit change check is the `commit-review` skill; the commit message itself is validated by the `git-conventions` plugin's hook before git runs.
 
 ## guardrails
 
@@ -171,6 +174,7 @@ Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them a
 python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 116 cases including the permission-mode dimension
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
+node --test plugins/git-conventions/tests/*.test.mjs  # the commit message hook: recognised command forms, every rule, and passing on what cannot be read
 python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
 python plugins/dev-workflow/tests/test-review-gate.py  # the multi-round review gate: eight gates, cross-checks between fields, and the exit codes of an invalid state (needs node)
 ```

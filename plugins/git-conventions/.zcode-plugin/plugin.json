@@ -1,0 +1,9 @@
+{
+  "name": "git-conventions",
+  "version": "0.1.0",
+  "description": "Commit message guard for ZCode: a PreToolUse hook reads the message out of each git commit command and denies it before git runs when it breaks the convention - <type>(<scope>): <subject> within 50 characters, body as dash bullets ending with a Verified: line. Needs node on PATH.",
+  "author": {
+    "name": "JochenYang"
+  },
+  "license": "MIT"
+}
