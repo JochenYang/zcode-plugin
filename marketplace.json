@@ -6,6 +6,9 @@
       "name": "git-conventions",
       "version": "0.1.0",
       "description": "Commit message guard: a PreToolUse hook reads the message out of each git commit command and denies it before git runs when it breaks the convention - <type>(<scope>): <subject> within 50 characters, body as dash bullets ending with a Verified: line. Needs node on PATH.",
+      "description_i18n": {
+        "zh-CN": "提交信息规范钩子：PreToolUse 钩子从每条 git commit 命令里读出提交信息，不符合规范就在 git 运行前拦下——标题形如 feat(scope): subject、不超过 50 字符，正文用 - 列表、末行是 Verified:。需要 PATH 里有 node。"
+      },
       "author": {
         "name": "JochenYang"
       },
@@ -23,6 +26,9 @@
       "name": "dev-workflow",
       "version": "0.6.0",
       "description": "Daily development workflow: 7 flow skills (change-plan, debug, test-changed, review, commit-review, release-check, doc-gen), task-level plan files under .devflow and docs/plans, a gated multi-round review protocol, /handoff session contract persistence, a SessionStart repo snapshot, and 22 specialist subagents auto-installed into ~/.zcode/agents.",
+      "description_i18n": {
+        "zh-CN": "日常开发流程：7 个流程 skill（change-plan、debug、test-changed、review、commit-review、release-check、doc-gen），任务级计划文件落在 .devflow 与 docs/plans，带闸门的多轮审查收敛协议，/handoff 会话契约持久化，SessionStart 仓库快照，另有 22 个专职子智能体自动装进 ~/.zcode/agents。"
+      },
       "author": {
         "name": "JochenYang"
       },
@@ -41,6 +47,9 @@
       "name": "guardrails",
       "version": "0.2.1",
       "description": "Deterministic safety hooks: blocks irreversible shell commands (POSIX, cmd.exe and PowerShell) and hardcoded credentials, routes publishing, deploys and migrations to a confirmation prompt. The prompt tier steps aside in full access mode; the blocks never do.",
+      "description_i18n": {
+        "zh-CN": "确定性安全护栏：硬拦不可逆的 shell 命令（POSIX、cmd.exe、PowerShell）与硬编码密钥，发布、部署、迁移转为确认弹窗。确认级在完全访问模式下让行，硬拦从不让行。"
+      },
       "author": {
         "name": "JochenYang"
       },
