@@ -24,7 +24,7 @@
     },
     {
       "name": "dev-workflow",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "description": "Daily development workflow: 7 flow skills (change-plan, debug, test-changed, review, commit-review, release-check, doc-gen), task-level plan files under .devflow and docs/plans, a gated multi-round review protocol, /handoff session contract persistence, a SessionStart repo snapshot, and 22 specialist subagents auto-installed into ~/.zcode/agents.",
       "description_i18n": {
         "zh-CN": "日常开发流程：7 个流程 skill（change-plan、debug、test-changed、review、commit-review、release-check、doc-gen），任务级计划文件落在 .devflow 与 docs/plans，带闸门的多轮审查收敛协议，/handoff 会话契约持久化，SessionStart 仓库快照，另有 22 个专职子智能体自动装进 ~/.zcode/agents。"
