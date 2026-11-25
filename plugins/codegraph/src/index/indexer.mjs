@@ -16,6 +16,7 @@ import { loadSpecs, specForPath } from '../languages/registry.mjs';
 import { hashSource } from '../extract/engine.mjs';
 import { applyDefaults } from './defaults.mjs';
 import { listFiles, compileExclude, isIndexablePath, gitIgnoredPaths } from './walker.mjs';
+import { isLinkDir, underLink } from './fsstat.mjs';
 import { acquireLock } from './lock.mjs';
 import { readStatus, writeStatus, defaultStatus, statusFromDatabase } from './status.mjs';
 import { consumeDirtyLog, statSweep, watch } from './sync.mjs';
@@ -558,7 +559,7 @@ export class Indexer {
       const row = getFileByPath(this.#db, rel);
       let st;
       try {
-        st = fs.statSync(path.join(this.root, rel));
+        st = fs.lstatSync(path.join(this.root, rel));
       } catch {
         continue;
       }
@@ -850,12 +851,19 @@ export class Indexer {
       if (!this.#closed) markDirty(this.#db, batch.map(({ path }) => path));
       throw err;
     }
+    // One look per directory for the whole batch.
+    const linkDirs = new Map();
+    const isLink = (dir) => {
+      let verdict = linkDirs.get(dir);
+      if (verdict === undefined) linkDirs.set(dir, (verdict = isLinkDir(dir)));
+      return verdict;
+    };
     for (const { path: rel } of batch) {
       const abs = path.join(this.root, rel);
       let st;
       try {
-        // lstat, unlike the stat sweep: a symlink never enters the index (the
-        // walker skips it; a link can point outside the root or loop).
+        // lstat, as everywhere: a symlink never enters the index, nor does a file behind a
+        // directory link (it can point outside the root or loop).
         st = fs.lstatSync(abs);
       } catch {
         if (rows.get(rel) && deleteFile(this.#db, rel)) removed++;
@@ -865,7 +873,7 @@ export class Indexer {
       const spec = specForPath(rel, specs);
       // Same admission rules as the walker: a dirty entry (hook-written, so external
       // input) must not get node_modules, excluded or git-ignored files into the index.
-      if (st.isSymbolicLink() || !st.isFile() || !spec || st.size > this.config.maxFileBytes || !isIndexablePath(rel, this.#matchers) || ignored?.has(rel)) {
+      if (st.isSymbolicLink() || !st.isFile() || !spec || st.size > this.config.maxFileBytes || !isIndexablePath(rel, this.#matchers) || ignored?.has(rel) || underLink(this.root, abs, isLink)) {
         if (row && deleteFile(this.#db, rel)) removed++;
         continue;
       }

@@ -113,6 +113,53 @@ describe('listFiles (git repository)', () => {
     const listing = await listFiles(dir, { config: {}, specs });
     assert.deepEqual(listing.files.map((f) => f.path), ['x.ts']);
   });
+
+  // A directory link can be made without a privilege on every platform; a link to a file needs
+  // one on Windows, where this suite runs without it — that half is then reported, not exercised.
+  const linkDir = (target, link) => fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const linkFile = (target, link) => fs.symlinkSync(target, link, 'file');
+
+  test('a link is not a file of the project: git lists a tracked link to a file like any other file, and on Windows walks into a directory link, however deep', async (t) => {
+    // Files right behind the link, and files directories below it: the link is the direct parent
+    // of the first kind only.
+    const elsewhere = project('walker-link-elsewhere', { 'hidden.ts': SAMPLE, 'deep/nested.ts': SAMPLE, 'deep/inner/deeper.ts': SAMPLE });
+    const dir = project('walker-link', { 'main.ts': SAMPLE, 'src/own.ts': SAMPLE });
+    git(dir, 'init', '-q');
+    linkDir(elsewhere, path.join(dir, 'linked'));
+    let fileLink = true;
+    try {
+      linkFile(path.join(elsewhere, 'hidden.ts'), path.join(dir, 'filelink.ts'));
+    } catch (err) {
+      if (err.code !== 'EPERM') throw err;
+      fileLink = false;
+    }
+    git(dir, 'add', '-A');
+    const listed = git(dir, 'ls-files', '-c', '-o', '--exclude-standard');
+    assert.match(listed, /linked/, 'git does list the link, one way or the other');
+    if (process.platform === 'win32') assert.match(listed, /linked\/deep\/inner\/deeper\.ts/, 'git walks into a junction all the way down');
+    const listing = await listFiles(dir, { config: {}, specs });
+    assert.deepEqual(listing.files.map((f) => f.path).sort(), ['main.ts', 'src/own.ts']);
+    if (!fileLink) t.diagnostic('a link to a file needs a right this machine does not give: that half is not exercised');
+  });
+
+  test('the plain walk does not enter a directory link either', async () => {
+    const elsewhere = project('walker-link-plain-elsewhere', { 'hidden.ts': SAMPLE, 'deep/nested.ts': SAMPLE });
+    const dir = project('walker-link-plain', { 'main.ts': SAMPLE });
+    linkDir(elsewhere, path.join(dir, 'linked'));
+    const listing = await listFiles(dir, { config: {}, specs });
+    assert.deepEqual(listing.files.map((f) => f.path), ['main.ts']);
+  });
+
+  test('a directory link with no file right behind it is still seen: every directory on the way is looked at', async () => {
+    // Nothing has this link for a direct parent, so looking at the directories right above the
+    // files alone would not find it.
+    const elsewhere = project('walker-link-buried-elsewhere', { 'deep/inner/only.ts': SAMPLE });
+    const dir = project('walker-link-buried', { 'main.ts': SAMPLE });
+    git(dir, 'init', '-q');
+    linkDir(elsewhere, path.join(dir, 'buried'));
+    const listing = await listFiles(dir, { config: {}, specs });
+    assert.deepEqual(listing.files.map((f) => f.path), ['main.ts']);
+  });
 });
 
 describe('gitIgnoredPaths', () => {

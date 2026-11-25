@@ -249,6 +249,23 @@ describe('Indexer', () => {
     assert.deepEqual(listIndexed(plainIx.db).map((r) => r.path).sort(), ['ignored.ts', 'src/a.ts']);
   });
 
+  test('a file behind a directory link never enters the index, neither in a build nor through a dirty entry', async () => {
+    // git walks into a junction on Windows and lists what is behind it as the project's own; a
+    // hook or the watcher reports a file edited through one. A link can leave the project or
+    // loop, so neither road admits it (CONTRACTS.md §9).
+    const elsewhere = project('ix-link-elsewhere', { 'hidden.ts': SAMPLE.replace('parseConfig', 'parseConfigHidden'), 'deep/nested.ts': SAMPLE.replace('parseConfig', 'parseConfigNested') });
+    const dir = project('ix-link', { 'src/a.ts': SAMPLE });
+    git(dir, 'init', '-q');
+    fs.symlinkSync(elsewhere, path.join(dir, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
+    const ix = create(dir, { minFilesToAutoIndex: 1 });
+    await ix.buildAll();
+    assert.deepEqual(listIndexed(ix.db).map((r) => r.path), ['src/a.ts'], 'the build leaves both out, the one right behind the link and the one below it');
+    markDirty(ix.db, ['linked/hidden.ts', 'linked/deep/nested.ts']);
+    await ix.ensureFresh();
+    assert.deepEqual(listIndexed(ix.db).map((r) => r.path), ['src/a.ts']);
+    assert.equal(ix.status().dirty, 0, 'dropped, not left to be retried');
+  });
+
   test('same content with a new mtime only refreshes the fingerprint', async () => {
     const dir = project('ix-touch', { 'a.ts': SAMPLE });
     const ix = create(dir, { minFilesToAutoIndex: 1 });

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { specForPath } from '../languages/registry.mjs';
 import { applyDefaults } from './defaults.mjs';
-import { statMany } from './fsstat.mjs';
+import { statMany, underLink } from './fsstat.mjs';
 
 // Directory names that never contain indexable sources. Matched at any depth.
 export const IGNORED_DIRS = new Set([
@@ -256,12 +256,21 @@ export async function listFiles(root, { config, specs = [] } = {}) {
     wanted.push({ rel, abs: path.join(root, rel), lang: spec.id });
   }
 
-  const stats = await statMany(wanted.map((w) => w.abs));
+  // Every directory between a file and the root, once for the whole batch, then the files: both
+  // are lstat, so a link is seen for what it is. git lists a tracked link to a file like any
+  // other file, and on Windows it walks into a junction and lists what is behind it as the
+  // project's own — down any number of directories; neither is.
+  const ancestors = new Set();
+  for (const w of wanted) {
+    for (let dir = path.dirname(w.abs); dir !== root && dir.length > root.length; dir = path.dirname(dir)) ancestors.add(dir);
+  }
+  const [stats, dirs] = await Promise.all([statMany(wanted.map((w) => w.abs)), statMany([...ancestors])]);
   const files = [];
   for (const w of wanted) {
     const st = stats.get(w.abs);
-    // Vanished (deleted but still tracked), directory (gitlink) or oversized.
-    if (!st || !st.isFile() || st.size > cfg.maxFileBytes) continue;
+    // Vanished (deleted but still tracked), a link — itself, or a directory on the way — a
+    // directory (gitlink) or oversized.
+    if (!st || !st.isFile() || st.size > cfg.maxFileBytes || underLink(root, w.abs, (dir) => dirs.get(dir)?.isSymbolicLink() === true)) continue;
     files.push({ path: w.rel, abs: w.abs, lang: w.lang, size: st.size, mtimeMs: Math.trunc(st.mtimeMs) });
   }
   return { files, truncated, total };
