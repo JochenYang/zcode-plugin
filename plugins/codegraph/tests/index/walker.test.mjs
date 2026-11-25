@@ -2,7 +2,7 @@ import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { listFiles, compileExclude, isExcluded } from '../../src/index/walker.mjs';
+import { listFiles, compileExclude, isExcluded, gitIgnoredPaths } from '../../src/index/walker.mjs';
 import { loadSpecs } from '../../src/languages/registry.mjs';
 import { scratchDir, writeProject, git, rmrf, SAMPLE } from './_helpers.mjs';
 
@@ -112,6 +112,57 @@ describe('listFiles (git repository)', () => {
     const dir = project('walker-git-broken', { 'x.ts': SAMPLE, '.git': 'gitdir: nowhere\n' });
     const listing = await listFiles(dir, { config: {}, specs });
     assert.deepEqual(listing.files.map((f) => f.path), ['x.ts']);
+  });
+});
+
+describe('gitIgnoredPaths', () => {
+  // The rule of `git ls-files --exclude-standard` asked about single paths, for a file that
+  // reaches the index between two listings (CONTRACTS.md §9).
+  const seeded = (name) => {
+    const dir = project(name, {
+      'src/tracked.ts': SAMPLE,
+      'untracked.ts': SAMPLE,
+      'ignored.ts': SAMPLE,
+      'scratch/x.ts': SAMPLE,
+      '.gitignore': 'ignored.ts\nscratch/\n',
+    });
+    git(dir, 'init', '-q');
+    git(dir, 'add', 'src/tracked.ts');
+    return dir;
+  };
+  const sorted = async (root, asked) => [...(await gitIgnoredPaths(root, asked))].sort();
+
+  test('names the ignored paths among the ones asked about, whether or not they exist', async () => {
+    const dir = seeded('walker-check-ignore');
+    const asked = ['ignored.ts', 'scratch/x.ts', 'src/tracked.ts', 'untracked.ts', 'missing.ts', 'scratch/missing.ts'];
+    assert.deepEqual(await sorted(dir, asked), ['ignored.ts', 'scratch/missing.ts', 'scratch/x.ts']);
+    assert.deepEqual(await sorted(dir, ['src/tracked.ts', 'untracked.ts', 'with space/x.ts']), [], 'nothing ignored: git exits with 1');
+    fs.appendFileSync(path.join(dir, '.gitignore'), 'src/tracked.ts\n');
+    assert.deepEqual(await sorted(dir, ['src/tracked.ts']), [], 'a tracked file is not subject to .gitignore, as in the listing');
+  });
+
+  test('whether `Scratch/` is the ignored `scratch/` is decided by core.ignorecase, not by the platform', async () => {
+    // git writes that setting at init from what the file system does; a case-insensitive bind
+    // mount in a Linux container, or a case-sensitive APFS volume, both exist.
+    const dir = seeded('walker-check-ignore-case');
+    git(dir, 'config', 'core.ignorecase', 'false');
+    assert.deepEqual(await sorted(dir, ['Scratch/x.ts']), []);
+    git(dir, 'config', 'core.ignorecase', 'true');
+    assert.deepEqual(await sorted(dir, ['Scratch/x.ts']), ['Scratch/x.ts']);
+  });
+
+  test('nothing asked is an empty answer; no work tree or a git that cannot answer is null', async () => {
+    const dir = seeded('walker-check-ignore-none');
+    assert.deepEqual([...(await gitIgnoredPaths(dir, []))], []);
+    assert.deepEqual([...(await gitIgnoredPaths(dir, ['ignored.ts', 'a\u0000b']))], [], 'a NUL could forge a second path, so nothing is asked');
+    const plain = project('walker-check-ignore-plain', { 'ignored.ts': SAMPLE, '.gitignore': 'ignored.ts\n' });
+    assert.equal(await gitIgnoredPaths(plain, ['ignored.ts']), null, 'not a work tree');
+    const broken = project('walker-check-ignore-broken', { 'x.ts': SAMPLE, '.git': 'gitdir: nowhere\n' });
+    assert.equal(await gitIgnoredPaths(broken, ['x.ts']), null, 'git fails: unknown');
+    // git exits before it reads, so a payload past the pipe buffer meets a closed end. Without
+    // the stdin error handler that is an uncaught error event, and the server goes down with it.
+    const flood = Array.from({ length: 100_000 }, (_, i) => `d${i}/x.ts`);
+    assert.equal(await gitIgnoredPaths(broken, flood), null, 'a failing git is still unknown, however much it is asked');
   });
 });
 

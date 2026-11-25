@@ -17,6 +17,7 @@ export const IGNORED_DIRS = new Set([
 ]);
 
 const GIT_LS_FILES_TIMEOUT_MS = 60_000;
+const GIT_CHECK_IGNORE_TIMEOUT_MS = 15_000;
 const GIT_MAX_BUFFER = 256 * 1024 * 1024;
 
 const toRel = (p) => p.split(path.sep).join('/').replace(/^\.\//, '');
@@ -135,6 +136,53 @@ function gitListFiles(root) {
         resolve(stdout.split('\0').filter(Boolean));
       },
     );
+  });
+}
+
+/**
+ * The paths among `rels` that git ignores: the rule `listFiles` gets from
+ * `git ls-files --exclude-standard`, for a file that reaches the index between two listings
+ * (the watcher, a hook).
+ *
+ * `rels` must already be in the index's spelling (normalized by `normalizeDirtyPath` or
+ * `toRel`, '/' separated): git answers in its own spelling of what it was asked, and the
+ * caller looks its paths up in that answer. Tracked files are never reported, whatever
+ * .gitignore says, which is what `git ls-files -c` does too.
+ *
+ * @param {string} root
+ * @param {string[]} rels relative paths, '/' separated
+ * @returns {Promise<Set<string>|null>} the ignored paths, or null when git could not answer
+ *   (unavailable, failed or timed out, or the directory is not a work tree). The caller then
+ *   admits the path, as the listing's plain walk does where there is no git. Never rejects.
+ */
+export function gitIgnoredPaths(root, rels) {
+  return new Promise((resolve) => {
+    if (!Array.isArray(rels) || rels.length === 0 || rels.some((rel) => typeof rel !== 'string' || rel.length === 0 || rel.includes('\0'))) {
+      resolve(new Set());
+      return;
+    }
+    if (!fs.existsSync(path.join(root, '.git'))) {
+      resolve(null);
+      return;
+    }
+    const child = execFile(
+      'git',
+      ['-C', root, 'check-ignore', '-z', '--stdin'],
+      { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER, windowsHide: true, timeout: GIT_CHECK_IGNORE_TIMEOUT_MS },
+      (err, stdout) => {
+        // Exit status 0: some path is ignored. 1: none is. Anything else: git could not answer
+        // (no exit code at all means the timeout killed it).
+        if (err && err.code !== 1) {
+          process.stderr.write(`codegraph: git check-ignore failed in ${root} (exit ${err.code ?? err.signal}${err.killed ? ' after timeout' : ''}: ${err.message}); ignored paths cannot be told apart\n`);
+          resolve(null);
+          return;
+        }
+        resolve(new Set(String(stdout).split('\0').filter(Boolean)));
+      },
+    );
+    // A git that exits before reading closes its stdin; the failure is reported through the callback.
+    child.stdin.on('error', () => {});
+    child.stdin.end(`${rels.join('\0')}\0`);
   });
 }
 

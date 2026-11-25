@@ -11,7 +11,7 @@ import {
 } from '../../src/store/repo.mjs';
 import { dbPath, indexDir, lockPath, dirtyLogPath, statusPath } from '../../src/paths.mjs';
 import { PLUGIN_VERSION } from '../../src/version.mjs';
-import { PLUGIN, scratchDir, rmrf, writeProject, closeAll, touch, sleep, useScratchData, SAMPLE, BROKEN } from './_helpers.mjs';
+import { PLUGIN, scratchDir, rmrf, writeProject, closeAll, touch, sleep, useScratchData, SAMPLE, BROKEN, git } from './_helpers.mjs';
 
 const data = useScratchData('data-indexer');
 const indexers = [];
@@ -211,6 +211,42 @@ describe('Indexer', () => {
     const st = readStatus(dir);
     assert.equal(st.filesTotal, 1);
     assert.equal(st.symbols, ix.db.prepare('SELECT COUNT(*) AS c FROM symbols').get().c);
+  });
+
+  test('a file that .gitignore ignores never enters the index through a dirty entry, and one it took up since leaves at its next sync', async () => {
+    // The listing keeps ignored files out of a build. Between two listings a file arrives as a
+    // dirty entry (a hook, the watcher), and that road applies the same rule (CONTRACTS.md §9).
+    const dir = project('ix-gitignore', { 'src/a.ts': SAMPLE, '.gitignore': 'scratch/\nignored.ts\n' });
+    git(dir, 'init', '-q');
+    git(dir, 'add', 'src/a.ts'); // tracked: stays whatever .gitignore says later, as in the listing
+    const ix = create(dir, { minFilesToAutoIndex: 1 });
+    await ix.buildAll();
+    assert.deepEqual(listIndexed(ix.db).map((r) => r.path), ['src/a.ts']);
+    const variant = (name) => SAMPLE.replace('parseConfig', name);
+    writeProject(dir, { 'scratch/new.ts': variant('parseConfigScratch'), 'ignored.ts': variant('parseConfigIgnored'), 'src/new.ts': variant('parseConfigNew') });
+    markDirty(ix.db, ['scratch/new.ts', 'ignored.ts', 'src/new.ts']);
+    await ix.ensureFresh();
+    assert.deepEqual(listIndexed(ix.db).map((r) => r.path).sort(), ['src/a.ts', 'src/new.ts']);
+    assert.equal(ix.status().dirty, 0, 'the ignored ones are dropped, not left to be retried');
+    assert.equal(symbolsInFile(ix.db, 'src/new.ts').some((s) => s.name === 'parseConfigNew'), true);
+    assert.equal(symbolsInFile(ix.db, 'ignored.ts').length, 0);
+
+    // .gitignore takes up a file the index holds: its next sync drops it, without waiting for
+    // the next listing; the tracked one is not reported by git and stays.
+    writeProject(dir, { '.gitignore': 'scratch/\nignored.ts\nsrc/new.ts\nsrc/a.ts\n' });
+    markDirty(ix.db, ['src/new.ts', 'src/a.ts']);
+    await ix.ensureFresh();
+    assert.deepEqual(listIndexed(ix.db).map((r) => r.path), ['src/a.ts']);
+    assert.equal(symbolsInFile(ix.db, 'src/new.ts').length, 0, 'its symbols went with its row');
+
+    // Without git there is no .gitignore to ask: the plain walk admits the file, and so does this road.
+    const plain = project('ix-gitignore-nogit', { 'src/a.ts': SAMPLE, '.gitignore': 'ignored.ts\n' });
+    const plainIx = create(plain, { minFilesToAutoIndex: 1 });
+    await plainIx.buildAll();
+    writeProject(plain, { 'ignored.ts': variant('parseConfigIgnored') });
+    markDirty(plainIx.db, ['ignored.ts']);
+    await plainIx.ensureFresh();
+    assert.deepEqual(listIndexed(plainIx.db).map((r) => r.path).sort(), ['ignored.ts', 'src/a.ts']);
   });
 
   test('same content with a new mtime only refreshes the fingerprint', async () => {

@@ -15,7 +15,7 @@ import {
 import { loadSpecs, specForPath } from '../languages/registry.mjs';
 import { hashSource } from '../extract/engine.mjs';
 import { applyDefaults } from './defaults.mjs';
-import { listFiles, compileExclude, isIndexablePath } from './walker.mjs';
+import { listFiles, compileExclude, isIndexablePath, gitIgnoredPaths } from './walker.mjs';
 import { acquireLock } from './lock.mjs';
 import { readStatus, writeStatus, defaultStatus, statusFromDatabase } from './status.mjs';
 import { consumeDirtyLog, statSweep, watch } from './sync.mjs';
@@ -834,6 +834,22 @@ export class Indexer {
     // the *next* sync, so re-reading the table in a loop would spin on it.
     const batch = takeDirty(this.#db, Number.MAX_SAFE_INTEGER);
     const jobs = [];
+    // Dirty paths come from the watcher or a hook, outside the listing that applies .gitignore,
+    // so git is asked about them, once per sync: a new path that is ignored never enters, and a
+    // path .gitignore took up since it was indexed leaves here rather than at the next listing.
+    // Tracked files are never reported, as in the listing.
+    const rows = new Map(batch.map(({ path: rel }) => [rel, getFileByPath(this.#db, rel)]));
+    const asked = batch
+      .filter(({ path: rel }) => specForPath(rel, specs) && isIndexablePath(rel, this.#matchers))
+      .map(({ path }) => path);
+    let ignored;
+    try {
+      ignored = await gitIgnoredPaths(this.root, asked);
+    } catch (err) {
+      // The batch is out of the dirty table already: put it back before the failure travels.
+      if (!this.#closed) markDirty(this.#db, batch.map(({ path }) => path));
+      throw err;
+    }
     for (const { path: rel } of batch) {
       const abs = path.join(this.root, rel);
       let st;
@@ -842,14 +858,14 @@ export class Indexer {
         // walker skips it; a link can point outside the root or loop).
         st = fs.lstatSync(abs);
       } catch {
-        if (getFileByPath(this.#db, rel) && deleteFile(this.#db, rel)) removed++;
+        if (rows.get(rel) && deleteFile(this.#db, rel)) removed++;
         continue;
       }
-      const row = getFileByPath(this.#db, rel);
+      const row = rows.get(rel);
       const spec = specForPath(rel, specs);
       // Same admission rules as the walker: a dirty entry (hook-written, so external
-      // input) must not get node_modules or excluded files into the index.
-      if (st.isSymbolicLink() || !st.isFile() || !spec || st.size > this.config.maxFileBytes || !isIndexablePath(rel, this.#matchers)) {
+      // input) must not get node_modules, excluded or git-ignored files into the index.
+      if (st.isSymbolicLink() || !st.isFile() || !spec || st.size > this.config.maxFileBytes || !isIndexablePath(rel, this.#matchers) || ignored?.has(rel)) {
         if (row && deleteFile(this.#db, rel)) removed++;
         continue;
       }
