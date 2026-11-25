@@ -31,14 +31,41 @@ const FOOTER_MIN_ROOM = 48;
 const CALLABLE_KINDS = new Set(['function', 'method', 'component', 'macro']);
 const TRUNCATION_HINT = 'hint: raise budget (max 4000) or limit (max 200) to see more rows';
 const SEARCH_EMPTY_HINT =
-  'hint: search matches symbol names and names that are used here without a definition; text, object keys in literals, ' +
-  'property reads (obj.field) in JS/TS and string literals belong to Grep; a word of one or two letters must be a whole word.';
+  'hint: search matches symbol names and names that are used here without a definition (calls, type names, and property reads ' +
+  'such as obj.field in JS/TS); text, object keys in literals, variables and parameters, and string literals belong to Grep; ' +
+  'a word of one or two letters must be a whole word.';
+// Nothing anywhere, except that the name is read as a property in more JS/TS files than a scan lists.
+const SEARCH_EMPTY_HUB_HINT =
+  'hint: no symbol, call or type has this name, and it is read as a property (obj.field) in more JS/TS files than a search lists. ' +
+  'Too common to point anywhere: Grep for it. Object keys in literals and words in strings are not in the graph either.';
 const SEARCH_NEXT_HINT =
   'next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); ' +
   'impact <name> shows what a change breaks.';
+const TAIL = 'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+// Rows of the index only: what became of the look in the source depends on why the scan has no row.
 const SEARCH_REFS_HINT =
-  'hint: no symbol carries this name; the rows are places that use it: calls and type names. ' +
-  'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+  'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ' +
+  `JS/TS property reads (obj.field) were looked for in the source: there were none. ${TAIL}`;
+const SEARCH_REFS_HUB_HINT =
+  'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ' +
+  `It is also read as a property (obj.field) in more JS/TS files than a search lists: too common to point anywhere. ${TAIL}`;
+const SEARCH_REFS_LIMIT_HINT =
+  'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ' +
+  `Its JS/TS property reads (obj.field) are not listed: more of them than a search parses at once, or more source than one scan reads. Grep for them. ${TAIL}`;
+const SEARCH_REFS_SKIPPED_HINT =
+  'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ' +
+  `JS/TS property reads (obj.field) were not looked for in the source this time: the scanner was not ready or its scan timed out, some files could not be read, or the query is not a single name. ${TAIL}`;
+// By `refs.skipped` (CONTRACTS.md §8): no reason is "none were found"; a reason that is not
+// here is a scan that never looked.
+const SEARCH_REFS_HINTS = new Map([[null, SEARCH_REFS_HINT], ['hub', SEARCH_REFS_HUB_HINT], ['limit', SEARCH_REFS_LIMIT_HINT]]);
+// Said whenever a total carries a +: what the mark means is written nowhere else in the output.
+const LOWER_BOUND_HINT = ' Totals with a + are lower bounds: more places exist than were read.';
+const SEARCH_SCAN_HINT =
+  'hint: no symbol carries this name; the rows are property reads (obj.name), found by scanning the JavaScript and TypeScript ' +
+  `source just now; the index had no call or type of that name. ${TAIL}`;
+const SEARCH_MIXED_HINT =
+  'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index, and property reads ' +
+  `(obj.name) found by scanning the JS/TS source just now. ${TAIL}`;
 const RELATIONS_EMPTY_HINT =
   'hint: confirm the name with operation=search; dynamic references (reflection, getattr, dynamic import) are never linked.';
 const NOT_FOUND_HINT =
@@ -511,6 +538,10 @@ function refEntry(row) {
 export function renderSearch(rows, meta = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const refs = meta.refs && typeof meta.refs === 'object' ? meta.refs : null;
+  // Where the rows come from: the index, a scan of the JS/TS source for property reads
+  // (`fromScan`), or both.
+  const fromScan = refs ? count(refs.fromScan) : 0;
+  const onlyScan = fromScan > 0 && count(refs.fromIndex) === 0;
   const relaxed = !refs && Array.isArray(meta.dropped) && meta.dropped.length > 0 && Array.isArray(meta.matched) && meta.matched.length > 0;
   const amount = (n, word) => `${count(n)}${refs?.capped ? '+' : ''} ${plural(count(n), word)}`;
   const listed = (names) => listOrClamp(names.map((name) => nameText(name, 40)), 3);
@@ -522,12 +553,17 @@ export function renderSearch(rows, meta = {}) {
   const summary = list.length === 0
     ? 'no matches'
     : refs
-      ? `no symbol carries this name; ${amount(refs.uses, 'use')} in ${amount(refs.files, 'file')} (${listed(refs.names ?? [])})${others}`
+      ? `no symbol carries this name; ${amount(refs.uses, onlyScan ? 'property read' : 'use')} in ${amount(refs.files, 'file')} (${listed(refs.names ?? [])})${others}`
       : relaxed
         ? `${list.length} partial ${plural(list.length, 'match', 'matches')} (no name has all words; best match: ${meta.matched.join(' + ')})`
         : `${list.length} ${plural(list.length, 'match', 'matches')}`;
   const entries = list.map((row) => (refs ? refEntry(row) : rowEntry(row)));
-  const hint = refs ? SEARCH_REFS_HINT : list.length === 0 ? SEARCH_EMPTY_HINT : SEARCH_NEXT_HINT;
+  // Rows of the index only: an empty answer of the scan is reported for what it was (a hub, a
+  // scan that stopped at a limit, or no look at all).
+  const indexHint = SEARCH_REFS_HINTS.get(refs?.skipped ?? null) ?? SEARCH_REFS_SKIPPED_HINT;
+  const hint = refs
+    ? (onlyScan ? SEARCH_SCAN_HINT : fromScan > 0 ? SEARCH_MIXED_HINT : indexHint) + (refs.capped ? LOWER_BOUND_HINT : '')
+    : list.length === 0 ? (meta.hub === true ? SEARCH_EMPTY_HUB_HINT : SEARCH_EMPTY_HINT) : SEARCH_NEXT_HINT;
   return finish({
     header: headerLine('search', argText([meta.query]), summary, meta),
     rows: entries,

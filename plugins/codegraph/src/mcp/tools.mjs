@@ -7,10 +7,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as graphQueries from '../graph/queries.mjs';
+import { scanPropertyReads } from '../graph/propertyReads.mjs';
 import * as graphMap from '../graph/map.mjs';
 import * as graphStorage from '../index/storage.mjs';
 import { DEFAULT_CONFIG, BUDGET_TOKENS_MAX, BUDGET_TOKENS_MIN } from '../config.mjs';
-import { displayPath, projectKey } from '../paths.mjs';
+import { displayPath, isInside, projectKey } from '../paths.mjs';
 import { getContext, resetContext } from './context.mjs';
 import * as render from '../render/text.mjs';
 
@@ -36,8 +37,9 @@ const PARAMETER = {
     description:
       'search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). ' +
       'When no name holds every word, the longest ones anchor a partial-match search, best match first. ' +
-      'When no symbol carries the name, search lists where it is used (calls and type names). ' +
-      'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph. Required for search.',
+      'When no symbol carries the name, search lists where it is used: calls and type names from the index, and for JS/TS the ' +
+      'property reads (obj.field) of that name, found by scanning the source. Variables and parameters, object keys in literals ' +
+      'and words in strings are not in the graph. Required for search.',
   },
   name: { type: 'string', description: 'symbol/callers/callees/impact only: bare symbol name. Required for those operations.' },
   file: {
@@ -414,8 +416,16 @@ async function lookupTool(p, context) {
   try {
     switch (operation) {
       case 'search': {
+        // A name that is only read as a property (`row.membershipKind`) is not in the index. When
+        // no symbol carries the name — the symbol search alone tells — the JS/TS source is
+        // scanned for it, in a worker, so this process keeps answering; the one `search` below
+        // then has both sources.
+        const ask = { query: p.query, kind: null, limit: limit + 1 };
         const info = {};
-        const rows = queries.search(db, { query: p.query, kind: null, limit: limit + 1 }, info);
+        const scan = queries.searchIsPartial(db, ask)
+          ? await scanPropertyReads({ root: context.root, db, query: p.query, maxFileBytes: context.config.maxFileBytes })
+          : null;
+        const rows = queries.search(db, ask, info, scan ? { propertyReads: () => scan } : undefined);
         return text(render.renderSearch(head(rows, limit), { ...meta, query: p.query, more: rows.length > limit, ...info }));
       }
       case 'symbol': {
@@ -489,10 +499,4 @@ function readBody(root, symbol) {
   } catch (err) {
     return { error: `cannot read ${rel} (${err?.code ?? message(err)}); the index may be stale` };
   }
-}
-
-function isInside(root, abs) {
-  const base = process.platform === 'win32' ? root.toLowerCase() : root;
-  const target = process.platform === 'win32' ? abs.toLowerCase() : abs;
-  return target === base || target.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
 }

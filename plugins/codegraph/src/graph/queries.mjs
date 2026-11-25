@@ -3,7 +3,7 @@
 // §8 / §11 (camelCase, `path` relative to the project root) so the renderer
 // needs no knowledge of the schema.
 
-import { findSymbolsByName, importsOfFile, searchRefs, searchSymbolsDetailed, symbolsInFile, usageCounts } from '../store/repo.mjs';
+import { findSymbolsByName, importsOfFile, isSecondaryPath, searchRefs, searchSymbolsDetailed, symbolsInFile, usageCounts } from '../store/repo.mjs';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 200;
@@ -76,44 +76,101 @@ function uniqueSymbol(db, { name, path = null, qual = null } = {}) {
 
 const bestResolution = (values) => values.reduce((best, v) => (RESOLUTION_RANK[v] ?? 0) > (RESOLUTION_RANK[best] ?? 0) ? v : best, values[0]);
 
+// One list out of the two sources of places that use a name (CONTRACTS.md §8): the rows of the
+// index and the rows a source scan found, in the order either keeps on its own — source files
+// before tests and scripts, then by path and line — with the index's row first where both have
+// the same place. Totals are summed; files are counted over every row of either, cut or not; a
+// cut in either is a cut of the whole. Neither has a row: null, unless one was cut or the scan
+// said why it has nothing (`skipped`), which is passed on so the caller knows the answer is
+// not "nothing" and the header does not claim a look that never happened.
+function mergePlaces(indexed, scan) {
+  const a = indexed?.rows.length > 0 ? indexed : null;
+  const b = scan?.rows.length > 0 ? scan : null;
+  const capped = Boolean(indexed?.capped || scan?.capped);
+  const skipped = b ? null : (scan?.skipped ?? null);
+  if (!a && !b) return capped || skipped ? { rows: [], uses: 0, files: 0, names: [], capped, skipped, fromIndex: 0, fromScan: 0 } : null;
+  if (!b) return { ...a, capped, skipped, fromIndex: a.rows.length, fromScan: 0 };
+  if (!a) return { ...b, capped, skipped, fromIndex: 0, fromScan: b.rows.length };
+  const place = (row) => [Number(isSecondaryPath(row.path)), row.path, row.start_line];
+  const compare = (p, q) => p[0] - q[0] || (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) || p[2] - q[2];
+  const rows = [
+    ...a.rows.map((row, i) => ({ row, source: 0, i })),
+    ...b.rows.map((row, i) => ({ row, source: 1, i })),
+  ]
+    .sort((x, y) => compare(place(x.row), place(y.row)) || x.source - y.source || x.i - y.i)
+    .map((entry) => entry.row);
+  const fileIds = new Set([...a.fileIds, ...b.fileIds]);
+  return {
+    rows,
+    uses: a.uses + b.uses,
+    files: fileIds.size,
+    fileIds: [...fileIds],
+    names: [...new Set([...a.names, ...b.names])],
+    capped,
+    skipped: null,
+    fromIndex: a.rows.length,
+    fromScan: b.rows.length,
+  };
+}
+
+// Whether a symbol search leaves the name to the places that use it: no symbol carries it, or
+// the symbols found only share words with it.
+const listsPlaces = (found) => found.rows.length === 0 || found.dropped.length > 0;
+
 /**
  * Symbols by name (CONTRACTS.md §8 `search`), best match first. When `info` is given it
  * receives the words the search matched and those it had to drop (`matched`, `dropped`).
  *
  * No symbol carries the name, or none carries all of its words: the rows are the places that
- * use such a name (a reference: a call, a type name, a name read the language keeps), and `info.refs`
- * says how many there are (`{ uses, files, names, capped, symbols, symbolCount }`; `symbols`
- * names up to three symbols that share a word with the name and `symbolCount` is how many the
- * search found, which is bounded by `limit`). That is
- * the name the T20 sessions went to grep for (`membershipKind`). A symbol that carries every
- * word outranks it, and so does a symbol that shares one word with a name used in more than
- * `REF_LEAD_MAX` places: where such a name is used says nothing about orientation. With a
- * `kind` only symbols qualify.
+ * use such a name, and `info.refs` says how many there are (`{ uses, files, names, capped,
+ * fromIndex, fromScan, skipped, symbols, symbolCount }`). That is the name the T20 sessions
+ * went to grep for (`membershipKind`). The places come from two sources, merged into one list:
+ * the index (a call, a type name, a read a language records) and, when the caller passed
+ * `extra.propertyReads`, a scan of the JS/TS source for a property read (`row.membershipKind`,
+ * CONTRACTS.md §8 "property reads"); `fromIndex` and `fromScan` count the rows of each, and
+ * `skipped` says why the scan has none: `not-asked` when the caller passed no scan; otherwise
+ * not ready, not a single name, a hub: read in more files than it lists, a limit: more hits or
+ * more bytes than one scan takes, or files it could not read. Rows are cut to
+ * `limit`; the totals are not. A symbol that carries
+ * every word outranks the places, and so does a symbol that shares one word with a name used
+ * in more than `REF_LEAD_MAX` places: where such a name is used says nothing about
+ * orientation. When nothing leads, `info.hub` is set for a name that is read as a property in
+ * more files than the scan lists. With a `kind` only symbols qualify.
  * @returns {{ id: number, kind: string, name: string, qual: string, path: string, startLine: number, endLine: number, signature: string|null, usage?: object }[]}
  *   or reference rows `{ kind, name, receiver, count, path, startLine, owner, ownerQual, ownerKind }`
  */
-export function search(db, { query, kind = null, limit = DEFAULT_LIMIT } = {}, info = null) {
+export function search(db, { query, kind = null, limit = DEFAULT_LIMIT } = {}, info = null, extra = null) {
   requireDb('search', db);
   if (typeof query !== 'string' || query.trim() === '') return [];
   const found = searchSymbolsDetailed(db, query, { limit: limitOf('search', limit), kind });
-  const partial = found.rows.length === 0 || found.dropped.length > 0;
-  const refs = !kind && partial ? searchRefs(db, query, { limit: limitOf('search', limit) }) : null;
-  if (refs?.rows.length > 0 && (found.rows.length === 0 || refs.uses <= REF_LEAD_MAX)) {
+  const partial = listsPlaces(found);
+  const indexed = !kind && partial ? searchRefs(db, query, { limit: limitOf('search', limit) }) : null;
+  // The scan is asked whether or not the index has the name: an index row may be a call or a
+  // read in another language, and the JS/TS property reads are still only in the source.
+  const scan = !kind && partial && extra?.propertyReads ? extra.propertyReads(query) : null;
+  const places = mergePlaces(indexed, scan);
+  // No scan was asked for: its having no row is not "none were found in the source".
+  if (places && !extra?.propertyReads) places.skipped = 'not-asked';
+  if (places?.rows.length > 0 && (found.rows.length === 0 || places.uses <= REF_LEAD_MAX)) {
     if (info) {
       info.refs = {
-        uses: refs.uses,
-        files: refs.files,
-        names: refs.names,
-        capped: refs.capped,
+        uses: places.uses,
+        files: places.files,
+        names: places.names,
+        capped: places.capped,
+        fromIndex: places.fromIndex,
+        fromScan: places.fromScan,
+        skipped: places.skipped,
         symbols: found.rows.slice(0, 3).map((row) => row.name),
         symbolCount: found.rows.length,
       };
     }
-    return refs.rows.map(refRow);
+    return places.rows.map(refRow).slice(0, limitOf('search', limit));
   }
   if (info) {
     info.matched = found.matched;
     info.dropped = found.dropped;
+    if (places?.skipped === 'hub') info.hub = true;
   }
   if (found.rows.length === 0) return [];
   const rows = found.rows.map(searchRow);
@@ -127,6 +184,20 @@ export function search(db, { query, kind = null, limit = DEFAULT_LIMIT } = {}, i
     if (counts) row.usage = counts;
   }
   return rows;
+}
+
+/**
+ * Whether `search` would list the places that use `query` rather than symbols (`searchIsPartial`
+ * is what `search` decides on). The symbol search alone decides it, so a caller can ask this,
+ * look for property reads when it is true (CONTRACTS.md §8 "property reads"), and then make the
+ * one `search` with both sources — instead of a first `search` only to find out.
+ *
+ * @returns {boolean}
+ */
+export function searchIsPartial(db, { query, kind = null, limit = DEFAULT_LIMIT } = {}) {
+  requireDb('searchIsPartial', db);
+  if (typeof query !== 'string' || query.trim() === '') return false;
+  return listsPlaces(searchSymbolsDetailed(db, query, { limit: limitOf('search', limit), kind }));
 }
 
 /**

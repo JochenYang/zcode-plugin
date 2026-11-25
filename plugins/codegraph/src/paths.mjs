@@ -102,3 +102,13 @@ export function displayPath(root, absolute) {
   const rel = path.relative(root, absolute);
   return rel.startsWith('..') || path.isAbsolute(rel) ? absolute.split(path.sep).join('/') : rel.split(path.sep).join('/');
 }
+
+// Whether `absolute` (already resolved) is `root` itself or below it: the check every read of a
+// path that came from the index makes. `root` is resolved first, so that its spelling (forward
+// slashes on Windows, a trailing separator) does not decide; case-folded where the file system is.
+export function isInside(root, absolute) {
+  const resolved = path.resolve(root);
+  const base = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  const target = process.platform === 'win32' ? absolute.toLowerCase() : absolute;
+  return target === base || target.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+}

@@ -172,7 +172,7 @@ plugins/<plugin-name>/
 本地代码图谱插件，自带一个零 npm 依赖的 MCP server（`bin/server.mjs`，`node:sqlite` + 随包 tree-sitter wasm，无 node_modules）。模型看到的工具是 `mcp__plugin_codegraph_codegraph__codegraph_status` / `__codegraph_lookup` / `__codegraph_map`。
 
 - **35 行语言**（33 个有符号抽取的语言包 + COBOL、Liquid 文件级），覆盖 TypeScript/JavaScript、Python、Go、Rust、C/C++、Java/Kotlin/Scala、C#/VB.NET、PHP/Ruby、Vue/Svelte/Astro、Terraform、Solidity 等；语法 wasm 全部随包，来源与许可见 `plugins/codegraph/THIRD-PARTY-NOTICES.md`
-- `codegraph_lookup`（search / symbol / callers / callees / impact / outline）每行一个符号、带精确行段，替代「Grep 一轮 + 整文件 Read 一轮」；没有符号叫这个名字时（库的函数、方法调用、类型名）`search` 列出使用它的位置；`codegraph_map` 替代 Glob + 逐个读文件头；关系带置信标记 `=` import 解析、`~` 同名唯一、`?` 未解析或动态
+- `codegraph_lookup`（search / symbol / callers / callees / impact / outline）每行一个符号、带精确行段，替代「Grep 一轮 + 整文件 Read 一轮」；没有符号叫这个名字时（库的函数、方法调用、类型名，以及 JS/TS 里点号读取的属性）`search` 列出使用它的位置；`codegraph_map` 替代 Glob + 逐个读文件头；关系带置信标记 `=` import 解析、`~` 同名唯一、`?` 未解析或动态
 - 索引存 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/indexes/<项目键>/`，项目目录内不写文件；符合条件（`autoIndex` 开、支持语言文件 ≥ 30、总数 ≤ 30000、非家目录/盘根）的项目在**会话打开时**就开始在后台建索引（MCP 握手完成即启动，不等模型调用工具），已索引的项目同时检查文件变化并增量同步；`codegraph_status` 报告进度与陈旧文件数
 - 之后的代码变更是**静默、惰性**更新的：文件监听（2 秒去抖）、`PostToolUse` 钩子、每次调用前的 mtime 扫描只把改过的文件标脏，真正重新解析发生在**下一次 codegraph 工具调用之前**（不到 200 个文件前台同步，更多则转后台构建）；没有工具调用就不会重新解析，也不会提醒模型
 - 三个钩子都是加速器：`SessionStart`（startup/resume/clear/compact/fork）注入 ≤ 120 token 的索引状态与「何时用图、何时用 Grep」指引；`UserPromptSubmit` 在索引于会话中途才建好时通知一次（每个会话一次）；`PostToolUse`（Edit/Write，含 ApplyPatch 别名）只在索引目录已存在时向 `dirty.log` 追加一行，绝不创建目录。没有钩子时 server 靠 mtime 扫描照样正确

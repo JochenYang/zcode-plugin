@@ -489,7 +489,7 @@ describe('searchSymbolsDetailed', () => {
 // A name that is used but not defined here (CONTRACTS.md §7 searchRefs): the T20 sessions went
 // to grep for `membershipKind`.
 describe('searchRefs', () => {
-  const NOTHING = { rows: [], uses: 0, files: 0, names: [], capped: false };
+  const NOTHING = { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false };
   const totals = (out) => ({ uses: out.uses, files: out.files, names: out.names, capped: out.capped });
   // file ids are the store's: everything else is the contract.
   const places = (out) => out.rows.map(({ file_id, ...row }) => row);
@@ -568,6 +568,14 @@ describe('searchRefs', () => {
     assert.equal(out.rows.length, 2);
     assert.deepEqual(totals(out), { uses: 6, files: 2, names: ['maxIdleDays'], capped: false });
     assert.equal(searchRefs(db, 'maxIdleDays', { limit: 500 }).rows.length, 4);
+  });
+
+  test('the files are counted over every place, cut or not: one id per file that has one', () => {
+    const db = project();
+    const pathOf = (id) => db.prepare('SELECT path FROM files WHERE id = ?').get(id).path;
+    assert.deepEqual(searchRefs(db, 'maxIdleDays').fileIds.map(pathOf), ['src/a.ts', 'tests/a.test.ts']);
+    assert.deepEqual(searchRefs(db, 'maxIdleDays', { limit: 2 }).fileIds.map(pathOf), ['src/a.ts', 'tests/a.test.ts'], 'a file whose rows the limit dropped still counts');
+    assert.deepEqual(searchRefs(db, 'zzqNothing').fileIds, []);
   });
 
   test('past a cut the totals are lower bounds and stop at the cut: many places of one name, and one place used very often', () => {

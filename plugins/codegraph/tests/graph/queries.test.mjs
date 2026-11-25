@@ -4,7 +4,7 @@ import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase, close } from '../../src/store/db.mjs';
 import { refsInFile, replaceFile, setRefResolution } from '../../src/store/repo.mjs';
-import { REF_LEAD_MAX, SEARCH_USAGE_ROWS, search, symbol, callers, callees, impact, outline } from '../../src/graph/queries.mjs';
+import { REF_LEAD_MAX, SEARCH_USAGE_ROWS, search, searchIsPartial, symbol, callers, callees, impact, outline } from '../../src/graph/queries.mjs';
 import { buildProject } from '../resolve/fixture.mjs';
 
 const UTIL = 'src/util.ts';
@@ -123,7 +123,7 @@ describe('search for a name that is only used', () => {
       { kind: 'ref', name: 'zzqPlugh', receiver: null, count: 1, path: 'src/used.ts', startLine: 4, owner: 'membershipCache', ownerQual: 'membershipCache', ownerKind: 'function' },
       { kind: 'ref', name: 'zzqPlugh', receiver: null, count: 1, path: 'src/used.ts', startLine: 9, owner: null, ownerQual: null, ownerKind: null },
     ]);
-    assert.deepEqual(info, { refs: { uses: 2, files: 1, names: ['zzqPlugh'], capped: false, symbols: [], symbolCount: 0 } });
+    assert.deepEqual(info, { refs: { uses: 2, files: 1, names: ['zzqPlugh'], capped: false, fromIndex: 2, fromScan: 0, skipped: 'not-asked', symbols: [], symbolCount: 0 } }, 'no scan was passed: that is said, so that "none found in the source" is not');
     assert.equal('start_line' in rows[0], false, 'the §8 shape, no column name');
   });
 
@@ -132,7 +132,18 @@ describe('search for a name that is only used', () => {
     const info = {};
     const rows = search(own, { query: 'membershipKind' }, info);
     assert.deepEqual(rows.map((row) => [row.count, row.startLine, row.owner]), [[2, 3, 'membershipCache'], [1, 8, null]]);
-    assert.deepEqual(info, { refs: { uses: 3, files: 1, names: ['membershipKind'], capped: false, symbols: ['membershipCache'], symbolCount: 1 } });
+    assert.deepEqual(info, { refs: { uses: 3, files: 1, names: ['membershipKind'], capped: false, fromIndex: 2, fromScan: 0, skipped: 'not-asked', symbols: ['membershipCache'], symbolCount: 1 } });
+  });
+
+  test('searchIsPartial is what search decides on: no symbol, or symbols that only share words', () => {
+    write(2);
+    assert.equal(searchIsPartial(own, { query: 'zzqPlugh' }), true, 'no symbol carries it');
+    assert.equal(searchIsPartial(own, { query: 'membershipKind' }), true, 'membershipCache shares a word');
+    assert.equal(searchIsPartial(own, { query: 'membershipCache' }), false, 'a symbol carries it');
+    assert.equal(searchIsPartial(own, { query: 'membershipCache', kind: 'constant' }), true, 'with a kind only symbols of that kind count');
+    assert.equal(searchIsPartial(own, { query: '  ' }), false);
+    assert.equal(searchIsPartial(own, { query: 'zzqPlugh', limit: 500 }), searchIsPartial(own, { query: 'zzqPlugh', limit: 1 }));
+    assert.throws(() => searchIsPartial(null, { query: 'x' }), /searchIsPartial: "db" must be a DatabaseSync/);
   });
 
   test('a symbol that carries every word of the name comes first, as before', () => {

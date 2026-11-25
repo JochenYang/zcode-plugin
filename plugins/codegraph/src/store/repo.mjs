@@ -1092,9 +1092,9 @@ const REF_GROUPS_SQL = (where) =>
  * @param {DatabaseSync} db
  * @param {string} query
  * @param {{ limit?: number }} [options]
- * @returns {{ rows: object[], uses: number, files: number, names: string[], capped: boolean }}
+ * @returns {{ rows: object[], uses: number, files: number, fileIds: number[], names: string[], capped: boolean }}
  *   rows: `{ name, kind, receiver, count, start_line, file_id, path, owner, owner_qual, owner_kind }`.
- *   `uses`, `files` and `names` describe every place, not only the rows the limit kept;
+ *   `uses`, `files`, `fileIds` and `names` describe every place, not only the rows the limit kept;
  *   `capped` says there were more places than were read.
  */
 export function searchRefs(db, query, options = {}) {
@@ -1104,7 +1104,7 @@ export function searchRefs(db, query, options = {}) {
   requireInteger('searchRefs', 'limit', limit, 1);
 
   const segments = [...new Set(identifierSegments(query))];
-  if (segments.length === 0) return { rows: [], uses: 0, files: 0, names: [], capped: false };
+  if (segments.length === 0) return { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false };
   const exact = query.trim();
   const groupsOf = (where, parameters) =>
     db.prepare(REF_GROUPS_SQL(where)).all(...parameters, REF_ROWS_MAX + 1, exact, ...SECONDARY_PARAMS, REF_GROUPS_MAX + 1);
@@ -1123,10 +1123,14 @@ export function searchRefs(db, query, options = {}) {
   // The pool has to hold every row the word filter could accept (see poolPredicate), so the
   // filter only removes: the order the rows came in is kept.
   groups = groups.filter((row) => wordDistance(row.name, segments) !== null);
+  // `rows` are cut to `limit`; `fileIds` holds every file of every group, cut or not, so a
+  // caller that merges two sources can still count the files of both over all their rows.
+  const fileIds = [...new Set(groups.map((row) => row.file_id))];
   return {
     rows: groups.slice(0, limit),
     uses: groups.reduce((total, row) => total + row.count, 0),
-    files: new Set(groups.map((row) => row.file_id)).size,
+    files: fileIds.length,
+    fileIds,
     names: [...new Set(groups.map((row) => row.name))],
     capped,
   };

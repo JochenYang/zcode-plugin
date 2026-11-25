@@ -218,7 +218,7 @@ describe('renderSearch', () => {
     const out = renderSearch([], { query: 'zzz', freshness: FRESH });
     assert.equal(lines(out)[0], '# search zzz · no matches · indexed 2m ago');
     assert.equal(lines(out).length, 2);
-    assert.equal(lines(out)[1], 'hint: search matches symbol names and names that are used here without a definition; text, object keys in literals, property reads (obj.field) in JS/TS and string literals belong to Grep; a word of one or two letters must be a whole word.');
+    assert.equal(lines(out)[1], 'hint: search matches symbol names and names that are used here without a definition (calls, type names, and property reads such as obj.field in JS/TS); text, object keys in literals, variables and parameters, and string literals belong to Grep; a word of one or two letters must be a whole word.');
   });
 
   test('legend appears only when a visible row carries ~ or ?', () => {
@@ -294,16 +294,58 @@ describe('renderSearch', () => {
 
 // A name that is used but not defined (CONTRACTS.md §11 "search"): the rows are places.
 describe('renderSearch: a name that is only used', () => {
-  const HINT = 'hint: no symbol carries this name; the rows are places that use it: calls and type names. ' +
-    'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+  const HEAD = 'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ';
+  const TAIL = 'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+  // Rows of the index only: what became of the look in the source, by `refs.skipped`.
+  const HINT = `${HEAD}JS/TS property reads (obj.field) were looked for in the source: there were none. ${TAIL}`;
+  const HUB_HINT = `${HEAD}It is also read as a property (obj.field) in more JS/TS files than a search lists: too common to point anywhere. ${TAIL}`;
+  const LIMIT_HINT = `${HEAD}Its JS/TS property reads (obj.field) are not listed: more of them than a search parses at once, or more source than one scan reads. Grep for them. ${TAIL}`;
+  const SKIPPED_HINT = `${HEAD}JS/TS property reads (obj.field) were not looked for in the source this time: the scanner was not ready or its scan timed out, some files could not be read, or the query is not a single name. ${TAIL}`;
+  // Said after any of them when a total carries a +.
+  const LOWER = ' Totals with a + are lower bounds: more places exist than were read.';
+  const SCAN_HINT =
+    'hint: no symbol carries this name; the rows are property reads (obj.name), found by scanning the JavaScript and TypeScript ' +
+    'source just now; the index had no call or type of that name. ' +
+    'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+  const MIXED_HINT =
+    'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index, and property reads ' +
+    '(obj.name) found by scanning the JS/TS source just now. ' +
+    'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+  const SCAN_ROWS = [
+    { kind: 'property', name: 'membershipKind', receiver: 'row', count: 2, path: 'src/sheet.tsx', startLine: 40, owner: 'Cell', ownerQual: 'Cell', ownerKind: 'component' },
+    { kind: 'property', name: 'membershipKind', receiver: 'props.account', count: 1, path: 'src/sheet.tsx', startLine: 52, owner: 'Cell', ownerQual: 'Cell', ownerKind: 'component' },
+    { kind: 'property', name: 'membershipKind', receiver: 'config', count: 1, path: 'src/start.ts', startLine: 3, owner: null, ownerQual: null, ownerKind: null },
+  ];
+  // A result of the scan alone, in the name the rows are about.
+  const SCANNED = { uses: 4, files: 2, names: ['membershipKind'], capped: false, fromIndex: 0, fromScan: 3, symbols: [], symbolCount: 0 };
+  const scanned = (rows, extra = {}) => meta(SCANNED, { query: 'membershipKind', ...extra });
   const cut = (text, max) => `${text.slice(0, max - 1)}…`;
   const ROWS = [
     { kind: 'call', name: 'useEffect', receiver: null, count: 4, path: 'src/ThemeProvider.tsx', startLine: 63, owner: 'ThemeProvider', ownerQual: 'ThemeProvider', ownerKind: 'component' },
     { kind: 'ref', name: 'cfg', receiver: null, count: 1, path: 'src/b.ts', startLine: 3, owner: null, ownerQual: null, ownerKind: null },
     { kind: 'call', name: 'readFileSync', receiver: 'fs', count: 2, path: 'src/c.ts', startLine: 9, owner: 'load', ownerQual: 'load', ownerKind: 'function' },
   ];
-  const uses = (extra = {}) => ({ uses: 90, files: 48, names: ['useEffect'], capped: false, symbols: [], symbolCount: 0, ...extra });
+  const uses = (extra = {}) => ({ uses: 90, files: 48, names: ['useEffect'], capped: false, fromIndex: 3, fromScan: 0, skipped: null, symbols: [], symbolCount: 0, ...extra });
   const meta = (refs, extra = {}) => ({ query: 'useEffect', freshness: FRESH, refs, ...extra });
+
+  test('rows of the index only: the hint says what became of the look in the source, and "none" only when the scan finished', () => {
+    const last = (extra) => lines(renderSearch(ROWS, meta(uses(extra)))).at(-1);
+    assert.equal(last({}), HINT);
+    assert.equal(last({ skipped: 'hub', capped: true }), HUB_HINT + LOWER);
+    assert.equal(last({ skipped: 'limit', capped: true }), LIMIT_HINT + LOWER);
+    assert.equal(last({ skipped: 'unreadable' }), SKIPPED_HINT);
+    assert.equal(last({ skipped: 'not-asked' }), SKIPPED_HINT, 'no scan was passed: not "none were found"');
+    assert.equal(last({ skipped: 'not-ready' }), SKIPPED_HINT);
+    assert.equal(last({ skipped: 'not-identifier' }), SKIPPED_HINT);
+    // A cut in the index alone: "none were found" still holds, and the + is explained.
+    assert.equal(last({ capped: true }), HINT + LOWER);
+  });
+
+  test('an empty result whose name is a hub says so, instead of listing what a search matches', () => {
+    const last = (extra) => lines(renderSearch([], { query: 'length', freshness: FRESH, ...extra })).at(-1);
+    assert.ok(last({}).startsWith('hint: search matches symbol names and names that are used here without a definition'), last({}));
+    assert.ok(last({ hub: true }).startsWith('hint: no symbol, call or type has this name, and it is read as a property (obj.field) in more JS/TS files than a search lists.'), last({ hub: true }));
+  });
 
   test('the header says that no symbol carries the name and how many places use it; the rows are places, not definitions', () => {
     assert.deepEqual(lines(renderSearch(ROWS, meta(uses({ symbols: ['useT', 'useTick'], symbolCount: 20 })))), [
@@ -333,6 +375,40 @@ describe('renderSearch: a name that is only used', () => {
     assert.equal(out.includes('next:'), false);
     assert.equal(out.includes('partial'), false);
     assert.ok(out.endsWith(HINT));
+  });
+
+  test('rows found by a source scan are called property reads and say where they came from', () => {
+    const refs = { uses: 4, files: 2, names: ['membershipKind'], capped: false, fromIndex: 0, fromScan: 3, symbols: [], symbolCount: 0 };
+    assert.deepEqual(lines(renderSearch(SCAN_ROWS, scanned())), [
+      '# search membershipKind · no symbol carries this name; 4 property reads in 2 files (membershipKind) · indexed 2m ago',
+      ' property row.membershipKind ×2 in Cell src/sheet.tsx:40',
+      ' property props.account.membershipKind ×1 in Cell src/sheet.tsx:52',
+      ' property config.membershipKind ×1 at src/start.ts:3',
+      SCAN_HINT,
+    ]);
+    const one = lines(renderSearch(SCAN_ROWS.slice(0, 1), scanned(SCAN_ROWS.slice(0, 1), { refs: { ...refs, uses: 1, files: 1 } })));
+    assert.equal(one[0], '# search membershipKind · no symbol carries this name; 1 property read in 1 file (membershipKind) · indexed 2m ago');
+    // The kind is cut like any other kind when it is longer than its column.
+    assert.equal(lines(renderSearch([{ ...SCAN_ROWS[0], kind: 'propertyValue' }], scanned()))[1], '…rtyValue row.membershipKind ×2 in Cell src/sheet.tsx:40');
+  });
+
+  test('a scan that stopped at a limit: what it found is shown, and the totals are marked as lower bounds', () => {
+    const out = lines(renderSearch(SCAN_ROWS, scanned(SCAN_ROWS, { refs: { ...SCANNED, uses: 40, files: 12, capped: true } })));
+    assert.equal(out[0], '# search membershipKind · no symbol carries this name; 40+ property reads in 12+ files (membershipKind) · indexed 2m ago');
+    assert.equal(out.at(-1), SCAN_HINT + LOWER, 'the + in the header is explained once');
+  });
+
+  test('rows of both sources are one list and are called uses; the hint names both sources', () => {
+    const refs = { uses: 5, files: 3, names: ['membershipKind'], capped: false, fromIndex: 1, fromScan: 3, symbols: [], symbolCount: 0 };
+    const fromIndex = { kind: 'ref', name: 'membershipKind', receiver: null, count: 1, path: 'src/model.py', startLine: 12, owner: 'f', ownerQual: 'f', ownerKind: 'function' };
+    const out = lines(renderSearch([SCAN_ROWS[0], SCAN_ROWS[2], fromIndex], scanned(SCAN_ROWS, { refs })));
+    assert.equal(out[0], '# search membershipKind · no symbol carries this name; 5 uses in 3 files (membershipKind) · indexed 2m ago');
+    assert.deepEqual(out.slice(1), [
+      ' property row.membershipKind ×2 in Cell src/sheet.tsx:40',
+      ' property config.membershipKind ×1 at src/start.ts:3',
+      '      ref membershipKind ×1 in f src/model.py:12',
+      MIXED_HINT,
+    ]);
   });
 
   test('a long name is cut, and is in quotes when it has spaces', () => {

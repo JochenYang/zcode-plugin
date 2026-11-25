@@ -114,6 +114,10 @@ const text = (result) => result.content[0].text;
 function storeQueries(log = []) {
   const row = (r) => ({ kind: r.kind, name: r.name, qual: r.qual, path: r.path, startLine: r.start_line, endLine: r.end_line, signature: r.signature });
   return {
+    searchIsPartial(db_, { query, kind, limit }) {
+      log.push(['searchIsPartial', { query, kind, limit }]);
+      return findSymbolsByName(db_, query, { exact: false }).length === 0;
+    },
     search(db_, { query, kind, limit }) {
       log.push(['search', { query, kind, limit }]);
       return findSymbolsByName(db_, query, { exact: false }).slice(0, limit).map(row);
@@ -483,7 +487,13 @@ describe('codegraph_lookup', () => {
     const log = [];
     const ctx = fakeCtx(READY(), { queries: storeQueries(log) });
     const out = text(await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'parse' }));
-    assert.deepEqual(log, [['search', { query: 'parse', kind: null, limit: 21 }]], 'asks for limit + 1 to detect truncation');
+    // One ask for the decision (does a symbol carry the name?), then one search for limit + 1 rows
+    // to detect truncation. A name no symbol carries does not make a second search: the property
+    // reads are looked for between the two.
+    assert.deepEqual(log, [['searchIsPartial', { query: 'parse', kind: null, limit: 21 }], ['search', { query: 'parse', kind: null, limit: 21 }]]);
+    log.length = 0;
+    text(await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'validate' }));
+    assert.deepEqual(log.map(([name]) => name), ['searchIsPartial', 'search'], 'one search, with both sources');
     assert.equal(
       out,
       [`# search parse · 1 match · ${FRESH}`, ' function parseConfig (src: string, opts?: Options): Config src/graph/sample.ts:8-11', SEARCH_NEXT_HINT].join('\n'),
@@ -513,8 +523,9 @@ describe('codegraph_lookup', () => {
       [
         `# search validate · no symbol carries this name; 1 use in 1 file (validate) · ${FRESH}`,
         '     call validate ×1 in parseConfig src/graph/sample.ts:10',
-        'hint: no symbol carries this name; the rows are places that use it: calls and type names. ' +
-          'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.',
+        'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ' +
+          'JS/TS property reads (obj.field) were looked for in the source: there were none. ' +
+          'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.',
       ].join('\n'),
     );
     const limited = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'search', query: 'validate', limit: 1 }));
@@ -524,8 +535,41 @@ describe('codegraph_lookup', () => {
     // (CONTRACTS.md §10).
     const { operation, query } = TOOLS[1].inputSchema.properties;
     assert.ok(operation.description.startsWith('search: symbols by name, or the places that use a name no symbol carries;'));
-    assert.ok(query.description.includes('When no symbol carries the name, search lists where it is used (calls and type names).'));
-    assert.ok(query.description.includes('In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph.'));
+    assert.ok(query.description.includes('When no symbol carries the name, search lists where it is used: calls and type names from the index, and for JS/TS the '));
+    assert.ok(query.description.includes('property reads (obj.field) of that name, found by scanning the source. Variables and parameters, object keys in literals '));
+    assert.ok(query.description.includes('and words in strings are not in the graph.'));
+  });
+
+  test('a name that is only read as a property: the tool, the real search and the source scan together', async () => {
+    // The tool builds the scan with the session's root and the project's database; the real
+    // search asks it when the index has nothing; the rows come back as property reads.
+    const { warmPropertyReads } = await import('../../src/graph/propertyReads.mjs');
+    await warmPropertyReads();
+    const scanRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-tools-scan-'));
+    const scanDb = openDatabase(':memory:');
+    try {
+      const rel = 'src/graph/sheet.tsx';
+      const source = ['export function Cell({ row }: Props) {', '  return row.zzqPlugh + this.fallback.zzqPlugh;', '}', ''].join('\n');
+      const abs = path.join(scanRoot, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, source);
+      const extracted = await extractFile({ path: rel, source, spec: specForPath(rel, await loadSpecs()) });
+      assert.equal(extracted.parseOk, true);
+      replaceFile(scanDb, { path: rel, lang: extracted.lang, hash: extracted.hash, mtimeMs: indexedAt, size: extracted.size, parseOk: extracted.parseOk, errorNodes: extracted.errorNodes, indexedAt }, extracted);
+      const ctx = fakeCtx(READY(), { root: scanRoot, db: scanDb, queries: graphQueries });
+      const out = text(await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'zzqPlugh' }));
+      assert.deepEqual(out.split('\n'), [
+        `# search zzqPlugh · no symbol carries this name; 2 property reads in 1 file (zzqPlugh) · ${FRESH}`,
+        ' property row.zzqPlugh ×1 in Cell src/graph/sheet.tsx:2',
+        ' property this.fallback.zzqPlugh ×1 in Cell src/graph/sheet.tsx:2',
+        'hint: no symbol carries this name; the rows are property reads (obj.name), found by scanning the JavaScript and TypeScript ' +
+          'source just now; the index had no call or type of that name. ' +
+          'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.',
+      ]);
+    } finally {
+      close(scanDb);
+      fs.rmSync(scanRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
+    }
   });
 
   test('symbol: header, relations with markers and legend, inline body from disk, Read line for long bodies', async () => {
