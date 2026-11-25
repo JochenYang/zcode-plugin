@@ -1,7 +1,7 @@
 {
   "name": "websearch",
-  "version": "0.1.6",
-  "description": "Multi-engine web search for ZCode as a zero-dependency MCP server: AnySearch, Exa, Parallel, Bing and SearXNG chained with automatic fallback, plus a static page reader. Every engine works without a key. Configuration (engine order, per-engine keys) is websearch.json inside the plugin data folder — created automatically on first use, and the tools report its exact path, so just ask the model for the websearch config location.",
+  "version": "0.2.0",
+  "description": "Multi-engine web search for ZCode as a zero-dependency MCP server: AnySearch, Exa, Parallel and Bing chained with automatic fallback, plus a static page reader. Every engine works without a key. Configuration (engine order, per-engine keys) is websearch.json inside the plugin data folder — created automatically on first use, and the tools report its exact path, so just ask the model for the websearch config location.",
   "author": {
     "name": "JochenYang"
   },
@@ -20,7 +20,6 @@
         "WEBSEARCH_LIMIT": "${user_config.limit}",
         "WEBSEARCH_TIMEOUT_MS": "${user_config.timeout_ms}",
         "WEBSEARCH_BING_MARKET": "${user_config.bing_market}",
-        "WEBSEARCH_SEARXNG": "${user_config.searxng_instances}",
         "WEBSEARCH_ANYSEARCH_KEY": "${user_config.anysearch_key}",
         "WEBSEARCH_EXA_KEY": "${user_config.exa_key}",
         "WEBSEARCH_PARALLEL_KEY": "${user_config.parallel_key}"
@@ -31,13 +30,13 @@
     "order": {
       "type": "string",
       "title": "引擎顺序",
-      "description": "按顺序尝试，逗号分隔。可用：anysearch / exa / parallel / bing / searxng",
-      "default": "anysearch,exa,parallel,bing,searxng"
+      "description": "按顺序尝试，逗号分隔。可用：anysearch / exa / parallel / bing",
+      "default": "anysearch,exa,parallel,bing"
     },
     "disabled": {
       "type": "string",
       "title": "禁用的引擎",
-      "description": "逗号分隔的引擎 id，例如 exa,searxng；留空表示都启用",
+      "description": "逗号分隔的引擎 id，例如 exa,bing；留空表示都启用",
       "default": ""
     },
     "mode": {
@@ -63,12 +62,6 @@
       "title": "Bing 市场",
       "description": "auto = 跟随查询语言；也可固定 zh 或 en",
       "default": "auto"
-    },
-    "searxng_instances": {
-      "type": "string",
-      "title": "SearXNG 实例",
-      "description": "每行一个地址，需要实例开启 JSON API；留空则跳过该引擎",
-      "default": ""
     },
     "anysearch_key": {
       "type": "string",

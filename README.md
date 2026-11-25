@@ -22,7 +22,7 @@
 | `plugins/git-conventions` | 0.1.0 | 提交信息规范钩子：`PreToolUse` 在 git 运行前校验 `git commit` 写下的提交信息（标题格式与 50 字符上限、正文 `-` 列表与末尾 `Verified:` 行），不合规直接拒绝 |
 | `plugins/dev-workflow` | 0.7.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 22 个专项子智能体自动安装到 `~/.zcode/agents` |
 | `plugins/guardrails` | 0.2.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
-| `plugins/websearch` | 0.1.6 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing / SearXNG 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
+| `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
@@ -156,11 +156,11 @@ plugins/<plugin-name>/
 
 独立的网页搜索插件，自带一个零依赖 MCP server（`bin/server.mjs`，Node 18+ 的全局 fetch，无 node_modules）。工具是 `web_search` 与 `fetch_page`，模型看到的完整名字为 `mcp__plugin_websearch_search__web_search` / `mcp__plugin_websearch_search__fetch_page`。
 
-- 引擎链 `anysearch → exa → parallel → bing → searxng`，失败或空结果自动换下一个；一次调用共用一个总预算（默认 20s），预算耗尽的引擎记入 `skipped`
+- 引擎链 `anysearch → exa → parallel → bing`，失败或空结果自动换下一个；一次调用共用一个总预算（默认 20s），预算耗尽的引擎记入 `skipped`
 - **免 Key 可用**：不填 Key 走各引擎的免费额度；额度用完时 `attempts[].hint` 会提示。当前版本 ZCode 的插件详情页**没有配置表单**，Key 与引擎顺序等写在 `$ZCODE_PLUGIN_DATA/websearch.json`（即 `~/.zcode/cli/plugins/data/websearch@zcode-plugin/websearch.json`），也可用环境变量 `ANYSEARCH_API_KEY` / `EXA_API_KEY` / `PARALLEL_API_KEY`（文件优先）
-- 设置项：引擎顺序、禁用列表、fallback/rotate、默认条数、总超时、Bing 市场、SearXNG 实例、三个可选 Key；清单里也声明了 `userConfig`，等 ZCode 支持配置表单后无需改本插件即可用
-- 工具描述里写明了路由：需要最新信息/天气/新闻时先用 `web_search`，只有已知确切 URL 才用 `fetch_page`
-- 安全边界写在自己代码里：只允许 http/https、拒绝回环/内网/链路本地（含云元数据地址）/CGNAT/唯一本地地址、每跳重定向重新校验、响应上限 2 MB、请求超时——MCP server 是普通本地进程，没有宿主守门
+- 设置项：引擎顺序、禁用列表、fallback/rotate、默认条数、总超时、Bing 市场、三个可选 Key；清单里也声明了 `userConfig`，等 ZCode 支持配置表单后无需改本插件即可用
+- 工具描述里写明了路由：内置 `WebSearch` / `WebFetch` 可用时优先用内置的，本插件是它们不可用时的替代（`fetch_page` 另在确实需要页面原文时可用）；需要先找 URL 时先搜索，已知确切 URL 才读正文
+- 安全边界写在自己代码里：只允许 http/https、拒绝回环/内网/链路本地（含云元数据地址）/CGNAT/唯一本地地址、每跳重定向重新校验、引擎 Key 不跟跨源重定向走、响应上限 2 MB、一次请求一个截止时间——MCP server 是普通本地进程，没有宿主守门
 - 手动入口：`/websearch <query> [--engine bing]`，单引擎排查最快
 - 与内置 `WebSearch` 不冲突也不互相替代：内置那个走模型 provider 的服务端原生搜索，只在特定 provider 端点下存在；插件在任何 provider 下都可用
 
@@ -174,6 +174,7 @@ plugins/<plugin-name>/
 python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、agent 描述、引用、行尾、shell 语法
 python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，198 个用例（含权限模式维度）
 python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
+node --test plugins/websearch/tests/*.test.mjs  # websearch 网络层：跨源重定向不带引擎 Key、截止时间覆盖响应体、GBK 解码、描述里的让位句
 node --test plugins/git-conventions/tests/*.test.mjs  # 提交信息钩子：认得的命令写法、规范各条规则、读不出消息时放行
 python plugins/dev-workflow/tests/test-sync-agents.py  # 子智能体同步钩子：刷新、保护手改、清理插件已下架的、兼容旧 state
 python plugins/dev-workflow/tests/test-review-gate.py  # 多轮审查闸门脚本：八道闸门、字段交叉校验与不合法状态的退出码（需要 node）

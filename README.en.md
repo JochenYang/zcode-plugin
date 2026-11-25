@@ -22,7 +22,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | `plugins/git-conventions` | 0.1.0 | Commit message guard: a `PreToolUse` hook validates the message a `git commit` writes before git runs (subject format and the 50-character limit, body as `-` bullets ending with a `Verified:` line) and denies a non-compliant one |
 | `plugins/dev-workflow` | 0.7.0 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + a gated multi-round review protocol + `/handoff` session contract + a `SessionStart` repo snapshot + 22 specialist subagents auto-installed into `~/.zcode/agents` |
 | `plugins/guardrails` | 0.2.1 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
-| `plugins/websearch` | 0.1.6 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel, Bing and SearXNG with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
+| `plugins/websearch` | 0.2.0 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel and Bing with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
 
 The plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
@@ -156,11 +156,11 @@ Pitfalls worth writing down instead of rediscovering:
 
 A standalone search plugin with its own zero-dependency MCP server (`bin/server.mjs`, Node 18+ global fetch, no node_modules). It exposes `web_search` and `fetch_page`; the model sees them as `mcp__plugin_websearch_search__web_search` / `mcp__plugin_websearch_search__fetch_page`.
 
-- Engine chain `anysearch → exa → parallel → bing → searxng`, moving on when an engine fails or returns nothing; one deadline covers the whole call (20s default) and engines left unrun are reported in `skipped`
+- Engine chain `anysearch → exa → parallel → bing`, moving on when an engine fails or returns nothing; one deadline covers the whole call (20s default) and engines left unrun are reported in `skipped`
 - **Usable without any key**: empty key means the engine's free tier; when a quota runs out `attempts[].hint` says so. The current ZCode build has **no configuration form** on the plugin detail page, so keys and engine order live in `$ZCODE_PLUGIN_DATA/websearch.json` (i.e. `~/.zcode/cli/plugins/data/websearch@zcode-plugin/websearch.json`); the ambient `ANYSEARCH_API_KEY` / `EXA_API_KEY` / `PARALLEL_API_KEY` variables work too (the file wins)
-- Settings: engine order, disabled list, fallback/rotate, default limit, total timeout, Bing market, SearXNG instances and the three optional keys; the manifest also declares `userConfig`, so once ZCode grows a configuration form this plugin picks it up with no changes
-- The tool descriptions carry the routing rule: search first for anything current (weather, news, prices), and only call `fetch_page` for a URL you already have
-- The safety boundary lives in this plugin's own code: http/https only, loopback/private/link-local (including cloud metadata)/CGNAT/ULA refused, every redirect hop re-checked, 2 MB response ceiling, request timeouts — an MCP server is an ordinary local process with no host gatekeeper
+- Settings: engine order, disabled list, fallback/rotate, default limit, total timeout, Bing market and the three optional keys; the manifest also declares `userConfig`, so once ZCode grows a configuration form this plugin picks it up with no changes
+- The tool descriptions carry the routing rule: the built-in `WebSearch` / `WebFetch` go first when they exist and this plugin is the fallback (`fetch_page` also when you need the page text itself rather than the `WebFetch` summary); search before fetching when the URL is not known yet
+- The safety boundary lives in this plugin's own code: http/https only, loopback/private/link-local (including cloud metadata)/CGNAT/ULA refused, every redirect hop re-checked, engine keys never follow a cross-origin redirect, 2 MB response ceiling, one deadline per request covering every hop and the body — an MCP server is an ordinary local process with no host gatekeeper
 - Manual entry point: `/websearch <query> [--engine bing]`, the quickest way to check one engine
 - It neither conflicts with nor replaces the built-in `WebSearch`: that one relies on the model provider's server-side search and only exists for specific provider endpoints, while this plugin works under any provider
 
@@ -174,6 +174,7 @@ Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them a
 python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 198 cases including the permission-mode dimension
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
+node --test plugins/websearch/tests/*.test.mjs  # the websearch network layer: engine keys never follow a cross-origin redirect, the deadline covers the body, GBK decoding, the descriptions defer to the built-ins
 node --test plugins/git-conventions/tests/*.test.mjs  # the commit message hook: recognised command forms, every rule, and passing on what cannot be read
 python plugins/dev-workflow/tests/test-sync-agents.py  # the subagent sync hook: refresh, protect local edits, clean up dropped agents, read legacy state
 python plugins/dev-workflow/tests/test-review-gate.py  # the multi-round review gate: eight gates, cross-checks between fields, and the exit codes of an invalid state (needs node)

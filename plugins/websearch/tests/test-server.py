@@ -12,6 +12,7 @@ Requires Python 3.8+ and Node 18+ (global fetch). No third-party packages.
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import sys
@@ -83,6 +84,9 @@ def offline():
 
     init = by_id(responses, 1)
     check("initialize returns serverInfo", bool(init) and init["result"]["serverInfo"]["name"] == "websearch")
+    manifest = json.load(open(os.path.join(PLUGIN, ".zcode-plugin", "plugin.json"), encoding="utf-8"))
+    reported = init["result"]["serverInfo"].get("version") if init else None
+    check("initialize reports the manifest version", reported == manifest["version"], f"{reported} vs {manifest['version']}")
     check("initialize echoes the protocol version", bool(init) and init["result"]["protocolVersion"] == "2024-11-05")
     check("notification gets no response", all(r.get("id") != 0 for r in responses))
 
@@ -93,8 +97,15 @@ def offline():
         search_tool = tools["result"]["tools"][0]
         check("web_search requires query", search_tool["inputSchema"].get("required") == ["query"])
         check("web_search engine enum matches the chain",
-              search_tool["inputSchema"]["properties"]["engines"]["items"]["enum"] == ["anysearch", "exa", "parallel", "bing", "searxng"])
+              search_tool["inputSchema"]["properties"]["engines"]["items"]["enum"] == ["anysearch", "exa", "parallel", "bing"])
         check("web_search description carries the concrete config path", config_file in search_tool["description"])
+        check("web_search description defers to the built-in WebSearch",
+              "内置的 WebSearch 工具可用，优先用它" in search_tool["description"])
+        check("web_search description does not route into fetch_page",
+              "随后用 fetch_page" not in search_tool["description"])
+        page_tool = tools["result"]["tools"][1]
+        check("fetch_page description defers to the built-in WebFetch",
+              "内置的 WebFetch 工具可用，优先用它" in page_tool["description"])
 
     unknown_response = by_id(responses, 3)
     unknown = tool_text(unknown_response)
@@ -109,6 +120,7 @@ def offline():
 
     missing = by_id(responses, 6)
     check("unknown method returns -32601", missing["error"]["code"] == -32601)
+    shutil.rmtree(data_dir, ignore_errors=True)
 
 
 def live():
@@ -135,7 +147,7 @@ def live():
           str([f"{a['engine']}:{'ok' if a['ok'] else a.get('error', '')[:40]}" for a in chain.get("attempts", [])])[:200])
     if chain.get("ok"):
         check("chain reports attempts for every engine tried", len(chain["attempts"]) >= 1)
-        check("chain reports which engine answered", chain.get("engine") in ("anysearch", "exa", "parallel", "bing", "searxng"),
+        check("chain reports which engine answered", chain.get("engine") in ("anysearch", "exa", "parallel", "bing"),
               str(chain.get("engine")))
 
     page = tool_text(by_id(responses, 3))
