@@ -5,8 +5,9 @@ web-tree-sitter runtime, and Lucide icon files. The plugin itself adds no
 license terms to them. Each component keeps its own license; the full texts
 are in `grammars/LICENSES/`, `grammars/runtime/LICENSE.web-tree-sitter.txt`
 and `ui/icons/LICENSE.lucide.txt`. Sections 7 and 8 also record two things
-that are not bundles but reproductions: rules of ZCode's own stylesheet, and
-the icons as they are inlined in the view.
+that are not bundles but reproductions: rules of ZCode's own stylesheet (its
+license is in `ui/licenses/LICENSE.zcode.txt`), and the icons as they are
+inlined in the view.
 
 Machine-readable provenance (sha256, source, version, license) for every
 wasm is in `grammars/manifest.json`.
@@ -179,15 +180,31 @@ Liquid: no tree-sitter grammar was found for it; the plugin treats it as
 
 ## 7. ZCode sandbox stylesheet (rules reproduced in `ui/index.html`)
 
-The first `<style>` block of `ui/index.html` (`id="zcode-contract"`) is a
-rule-for-rule copy of the stylesheet ZCode Desktop ships for UI rendered inside
-the app (ZCode Desktop 4.0.10870, `out/plugin-sandbox/visualize.css`), minus the
-rules this view does not use. It is there so that the plugin's index management
-view looks the way every other sandboxed view in ZCode looks; the rules are
-reproduced as the app wrote them and are not edited. ZCode's own terms apply to
-that block. The other two `<style>` blocks (`id="codegraph-layout"`, layout
+- Files: the first `<style>` block of `ui/index.html` (`id="zcode-contract"`)
+- Source: ZCode Desktop 4.0.10870, `out/plugin-sandbox/visualize.css`. The same
+  file, apart from line endings, is in the public repository
+  https://github.com/zai-org/ZCode as
+  `apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/visualize.css`
+- License: Apache-2.0. Copyright 2026 Z.AI Co., Ltd
+- Full text: `ui/licenses/LICENSE.zcode.txt`
+
+The block is a rule-for-rule copy of the stylesheet ZCode Desktop ships for UI
+rendered inside the app, minus the rules this view does not use: no rule that
+is kept was edited, and the stylesheet itself carries no copyright notice to
+keep. It is there so that the plugin's index management view looks the way
+every other sandboxed view in ZCode looks; when ZCode changes, the block is
+copied again. The other two `<style>` blocks (`id="codegraph-layout"`, layout
 only, and `id="codegraph-decorations"`, colours and type taken from the
 contract's tokens) are this plugin's own.
+
+The root `NOTICE.md` of that repository was read (2026-11-25): it is a
+statement about the product — the risks of AI-generated output, how the app
+handles local data and credentials, and the licence — and carries no
+attribution notice for the stylesheet. Its licence paragraph is quoted as it
+stands, as Apache-2.0 §4(d) asks; the stylesheet is first-party code of that
+repository, so it is under that licence:
+
+> 本仓库第一方代码依照根 LICENSE 采用 Apache-2.0；该许可不替其他权利人新增授权，也不覆盖第三方软件、复制代码、原生二进制、字体、图标、网页素材及其他资源的独立条款。具体依赖包详见 THIRD-PARTY-NOTICES.md。受第三方版权、许可及再分发条件等约束，不承诺提供官方产品的全部功能及活动政策，具体以实际发布的源码和构建产物为准。
 
 ## 8. Lucide icons (inlined in `ui/index.html`)
 

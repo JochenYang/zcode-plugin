@@ -177,7 +177,7 @@ plugins/<plugin-name>/
 - 之后的代码变更是**静默、惰性**更新的：文件监听（2 秒去抖）、`PostToolUse` 钩子、每次调用前的 mtime 扫描只把改过的文件标脏，真正重新解析发生在**下一次 codegraph 工具调用之前**（不到 200 个文件前台同步，更多则转后台构建）；没有工具调用就不会重新解析，也不会提醒模型
 - 三个钩子都是加速器：`SessionStart`（startup/resume/clear/compact/fork）注入 ≤ 120 token 的索引状态与「何时用图、何时用 Grep」指引；`UserPromptSubmit` 在索引于会话中途才建好时通知一次（每个会话一次）；`PostToolUse`（Edit/Write，含 ApplyPatch 别名）只在索引目录已存在时向 `dirty.log` 追加一行，绝不创建目录。没有钩子时 server 靠 mtime 扫描照样正确
 - 索引存储会自己整理：每次会话打开时删除超过 `maxIdleDays`（默认 90 天）没再用过的索引，并可在总量超过 `maxTotalMB` 时从最久没用的删起；项目目录暂时找不到不是删除理由，正在被别的会话写入的也不动。`/codegraph storage` 列出本机所有项目的索引（路径、状态、大小、上次使用），`/codegraph clean [all | current | <项目>]` 手动清理
-- 桌面端另有界面入口（ZCode 未公开文档的扩展接口，首次激活要确认）：输入框工具栏的状态位显示当前项目索引的状态（文件数 / 构建百分比 / 出错 / 未开启），点开是索引管理面板——列出本机所有索引，删除与清理到期索引都分两步，清理策略在这里改；跟随应用的主题与语言，样式用 ZCode 自己的沙箱样式表
+- 桌面端另有界面入口（ZCode 未公开文档的扩展接口，首次激活要确认）：输入框工具栏的状态位显示当前项目索引的状态（文件数 / 构建百分比 / 出错 / 未开启），点开是索引管理面板——列出本机所有索引，删除与清理到期索引都分两步，清理策略在这里改；跟随应用的主题与语言，样式用 ZCode 自己的沙箱样式表（Apache-2.0，来源与许可见 `plugins/codegraph/THIRD-PARTY-NOTICES.md` §7）
 - **Node ≥ 22.13**。MCP 侧 ZCode 有内置 Node 回退（Electron 的 Node 22.22.1），**钩子只认 PATH**——PATH 里没有 `node` 时钩子静默失效，索引仍正确
 - 配置文件 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin/codegraph.json`（`autoIndex` / `minFilesToAutoIndex` / `maxFiles` / `exclude` / `languages` / `maxIdleDays` / `maxTotalMB`），环境变量 `CODEGRAPH_*` 仅在配置文件未设置该项时生效；项目根的 `.zcode/codegraph.json` 可以只针对这个项目关闭索引或追加排除（只能收紧，不能放宽用户设置）；手动入口 `/codegraph [refresh | storage | clean …]`
 - 已知限制：COBOL 与 Liquid 只有文件级；`getattr`、动态 import、反射不连边；首次构建在后台、期间结果标 partial；浅色主题下状态徽章等几处官方样式的对比度不到 WCAG AA
