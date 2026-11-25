@@ -5,6 +5,7 @@ import { viewData, viewStrings } from '../../src/extension/describe.mjs';
 
 const NOW = Date.UTC(2026, 10, 24, 12);
 const DAY = 86_400_000;
+const MINUTE = 60_000;
 const MB = 1024 * 1024;
 // Index keys are 16 hexadecimal characters, the way `projectKey` writes them.
 export const KEYS = {
@@ -16,6 +17,7 @@ export const KEYS = {
   gone: 'ffffffffffffffff',
   keyOnly: '0123456789abcdef',
   long: '1234567890abcdef',
+  draft: '9abcdef012345678',
 };
 const entry = (key, extra = {}) => ({
   key,
@@ -40,6 +42,8 @@ const ENTRIES = [
   entry(KEYS.gone, { orphan: true, lastUsedAt: NOW - 300 * DAY }),
   entry(KEYS.keyOnly, { root: null, lastUsedAt: 0 }),
   entry(KEYS.long, { root: `D:/codes/${'a-repository-with-a-long-name/'.repeat(6)}` }),
+  // The workspace ZCode makes for a session that was never given a folder: listed last, as what it is.
+  entry(KEYS.draft, { root: 'D:/zcode-cache/.zcode/workspace/draft-62d72d80-6066-4336-88f9-db64d15fef8b', state: 'empty', files: 0, bytes: 206 * 1024, lastUsedAt: NOW - 52 * MINUTE }),
 ];
 const POLICY = { maxIdleDays: 90, maxTotalMB: 2048, fixedByFile: { maxIdleDays: false, maxTotalMB: false } };
 const DUE = [ENTRIES[2], ENTRIES[5]];
@@ -112,6 +116,8 @@ function answers(locale) {
     ],
     clean: [{ ok: true, message: t.removedN(DUE.length, sizeOf([KEYS.due, KEYS.gone])), data: view(locale, cleaned, POLICY, []) }],
     policy: [{ ok: true, message: t.saved, data: view(locale, cleaned, { ...POLICY, maxIdleDays: 30 }, []) }],
+    // Opening the store changes nothing here, so the answer carries no store.
+    open: [{ ok: true, message: t.opened }],
   };
 }
 

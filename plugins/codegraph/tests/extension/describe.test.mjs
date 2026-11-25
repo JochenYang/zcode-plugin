@@ -102,20 +102,21 @@ describe('viewData', () => {
     );
     assert.equal(data.locale, 'zh');
     assert.equal(data.storeDir, 'C:/Users/me/.zcode/indexes');
-    assert.deepEqual(data.totals, { projects: 4, size: '8.0 MB', due: 1, dueSize: '2.0 MB' });
+    assert.deepEqual(data.totals, { projects: 4, files: 730, size: '8.0 MB', due: 1, dueSize: '2.0 MB' });
     assert.deepEqual(data.policy, { maxIdleDays: 90, maxTotalMB: 2048, fixedByFile: { maxIdleDays: false, maxTotalMB: false } });
     assert.deepEqual(data.rows, [
-      { key: 'aaaaaaaaaaaaaaaa', path: 'D:/codes/aaaaaaaaaaaaaaaa', state: 'building', stateLabel: '构建中 42%', files: 700, filesText: '700 个文件', size: '2.0 MB', used: '2 小时前', notes: ['打开着的会话'], removable: false, due: false, blocked: 'current' },
-      { key: 'bbbbbbbbbbbbbbbb', path: 'D:/codes/bbbbbbbbbbbbbbbb', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: ['项目目录不存在', '使用中'], removable: false, due: false, blocked: 'in-use' },
-      { key: 'cccccccccccccccc', path: 'D:/codes/cccccccccccccccc', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '从未使用', notes: ['已到期，清理时会删除'], removable: true, due: true, blocked: null },
-      { key: 'dddddddddddddddd', path: 'D:/codes/dddddddddddddddd', state: 'unknown', stateLabel: '未知', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: [], removable: true, due: false, blocked: null },
+      { key: 'aaaaaaaaaaaaaaaa', path: 'D:/codes/aaaaaaaaaaaaaaaa', state: 'building', stateLabel: '构建中 42%', files: 700, filesText: '700 个文件', size: '2.0 MB', used: '2 小时前', notes: ['打开着的会话'], removable: false, due: false, transient: false, blocked: 'current' },
+      { key: 'bbbbbbbbbbbbbbbb', path: 'D:/codes/bbbbbbbbbbbbbbbb', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: ['项目目录不存在', '使用中'], removable: false, due: false, transient: false, blocked: 'in-use' },
+      { key: 'cccccccccccccccc', path: 'D:/codes/cccccccccccccccc', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '从未使用', notes: ['已到期，清理时会删除'], removable: true, due: true, transient: false, blocked: null },
+      { key: 'dddddddddddddddd', path: 'D:/codes/dddddddddddddddd', state: 'unknown', stateLabel: '未知', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: [], removable: true, due: false, transient: false, blocked: null },
     ]);
     assert.equal(data.text.title, '代码图谱索引');
-    assert.equal(data.text.total, '4 个项目 · 共 8.0 MB');
     assert.equal(data.text.due, '1 个索引到期（2.0 MB）');
+    assert.equal(data.text.cleanLabel, '清理 1 个到期索引', 'the clean button says how many');
     assert.deepEqual(Object.keys(data.text.columns), ['project', 'state', 'size', 'used', 'actions']);
     assert.ok(data.text.blocked.current && data.text.blocked['in-use'] && data.text.confirmHint && data.text.confirmClean);
-    assert.ok(['storeLabel', 'refresh', 'policyHeading', 'dueNote', 'save', 'empty'].every((key) => data.text[key]), 'the page needs no copy of its own');
+    assert.ok(['subtitle', 'statProjects', 'statSize', 'statFiles', 'storeHeading', 'openDir', 'copyPath', 'indexesHeading', 'indexesHint', 'policyHeading', 'policyHint', 'refresh', 'dueNote', 'save', 'empty'].every((key) => data.text[key]), 'the page needs no copy of its own');
+    assert.equal(typeof data.text.cleanWithCount, 'undefined', 'what makes the button label stays here: a function would be lost on the way to the page');
     // The host serialises this object for the page: a function in it would be lost on the way.
     assert.deepEqual(JSON.parse(JSON.stringify(data)), data);
   });
@@ -133,11 +134,31 @@ describe('viewData', () => {
       [['unknown', 'Unknown']],
       'a status file naming something that is no state of ours',
     );
-    assert.equal(data.text.total, '1 project · 2.0 MB in all');
+    assert.equal(data.text.cleanLabel, 'Clean 1 due index', 'the clean button says how many');
     const empty = viewData([], { maxIdleDays: 0 }, { locale: 'en-US', now: NOW, storeDir: null });
-    assert.deepEqual(empty.totals, { projects: 0, size: '0 KB', due: 0, dueSize: '0 KB' });
+    assert.deepEqual(empty.totals, { projects: 0, files: 0, size: '0 KB', due: 0, dueSize: '0 KB' });
+    assert.equal(empty.text.cleanLabel, 'Clean due indexes', 'nothing due: the plain label');
     assert.equal(empty.storeDir, null);
     assert.deepEqual(empty.policy, { maxIdleDays: 0, maxTotalMB: 0, fixedByFile: { maxIdleDays: false, maxTotalMB: false } });
     assert.match(empty.text.empty, /No index on this machine yet/);
+  });
+
+  test('the workspace of a draft session is named for what it is and listed after real projects', () => {
+    const draft = entry('1111111111111111', { root: 'D:/zcode-cache/.zcode/workspace/draft-62d72d80-6066-4336-88f9-db64d15fef8b', files: 0, lastUsedAt: 0 });
+    const real = entry('2222222222222222', { root: 'D:/codes/zcode-plugin' });
+    // A project that merely sits under a folder called `workspace` is a project all the same.
+    const nested = entry('3333333333333333', { root: 'D:/codes/draft-editor/.zcode/workspace/src' });
+    const data = viewData([draft, real, nested], {}, { locale: 'zh-CN', now: NOW });
+    assert.deepEqual(data.rows.map((row) => [row.key.slice(0, 4), row.transient]), [['2222', false], ['3333', false], ['1111', true]]);
+    assert.deepEqual(data.rows[2].notes, ['临时会话']);
+    assert.equal(data.totals.files, 20, 'a draft session with no index adds no files');
+  });
+
+  test('the line for a refused clipboard names the shortcut of the system', () => {
+    const data = viewData([], {}, { locale: 'en-US', now: NOW });
+    assert.match(data.text.copyManual, /Ctrl\+C/);
+    assert.match(viewData([], {}, { locale: 'en-US', now: NOW, platform: 'darwin' }).text.copyManual, /⌘C/);
+    assert.equal(viewData([], {}, { locale: 'zh-CN', now: NOW, platform: 'darwin' }).text.copyManual, '路径已选中，按 ⌘C 复制。');
+    assert.equal(data.text.copyManualMac, undefined, 'the other system\'s line is not sent along');
   });
 });

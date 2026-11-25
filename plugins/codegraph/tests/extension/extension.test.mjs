@@ -355,7 +355,7 @@ describe('command', () => {
 });
 
 describe('storage view tools', () => {
-  test('the view is registered with its page and four tools whose names are the contract', async () => {
+  test('the view is registered with its page and five tools whose names are the contract', async () => {
     const data = mk('codegraph-ext-data-');
     const host = fakeHost({ data });
     await activate(host.ctx, NO_TICK);
@@ -456,5 +456,48 @@ describe('storage view tools', () => {
     delete noSettings.ctx.settings;
     await activate(noSettings.ctx, NO_TICK);
     assert.equal((await tools(noSettings).policy.run({ maxIdleDays: 5 })).ok, false);
+  });
+
+  test('open: starts the file manager on the store, detached and without pipes; one that cannot be started is reported', async () => {
+    const data = mk('codegraph-ext-data-');
+    const host = fakeHost({ data });
+    await activate(host.ctx, NO_TICK);
+    const realSpawn = io.spawn;
+    const started = [];
+    const events = [];
+    // A stand-in for the child process: it answers the event the extension listens for.
+    const fileManager = (outcome) => ({
+      once(event, listener) {
+        if (event === outcome) setImmediate(() => listener(Object.assign(new Error('not there'), { code: 'ENOENT' })));
+        return this;
+      },
+      on(event, listener) {
+        return this.once(event, listener);
+      },
+      unref() {
+        events.push('unref');
+      },
+    });
+    io.spawn = (command, args, options) => {
+      started.push({ command, args, options });
+      return fileManager(started.length === 1 ? 'spawn' : 'error');
+    };
+    try {
+      const opened = await tools(host).open.run({});
+      assert.deepEqual([opened.ok, opened.message], [true, 'Opened the index store in your file manager.']);
+      const [call] = started;
+      const expected = process.platform === 'win32' ? 'explorer' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+      assert.deepEqual([call.command, call.options], [expected, { detached: true, stdio: 'ignore' }]);
+      assert.deepEqual(call.args, [path.join(data, 'indexes')], 'the one argument is the store; nothing comes from the page');
+      assert.equal(fs.existsSync(call.args[0]), true, 'the store is there before it is shown');
+      assert.deepEqual(events, ['unref'], 'the file manager is not held by this process');
+      events.length = 0;
+      const notStarted = await tools(host).open.run({});
+      assert.equal(notStarted.ok, false);
+      assert.match(notStarted.message, /ENOENT/);
+      assert.deepEqual(events, [], 'nothing to let go of');
+    } finally {
+      io.spawn = realSpawn;
+    }
   });
 });

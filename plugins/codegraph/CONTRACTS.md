@@ -370,7 +370,7 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 
 会话列表有两条顺序规则。读取代次（`reads`）：一次读取的应答如果在更新的读取开始之后才到，直接丢弃——宿主的应答可能比中途到来的变更事件旧。绘制串行（`paintOnce`），并且写状态位前复核该会话仍在列表里：否则一次还在等路径应答的绘制，会把刚关闭的会话的状态位重新画出来。
 
-**面板**：视图 `codegraph.storage`，入口 `ui/index.html`，`scope: "app"`。页面在沙箱 iframe 里，用 `window.zcode.callTool(<名字>, <参数>)` 调下面四个工具。`run` 返回的对象被宿主 JSON 序列化后成为页面的 `structuredContent`，**返回值里不能有函数**（`viewData` 把依赖数字的文案都先算成字符串）；`run` 抛错时页面收到 `isError`。工具永不抛错。
+**面板**：视图 `codegraph.storage`，入口 `ui/index.html`，`scope: "app"`。页面在沙箱 iframe 里，用 `window.zcode.callTool(<名字>, <参数>)` 调下面五个工具。`run` 返回的对象被宿主 JSON 序列化后成为页面的 `structuredContent`，**返回值里不能有函数**（`viewData` 把依赖数字的文案都先算成字符串）；`run` 抛错时页面收到 `isError`。工具永不抛错。
 
 | 工具 | 参数 | 返回 |
 |---|---|---|
@@ -378,11 +378,20 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 | `remove` | `{ key }`（索引目录名，16 位十六进制） | 成功 `{ ok: true, message, data }`；被拒 `{ ok: false, message }`：没给 `key`、本机没有这个索引、是打开着的会话的项目、正在被写入 |
 | `clean` | — | 同上；到期的逐个删，删不掉的在 `message` 里说明。到期的一个都没删掉时 `ok: false` |
 | `policy` | `{ maxIdleDays?, maxTotalMB? }`（≥ 0 的整数） | 写进插件设置（`ctx.settings.update`，键即 `userConfig` 的同名项），返回新的快照；非法值 `{ ok: false, message }` |
+| `open` | — | `{ ok: true, message }`；文件管理器起不来时 `{ ok: false, message }`。不带 `data`，页面也不重读 |
+
+`open`：宿主没有对外打开目录的能力，所以扩展自己起系统的文件管理器（`OPENERS`：Windows `explorer`、macOS `open`，其余 `xdg-open`），`detached: true`、`stdio: 'ignore'`，起来后 `unref`，不让它拴住这个共用进程。路径固定是 `indexesDir(data)`（不存在就建），**不接受页面传路径**，参数走数组、不经 shell。`explorer` 打开目录成功时退出码也是 1，所以只认「起没起来」：`spawn` 事件算成功，`error` 事件才算失败。
 
 改动成功但快照恰好读不到时，应答是 `{ ok: true, message }`、不带 `data`；页面据此再读一次 `list`，读不到才报错。
 
-`data` 来自 `viewData(entries, policy, { current, locale, now, storeDir, due })`：`{ locale, storeDir, totals: { projects, size, due, dueSize }, policy: { maxIdleDays, maxTotalMB, fixedByFile: { maxIdleDays, maxTotalMB } }, rows: [{ key, path, state, stateLabel, files, filesText, size, used, notes, removable, due, blocked }], text }`。`removable` 是扩展允许不允许：打开着的会话的项目与在用的索引为 `false`，`blocked` 为 `current` 或 `in-use`；`due` 只说明「清理到期索引」会带走它。策略的来源同 §12：`codegraph.json` 里写了的项 `fixedByFile` 为 `true`，页面把那一项置灰。`text` 是页面用到的全部文案，值都是字符串。
+`data` 来自 `viewData(entries, policy, { current, locale, now, storeDir, due })`：`{ locale, storeDir, totals: { projects, files, size, due, dueSize }, policy: { maxIdleDays, maxTotalMB, fixedByFile: { maxIdleDays, maxTotalMB } }, rows: [{ key, path, state, stateLabel, files, filesText, size, used, notes, removable, due, transient, blocked }], text }`。`files` 是各索引文件数之和；`transient` 标出 ZCode 给还没指定目录的会话建的工作区（根路径匹配 `/.zcode/workspace/draft-<id>`），它带「临时会话」备注并排在最后，其余顺序不变。`removable` 是扩展允许不允许：打开着的会话的项目与在用的索引为 `false`，`blocked` 为 `current` 或 `in-use`；`due` 只说明「清理到期索引」会带走它。策略的来源同 §12：`codegraph.json` 里写了的项 `fixedByFile` 为 `true`，页面把那一项置灰。`text` 是页面用到的全部文案，值都是字符串（`cleanLabel` 已按到期数量算好；工具自己的消息不进去）。
 
-**页面**（`ui/index.html`）有两个 `<style>`。`#zcode-contract` 是 ZCode 沙箱样式表（`out/plugin-sandbox/visualize.css`）的逐条原文：不改，应用升级后整块重抄。`#codegraph-layout` 只有版式属性和档位内的间距。页面用到的类名只能是契约里的工具类，或自己的 `storage-*`；动态文本一律 `textContent`，拼进选择器的 `key` 先过 `CSS.escape`。主题：宿主只通过 `zcode.hostContext.styles.variables` 交出变量，页面自己写到根元素上，并监听 `zcode:globals` 跟随明暗切换。交出来的只有 `--color-*`、`--font-*`、圆角这类变量（宿主的 schema 会剥掉 `--gen-ui-*`），所以契约里的卡片色、主按钮色、悬停色、输入框边框色用的是契约内置的回退值——ZCode 自带的可视化也是这样。删除与清理都是两步（先问，再确认），`Escape` 撤回，焦点跟着走。别名运行时的 `zcode.connecting` 在首次访问后恒为 `true`，不能拿它等连接。
+**页面**（`ui/index.html`）有三个 `<style>`。`#zcode-contract` 是 ZCode 沙箱样式表（`out/plugin-sandbox/visualize.css`）的逐条原文：不改，应用升级后整块重抄。`#codegraph-layout` 只有版式属性和档位内的间距。`#codegraph-decorations` 是面板自有的装饰——图标底下的色块、分区标题前的竖条、路径的底色、按状态着色的标签、说明文字的次要文字色（`--muted-foreground` 与 `--foreground` 按 80 / 20 混合：官方的次要文字色在应用的浅色主题下只有 4.26:1，混合后 4.99:1；改比例前用 `.tmp/w27-muted.mjs` 的做法重量）——**颜色只能是契约令牌或它的混合（`var(--…)`、`color-mix(…)`、`currentColor`、`transparent`），字号字重只能取契约的 `--font-*`，间距只能在档位上，选择器只能落在自己的 `storage-*` 上**。状态色先与前景色混合再用：契约的状态色偏亮，在应用的浅色主题下直接当文字不到 WCAG AA，混合比例（绿 50%、蓝 45%、红 65%、强调色 50%）是用 ZCode 4.0.10870 量出来的上限，改动前要重新量（`.tmp/w27-contrast.mjs` 的做法）。页面用到的类名只能是契约里的工具类，或自己的 `storage-*`；动态文本一律 `textContent`，拼进选择器的 `key` 先过 `CSS.escape`。路径是 `<span class="storage-path-code">`：在分隔符处放 `<wbr>`，至多两行（`-webkit-line-clamp: 2`），完整路径在 `title` 里。主题：宿主只通过 `zcode.hostContext.styles.variables` 交出变量，页面自己写到根元素上，并监听 `zcode:globals` 跟随明暗切换。交出来的只有 `--color-*`、`--font-*`、圆角这类变量（宿主的 schema 会剥掉 `--gen-ui-*`），所以契约里的卡片色、主按钮色、悬停色、输入框边框色用的是契约内置的回退值——ZCode 自带的可视化也是这样。
 
-**检查**（`tests/extension/`）：`page.test.mjs` 用无头 Chrome 或 Edge 打开页面（没有浏览器就跳过），应答由真实的 `viewData` 生成；检查两个样式块的性质、类名、320 px 与桌面宽度下不横向溢出、每个控件有名称、加载中、空存储、出错后重试、两步确认与焦点、明暗切换。`CODEGRAPH_PAGE=<另一份页面>` 用来确认这些检查在页面被改坏时会失败。
+**图标**：沙箱不给扩展视图图标库（`data-lucide` 不会生效），所以把 Lucide 的官方文件（npm `lucide-static` 0.468.0，ISC；原件在 `ui/icons/`）内联成 `<symbol>`，用到的地方 `<svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-<名字>"></use></svg>`，尺寸取契约的 `--icon-size`，颜色跟随文字。`icons.test.mjs` 拿 `ui/icons/` 的原件逐字对照页面里的 `<symbol>`，换版本时两处一起换。
+
+**复制路径**：`navigator.clipboard.writeText`；沙箱拒绝时（没有用户手势或没有权限）改为选中路径并提示按 Ctrl+C（macOS 上是 ⌘C，由 `viewData` 的 `platform` 决定发哪一句）；连选中都做不到时显示错误。
+
+删除与清理都是两步（先问，再确认），`Escape` 撤回，焦点跟着走。别名运行时的 `zcode.connecting` 在首次访问后恒为 `true`，不能拿它等连接。
+
+**检查**（`tests/extension/`）：`page.test.mjs` 用无头 Chrome 或 Edge 打开页面（没有浏览器就跳过），应答由真实的 `viewData` 生成；检查三个样式块的性质、类名、图标、标签不换行、路径至多两行、320 px 与桌面宽度下不横向溢出、对比度（文字 4.5:1、图标 3:1）、每个控件有名称、加载中、空存储、出错后重试、两步确认与焦点、打开目录与复制路径、明暗切换。`CODEGRAPH_PAGE=<另一份页面>` 用来确认这些检查在页面被改坏时会失败。

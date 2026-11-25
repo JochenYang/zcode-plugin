@@ -11,11 +11,19 @@ import { viewStrings } from '../../src/extension/describe.mjs';
 
 const options = { skip };
 const DESKTOP = { width: 1280, height: 900 };
+// About the width of the side pane the view opens in.
+const PANE = { width: 760, height: 1200 };
 const NARROW = { width: 320, height: 900 };
 
 test('in Chinese on a desktop window: the light theme, then the dark one', options, () => {
   const { failures, metrics } = open(runFor('zh-CN', 'zh-CN'), DESKTOP);
   assert.deepEqual(failures, [], JSON.stringify(metrics));
+});
+
+test('in Chinese at the width of the side pane', options, () => {
+  const { failures, metrics } = open(runFor('zh-CN', 'zh-CN'), PANE);
+  assert.deepEqual(failures, [], JSON.stringify(metrics));
+  assert.equal(metrics.viewport, 760, 'the frame is as wide as asked');
 });
 
 test('in Chinese at 320 pixels wide', options, () => {

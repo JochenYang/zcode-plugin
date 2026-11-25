@@ -89,16 +89,48 @@ matching parent radius (`--control-radius`) automatically. `--corner-shape: roun
 ## Usage
 
 - Utilities own geometry and states: `.btn` (28px, `.btn-primary` for the one main action,
-  `.btn-ghost` for low emphasis, `.btn-sm` 24px, `.btn-xs` 20px), `.viz-badge`, `.table`,
-  `.text-small`, `.text-muted`, `.text-destructive`, `.card`, `<code>`, `<hr>`,
-  `[data-tooltip]`. They are used as shipped and never restyled; the view adds layout only.
-- Icons: Lucide through the sandbox (`data-lucide`, 16px, `currentColor`); no inline icon SVG,
-  no emoji.
-- Colors are always the tokens above, as `var(--token)`; no light or dark palette is written by
-  hand, `currentColor` inside SVG.
+  `.btn-ghost` for low emphasis, `.btn-sm` 24px, `.btn-xs` 20px), `.table`, `.text-small`,
+  `.text-muted`, `.text-destructive`, `.card`, `<code>`, `<hr>`, `[data-tooltip]`. They are
+  used as shipped and never restyled. The view adds layout (`#codegraph-layout`) and the four
+  decorations listed under "What this view adds" (`#codegraph-decorations`), nothing else.
+- Icons are Lucide, ZCode's own icon set, at the contract's `--icon-size` in `currentColor`.
+  The sandbox gives an extension view no icon runtime, so `data-lucide` would draw nothing
+  here: the official files (npm `lucide-static`, ISC) are inlined as `<symbol>` elements and
+  used with `<use>`. No emoji, no icon of the view's own drawing.
+- Colors are always the tokens above, as `var(--token)` or a `color-mix()` of tokens; no light
+  or dark palette is written by hand.
 - `.text-muted` is never placed on a filled surface that would drop its contrast; errors use
   `.text-destructive` and say what to do next.
 - Semantic HTML only: native `button`, `input`, `select`, `table`; tab order untouched (no
   `tabindex`), browser focus styles kept, `aria-live="polite"` for results, `role="alert"` for
   errors, `aria-hidden="true"` on decorative icons.
 - Layout wraps or stacks down to 320px with no horizontal overflow; no fixed outer width.
+
+## What this view adds
+
+Five decorations the contract has no utility for, in `#codegraph-decorations`. Every color is a
+contract token or a mix of one, type is a contract size and weight, spacing is on the scale
+above, and the selectors touch only the view's own `storage-*` classes.
+`tests/extension/page.test.mjs` holds the block to that.
+
+| Decoration | Tokens | Used for |
+| --- | --- | --- |
+| Tinted tile behind an icon | `--content-accent`, `--green`, `--blue` (icon, mixed with `--foreground`; tile background the same color at 12% in `transparent`) | the title icon and the three number cards |
+| Bar before a section title | `--content-accent` | "Project indexes", "Automatic cleanup" |
+| Path shown as a chip | `--muted` background, `--font-mono` at `--font-size-normal` | project paths, the store path |
+| Label in the color of its state, with a dot | `--green` (ready), `--blue` (building), `--red` (error), neutral otherwise; text mixed with `--foreground`, background at 12% | the State column |
+| Quiet color for captions | `--muted-foreground` mixed 80 / 20 with `--foreground` | explanations, the labels of the numbers, notes, file counts |
+
+The contract's `.text-muted` is 4.26:1 on the page in the app's light theme, short of WCAG AA,
+so the view does not use it for its own text: `.storage-caption` takes the same color with a
+fifth of the foreground mixed in (4.99:1 there, lighter and still above 5:1 in the dark theme).
+
+The contract's status colors are bright: used as text on their tint in the app's light theme
+they reach 2.8:1 (green), 2.4:1 (blue) and 3.7:1 (red). So each is mixed with the foreground
+first. The shares are the brightest that still meet WCAG AA there, measured with ZCode
+4.0.10870 (`--green` 50%, `--blue` 45%, `--red` 65%, `--content-accent` 50%). On the rendered
+page in that theme the state labels measure 5.07:1 and the icons on their tiles 3.99:1; an
+isolated swatch of the same mixes measures 4.9:1 for each of the three states. In the dark
+theme every one is above 5:1. Change a share only after measuring again. The view does not use
+`.viz-badge`: one accent color for every state says less than a color per state, and the badge
+reaches 2.04:1 in the light theme.

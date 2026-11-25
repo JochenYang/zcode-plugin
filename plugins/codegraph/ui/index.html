@@ -531,7 +531,7 @@ small,
 <style id="codegraph-layout">
 /* =====================================================================================
    Layout of this view. Placement and spacing only, on the host's scale (2, 3, 4, 6, 8, 10,
-   12 px); no colour, type, border or radius of its own: those come from the block above.
+   12 px); no colour or type of its own: those come from the two blocks around this one.
    ===================================================================================== */
 
 html > body {
@@ -552,24 +552,116 @@ html > body {
 .storage-head {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.storage-title-row {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.storage-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.storage-title-text {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.storage-dir {
-  overflow-wrap: anywhere;
+/* An empty status line takes no room but stays in the page: a live region that is taken out
+   and put back is not reliably announced. */
+.storage-message:empty {
+  position: absolute;
 }
 
-.storage-message:not(:empty) {
-  margin-block-start: 6px;
+.storage-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.storage-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.storage-stat-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.storage-store {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.storage-store-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.storage-store-row {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.storage-store-path {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.storage-store-actions {
+  gap: 6px;
 }
 
 .storage-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+}
+
+.storage-bar-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storage-bar-heading::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: calc(var(--font-size-h3) * 1.1);
+  border-radius: var(--radius-full);
+}
+
+.storage-icon {
+  flex: none;
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.storage-icon-tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
 }
 
 .storage-path {
@@ -577,6 +669,19 @@ html > body {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+/* A path breaks only where it has a separator, on at most two lines; what does not fit is cut
+   with an ellipsis, and the whole path is in the tooltip. */
+.storage-path-code {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .storage-notes {
@@ -600,6 +705,23 @@ html > body {
   margin-block-start: 6px;
 }
 
+.storage-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.storage-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+}
+
+.storage-actions {
+  justify-content: space-between;
+}
+
 .storage-due {
   flex: 1 1 160px;
   min-width: 0;
@@ -614,47 +736,251 @@ html > body {
 .storage-policy-actions {
   justify-content: flex-end;
 }
+
+@media (max-width: 420px) {
+  .storage-stats {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+<style id="codegraph-decorations">
+/* =====================================================================================
+   What this view adds to the looks of the contract: a tinted tile behind an icon, a bar
+   before a section title, a path shown as a chip, a label in the colour of its state, and a
+   quiet colour for captions.
+   Every colour is a token of the contract or a mix of one, so the app's light and dark theme
+   carry over by themselves; type comes from the contract's sizes and weights. There is no
+   other rule of its own in this page. Checked by tests/extension/page.test.mjs.
+
+   A status colour is mixed with the foreground before it is written in or draws an icon: the
+   contract's colours are bright, and in the app's light theme they fall short of WCAG AA as
+   text (green 2.8:1, blue 2.4:1). The shares below are the brightest that still reach 4.5:1
+   for text and 3:1 for icons there, measured with ZCode 4.0.10870; in the dark theme every
+   share is above 5:1.
+
+   The contract's muted colour (`--muted-foreground`) is 4.26:1 on the page in that light
+   theme, so captions take it mixed with a fifth of the foreground: 4.99:1 there, and lighter
+   rather than darker in the dark theme.
+   ===================================================================================== */
+
+.storage-caption {
+  color: color-mix(in oklab, var(--muted-foreground) 80%, var(--foreground));
+}
+
+.storage-icon-tile[data-tone="accent"] {
+  color: color-mix(in oklab, var(--content-accent) 50%, var(--foreground));
+  background: color-mix(in srgb, var(--content-accent) 12%, transparent);
+}
+
+.storage-icon-tile[data-tone="green"] {
+  color: color-mix(in oklab, var(--green) 50%, var(--foreground));
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.storage-icon-tile[data-tone="blue"] {
+  color: color-mix(in oklab, var(--blue) 45%, var(--foreground));
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+}
+
+.storage-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.storage-bar-heading::before {
+  background: var(--content-accent);
+}
+
+.storage-path-code {
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-normal);
+}
+
+.storage-state {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  background: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.storage-dot {
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.storage-state[data-state="ready"] {
+  color: color-mix(in oklab, var(--green) 50%, var(--foreground));
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.storage-state[data-state="building"] {
+  color: color-mix(in oklab, var(--blue) 45%, var(--foreground));
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+}
+
+.storage-state[data-state="error"] {
+  color: color-mix(in oklab, var(--red) 65%, var(--foreground));
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
 </style>
 </head>
 <body>
+<!-- Lucide icons (lucide-static 0.468.0, ISC; the notice is in THIRD-PARTY-NOTICES.md), one
+     symbol each, used below. The sandbox gives an extension view no icon library, so the
+     official files are inlined here; ui/icons/ holds the files these were taken from, and a
+     test holds the two together. -->
+<svg aria-hidden="true" focusable="false" hidden>
+  <symbol id="codegraph-icon-database" viewBox="0 0 24 24">
+    <ellipse cx="12" cy="5" rx="9" ry="3" />
+    <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+    <path d="M3 12A9 3 0 0 0 21 12" />
+  </symbol>
+  <symbol id="codegraph-icon-refresh-cw" viewBox="0 0 24 24">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+    <path d="M8 16H3v5" />
+  </symbol>
+  <symbol id="codegraph-icon-folder" viewBox="0 0 24 24">
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  </symbol>
+  <symbol id="codegraph-icon-file-text" viewBox="0 0 24 24">
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+    <path d="M10 9H8" />
+    <path d="M16 13H8" />
+    <path d="M16 17H8" />
+  </symbol>
+  <symbol id="codegraph-icon-map-pin" viewBox="0 0 24 24">
+    <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" />
+    <circle cx="12" cy="10" r="3" />
+  </symbol>
+  <symbol id="codegraph-icon-folder-open" viewBox="0 0 24 24">
+    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+  </symbol>
+  <symbol id="codegraph-icon-copy" viewBox="0 0 24 24">
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </symbol>
+  <symbol id="codegraph-icon-trash-2" viewBox="0 0 24 24">
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    <line x1="10" x2="10" y1="11" y2="17" />
+    <line x1="14" x2="14" y1="11" y2="17" />
+  </symbol>
+</svg>
+
 <main id="codegraph-storage" class="storage" aria-busy="true">
   <header class="storage-head">
-    <h2 id="storage-title"></h2>
-    <p id="storage-total" class="text-small text-muted"></p>
-    <p id="storage-dir" class="storage-dir text-small" hidden><span id="storage-dir-label" class="text-muted"></span> <code id="storage-dir-value"></code></p>
+    <div class="viz-row storage-title-row">
+      <div class="storage-title">
+        <span class="storage-icon-tile" data-tone="accent" aria-hidden="true">
+          <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-database"></use></svg>
+        </span>
+        <div class="storage-title-text">
+          <h2 id="storage-title"></h2>
+          <p id="storage-subtitle" class="text-small storage-caption"></p>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm" id="storage-refresh" data-action="refresh" disabled>
+        <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-refresh-cw"></use></svg>
+        <span id="storage-refresh-label"></span>
+      </button>
+    </div>
     <p id="storage-error" class="storage-message text-destructive" role="alert"></p>
     <p id="storage-status" class="storage-message" role="status" aria-live="polite"></p>
     <button type="button" class="btn btn-sm" id="storage-retry" data-action="refresh" hidden></button>
   </header>
 
-  <section class="storage-section" aria-labelledby="storage-title">
+  <section class="storage-stats" id="storage-stats" hidden>
+    <div class="card storage-stat">
+      <span class="storage-icon-tile" data-tone="accent" aria-hidden="true">
+        <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-folder"></use></svg>
+      </span>
+      <div class="storage-stat-text">
+        <span id="stat-projects-label" class="text-small storage-caption"></span>
+        <span id="stat-projects" class="storage-stat-value tabular-nums"></span>
+      </div>
+    </div>
+    <div class="card storage-stat">
+      <span class="storage-icon-tile" data-tone="green" aria-hidden="true">
+        <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-database"></use></svg>
+      </span>
+      <div class="storage-stat-text">
+        <span id="stat-size-label" class="text-small storage-caption"></span>
+        <span id="stat-size" class="storage-stat-value tabular-nums"></span>
+      </div>
+    </div>
+    <div class="card storage-stat">
+      <span class="storage-icon-tile" data-tone="blue" aria-hidden="true">
+        <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-file-text"></use></svg>
+      </span>
+      <div class="storage-stat-text">
+        <span id="stat-files-label" class="text-small storage-caption"></span>
+        <span id="stat-files" class="storage-stat-value tabular-nums"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card storage-store" id="storage-store" aria-labelledby="store-heading" hidden>
+    <h3 id="store-heading" class="storage-store-heading">
+      <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-map-pin"></use></svg>
+      <span id="store-heading-label"></span>
+    </h3>
+    <div class="viz-row storage-store-row">
+      <span id="storage-dir-value" class="storage-path-code storage-store-path"></span>
+      <div class="viz-row storage-store-actions">
+        <button type="button" class="btn btn-sm" id="storage-open" data-action="open">
+          <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-folder-open"></use></svg>
+          <span id="storage-open-label"></span>
+        </button>
+        <button type="button" class="btn btn-sm" id="storage-copy" data-action="copy">
+          <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-copy"></use></svg>
+          <span id="storage-copy-label"></span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card storage-section" id="storage-indexes" aria-labelledby="indexes-heading" hidden>
+    <h3 id="indexes-heading" class="storage-bar-heading"></h3>
+    <p id="indexes-hint" class="text-small storage-caption"></p>
     <div class="table-responsive" id="storage-table" hidden>
       <table class="table">
         <thead>
           <tr>
-            <th scope="col" id="col-project"></th>
-            <th scope="col" id="col-state"></th>
-            <th scope="col" id="col-size"></th>
-            <th scope="col" id="col-used"></th>
-            <th scope="col" id="col-actions"></th>
+            <th scope="col" id="col-project" class="text-nowrap"></th>
+            <th scope="col" id="col-state" class="text-nowrap"></th>
+            <th scope="col" id="col-size" class="text-nowrap"></th>
+            <th scope="col" id="col-used" class="text-nowrap"></th>
+            <th scope="col" id="col-actions" class="text-nowrap"></th>
           </tr>
         </thead>
         <tbody id="storage-rows"></tbody>
       </table>
     </div>
-    <p id="storage-empty" class="text-muted" hidden></p>
+    <p id="storage-empty" class="storage-caption" hidden></p>
+    <div class="viz-row storage-actions" id="storage-actions">
+      <p id="storage-due" class="storage-due text-small" hidden></p>
+      <button type="button" class="btn btn-sm" id="storage-clean" data-action="clean">
+        <svg class="storage-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#codegraph-icon-trash-2"></use></svg>
+        <span id="storage-clean-label"></span>
+      </button>
+      <button type="button" class="btn btn-sm" id="storage-confirm-clean" data-action="confirm-clean" hidden></button>
+      <button type="button" class="btn btn-ghost btn-sm" id="storage-cancel-clean" data-action="cancel" hidden></button>
+    </div>
   </section>
 
-  <div class="viz-row" id="storage-actions" hidden>
-    <p id="storage-due" class="storage-due text-small"></p>
-    <button type="button" class="btn btn-sm" id="storage-clean" data-action="clean"></button>
-    <button type="button" class="btn btn-sm" id="storage-confirm-clean" data-action="confirm-clean" hidden></button>
-    <button type="button" class="btn btn-ghost btn-sm" id="storage-cancel-clean" data-action="cancel" hidden></button>
-    <button type="button" class="btn btn-ghost btn-sm" id="storage-refresh" data-action="refresh"></button>
-  </div>
-
   <form class="card storage-policy" id="policy-form" aria-labelledby="policy-title" hidden>
-    <h3 id="policy-title"></h3>
+    <h3 id="policy-title" class="storage-bar-heading"></h3>
+    <p id="policy-hint" class="text-small storage-caption"></p>
     <div class="viz-controls">
       <label class="form-label" for="policy-idle">
         <span id="policy-idle-label"></span>
@@ -665,7 +991,7 @@ html > body {
         <input id="policy-quota" class="form-control form-control-sm" type="number" min="0" step="1" inputmode="numeric" aria-describedby="policy-note" required>
       </label>
     </div>
-    <p id="policy-note" class="text-small text-muted" hidden></p>
+    <p id="policy-note" class="text-small storage-caption" hidden></p>
     <div class="viz-row storage-policy-actions">
       <button type="submit" class="btn btn-primary btn-sm" id="policy-save"></button>
     </div>
@@ -715,24 +1041,40 @@ html > body {
   const main = byId('codegraph-storage');
   const el = {
     title: byId('storage-title'),
-    total: byId('storage-total'),
-    dir: byId('storage-dir'),
-    dirLabel: byId('storage-dir-label'),
-    dirValue: byId('storage-dir-value'),
+    subtitle: byId('storage-subtitle'),
+    refresh: byId('storage-refresh'),
+    refreshLabel: byId('storage-refresh-label'),
     error: byId('storage-error'),
     status: byId('storage-status'),
     retry: byId('storage-retry'),
+    stats: byId('storage-stats'),
+    statProjects: byId('stat-projects'),
+    statProjectsLabel: byId('stat-projects-label'),
+    statSize: byId('stat-size'),
+    statSizeLabel: byId('stat-size-label'),
+    statFiles: byId('stat-files'),
+    statFilesLabel: byId('stat-files-label'),
+    store: byId('storage-store'),
+    storeHeading: byId('store-heading-label'),
+    dirValue: byId('storage-dir-value'),
+    open: byId('storage-open'),
+    openLabel: byId('storage-open-label'),
+    copy: byId('storage-copy'),
+    copyLabel: byId('storage-copy-label'),
+    indexes: byId('storage-indexes'),
+    indexesHeading: byId('indexes-heading'),
+    indexesHint: byId('indexes-hint'),
     table: byId('storage-table'),
     rows: byId('storage-rows'),
     empty: byId('storage-empty'),
-    actions: byId('storage-actions'),
     due: byId('storage-due'),
     clean: byId('storage-clean'),
+    cleanLabel: byId('storage-clean-label'),
     confirmClean: byId('storage-confirm-clean'),
     cancelClean: byId('storage-cancel-clean'),
-    refresh: byId('storage-refresh'),
     form: byId('policy-form'),
     policyTitle: byId('policy-title'),
+    policyHint: byId('policy-hint'),
     idle: byId('policy-idle'),
     idleLabel: byId('policy-idle-label'),
     quota: byId('policy-quota'),
@@ -836,34 +1178,50 @@ html > body {
 
   // ---------------------------------------------------------------- rendering
 
+  // A path as text that can break only where it has a separator: a `<wbr>` before each slash.
+  function pathChip(path) {
+    const chip = make('span', 'storage-path-code');
+    chip.title = path;
+    const parts = String(path).split('/');
+    parts.forEach((part, index) => {
+      chip.append(document.createTextNode(part));
+      if (index < parts.length - 1) chip.append(document.createElement('wbr'), document.createTextNode('/'));
+    });
+    return chip;
+  }
+
   function renderRow(row) {
     const tr = make('tr');
     tr.dataset.key = row.key;
 
     const project = make('td');
     const path = make('div', 'storage-path');
-    path.append(make('code', '', row.path));
+    path.append(pathChip(row.path));
     if (row.notes.length > 0) {
-      const notes = make('ul', 'storage-notes text-small text-muted');
+      const notes = make('ul', 'storage-notes text-small storage-caption');
       notes.setAttribute('role', 'list');
       for (const note of row.notes) notes.append(make('li', '', note));
       path.append(notes);
     }
     project.append(path);
 
-    // "Error" reads as text in the error colour; the other states are badges.
+    // A label in the colour of its state, with a dot of the same colour before it.
     const state = make('td');
-    state.append(make('span', row.state === 'error' ? 'text-destructive' : 'viz-badge', row.stateLabel));
+    const label = make('span', 'storage-state', row.stateLabel);
+    label.dataset.state = row.state;
+    label.prepend(make('span', 'storage-dot'));
+    label.firstElementChild.setAttribute('aria-hidden', 'true');
+    state.append(label);
 
     const size = make('td');
-    size.append(make('span', 'tabular-nums', row.size));
-    if (row.filesText) size.append(make('div', 'text-small text-muted', row.filesText));
+    size.append(make('div', 'tabular-nums text-nowrap', row.size));
+    if (row.filesText) size.append(make('div', 'text-small storage-caption text-nowrap', row.filesText));
 
     const actions = make('td');
     const buttons = make('div', 'storage-row-actions text-nowrap');
     if (pending?.key === row.key) {
       buttons.append(button('confirm-delete', 'btn btn-sm', text.confirmDelete), button('cancel', 'btn btn-ghost btn-sm', text.cancel));
-      actions.append(make('p', 'storage-confirm-hint text-small text-muted', text.confirmHint));
+      actions.append(make('p', 'storage-confirm-hint text-small storage-caption', text.confirmHint));
     } else {
       // One that cannot be removed keeps its button, disabled; the notes above say why.
       const remove = button('delete', 'btn btn-sm', text.delete);
@@ -876,7 +1234,7 @@ html > body {
     actions.append(buttons);
     if (busy) for (const item of buttons.querySelectorAll('button')) item.disabled = true;
 
-    tr.append(project, state, size, make('td', 'tabular-nums', row.used), actions);
+    tr.append(project, state, size, make('td', 'tabular-nums text-nowrap', row.used), actions);
     return tr;
   }
 
@@ -887,11 +1245,25 @@ html > body {
     document.title = text.title;
 
     el.title.textContent = text.title;
-    el.total.textContent = text.total;
-    el.dir.hidden = !view.storeDir;
-    el.dirLabel.textContent = text.storeLabel;
-    el.dirValue.textContent = view.storeDir ?? '';
+    el.subtitle.textContent = text.subtitle;
+    el.refreshLabel.textContent = text.refresh;
+    el.retry.textContent = text.refresh;
 
+    el.statProjectsLabel.textContent = text.statProjects;
+    el.statProjects.textContent = String(view.totals.projects);
+    el.statSizeLabel.textContent = text.statSize;
+    el.statSize.textContent = view.totals.size;
+    el.statFilesLabel.textContent = text.statFiles;
+    el.statFiles.textContent = String(view.totals.files);
+
+    el.storeHeading.textContent = text.storeHeading;
+    el.dirValue.textContent = view.storeDir ?? '';
+    el.dirValue.title = view.storeDir ?? '';
+    el.openLabel.textContent = text.openDir;
+    el.copyLabel.textContent = text.copyPath;
+
+    el.indexesHeading.textContent = text.indexesHeading;
+    el.indexesHint.textContent = text.indexesHint;
     for (const [name, cell] of Object.entries(el.columns)) cell.textContent = text.columns[name];
     el.rows.replaceChildren(...view.rows.map(renderRow));
     el.table.hidden = view.rows.length === 0;
@@ -900,6 +1272,9 @@ html > body {
 
     el.due.hidden = view.totals.due === 0;
     el.due.textContent = text.due;
+    el.cleanLabel.textContent = text.cleanLabel;
+    el.confirmClean.textContent = text.confirmClean;
+    el.cancelClean.textContent = text.cancel;
 
     el.idleLabel.textContent = text.idleLabel;
     el.quotaLabel.textContent = text.quotaLabel;
@@ -910,14 +1285,12 @@ html > body {
     el.note.hidden = !(fixed.maxIdleDays || fixed.maxTotalMB);
     el.note.textContent = text.fixedByFile;
 
-    el.clean.textContent = text.clean;
-    el.confirmClean.textContent = text.confirmClean;
-    el.cancelClean.textContent = text.cancel;
-    el.refresh.textContent = text.refresh;
-    el.retry.textContent = text.refresh;
     el.policyTitle.textContent = text.policyHeading;
+    el.policyHint.textContent = text.policyHint;
     el.save.textContent = text.save;
-    el.actions.hidden = false;
+    el.stats.hidden = false;
+    el.store.hidden = !view.storeDir;
+    el.indexes.hidden = false;
     el.form.hidden = false;
 
     syncControls();
@@ -936,6 +1309,8 @@ html > body {
     el.cancelClean.disabled = busy;
     el.refresh.disabled = busy;
     el.retry.disabled = busy;
+    el.open.disabled = busy;
+    el.copy.disabled = busy;
     el.idle.disabled = busy || fixed.maxIdleDays;
     el.quota.disabled = busy || fixed.maxTotalMB;
     el.save.disabled = busy || (fixed.maxIdleDays && fixed.maxTotalMB);
@@ -987,6 +1362,49 @@ html > body {
     restoreFocus(anchor);
   }
 
+  // Opens the store in the system's file manager. Nothing changes here, so the store is not
+  // read again.
+  async function openStore() {
+    const anchor = focusAnchor();
+    setBusy(true);
+    render();
+    try {
+      const result = await call('open', {});
+      say(result.message ?? '', result.ok === false);
+      if (result.ok !== false) hideError();
+    } catch (err) {
+      showError(`${boot.failed}${err?.message ?? err}`);
+    }
+    // The button was disabled while the file manager started; where that took the focus, it
+    // goes back.
+    setBusy(false);
+    render();
+    restoreFocus(anchor);
+  }
+
+  // Puts the path of the store on the clipboard. Where the sandbox refuses that, the path is
+  // selected instead and the status line says so.
+  async function copyPath() {
+    const target = view?.storeDir;
+    if (!target) return;
+    try {
+      await navigator.clipboard.writeText(target);
+      say(text.copied);
+    } catch {
+      // No press of the user's, or no permission for the clipboard.
+      const selection = window.getSelection();
+      if (!selection) {
+        showError(`${boot.failed}${text.copyFailed}`);
+        return;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(el.dirValue);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      say(text.copyManual);
+    }
+  }
+
   main.addEventListener('click', (event) => {
     const target = event.target.closest('button[data-action]');
     if (!target || busy) return;
@@ -1014,6 +1432,12 @@ html > body {
         break;
       case 'confirm-clean':
         act('clean', {});
+        break;
+      case 'open':
+        openStore();
+        break;
+      case 'copy':
+        copyPath();
         break;
       case 'refresh':
         load();

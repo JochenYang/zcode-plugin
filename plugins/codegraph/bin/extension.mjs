@@ -21,6 +21,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import { spawn as spawnProcess } from 'node:child_process';
 import { readStatusFile } from '../src/index/status.mjs';
 import { dataDir, projectKey, resolveProjectRoot } from '../src/paths.mjs';
 import { fileSettings, loadProjectConfig } from '../src/config.mjs';
@@ -30,7 +31,7 @@ import { resolvePolicy, slotFor, viewData, viewStrings } from '../src/extension/
 export const SLOT_ID = 'codegraph.status';
 export const VIEW_ID = 'codegraph.storage';
 export const COMMAND_ID = 'codegraph.storage';
-export const TOOL_NAMES = Object.freeze(['list', 'remove', 'clean', 'policy']);
+export const TOOL_NAMES = Object.freeze(['list', 'remove', 'clean', 'policy', 'open']);
 // The status item is refreshed often while an index is being built somewhere, rarely otherwise.
 export const BUILDING_REFRESH_MS = 5000;
 export const IDLE_REFRESH_MS = 60_000;
@@ -40,6 +41,8 @@ export const PATH_TIMEOUT_MS = 1500;
 const MB = 1024 * 1024;
 const POLICY_KEYS = ['maxIdleDays', 'maxTotalMB'];
 const quiet = { write() {} };
+// What shows a folder in the file manager of each desktop; everything else is taken to have `xdg-open`.
+const OPENERS = { win32: 'explorer', darwin: 'open' };
 
 const display = (value) => String(value ?? '').split(path.sep).join('/');
 const isCount = (value) => typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -50,9 +53,12 @@ function dataDirectory(ctx) {
   return typeof named === 'string' && named.trim() ? path.resolve(named.trim()) : dataDir();
 }
 
-// The one call the extension makes on a path it does not own. Tests replace `stat` to make a
-// path that never answers.
-export const io = { stat: (target) => fs.promises.stat(target) };
+// The two calls the extension makes outside its own code: a probe of a path it does not own,
+// and the file manager it starts. Tests replace both.
+export const io = {
+  stat: (target) => fs.promises.stat(target),
+  spawn: (command, args, options) => spawnProcess(command, args, options),
+};
 
 /**
  * Ask a path whether it is there, without ever waiting longer than `timeoutMs`.
@@ -348,6 +354,44 @@ export async function activate(ctx, { buildingRefreshMs = BUILDING_REFRESH_MS, i
     return done(t().saved);
   }
 
+  // Shows the store in the system's file manager. The host has no capability for it, so the
+  // extension starts the file manager itself: detached and without pipes, so nothing it does
+  // can hold this shared process. The page never names a path; it is always this plugin's own
+  // store. `explorer` exits with 1 when it opens a folder, so a start that did not fail is a
+  // success; only a file manager that cannot be started is reported.
+  function openStore() {
+    return new Promise((resolve) => {
+      const dir = indexesDir(data);
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (err) {
+        resolve(failed(t().openFailed(err?.message ?? err)));
+        return;
+      }
+      const command = OPENERS[process.platform] ?? 'xdg-open';
+      let child;
+      try {
+        child = io.spawn(command, [dir], { detached: true, stdio: 'ignore' });
+      } catch (err) {
+        resolve(failed(t().openFailed(err?.message ?? err)));
+        return;
+      }
+      let settled = false;
+      const settle = (result) => {
+        if (!settled) {
+          settled = true;
+          resolve(result);
+        }
+      };
+      // `on`, not `once`: an `error` event that nobody listens for would throw in this shared process.
+      child.on('error', (err) => settle(failed(t().openFailed(err?.code ?? err?.message ?? err))));
+      child.once('spawn', () => {
+        child.unref();
+        settle({ ok: true, message: t().opened });
+      });
+    });
+  }
+
   // A tool answers; it never throws. What it returns is the page's `structuredContent`.
   const tool = (description, inputSchema, run) => ({
     description,
@@ -372,6 +416,7 @@ export async function activate(ctx, { buildingRefreshMs = BUILDING_REFRESH_MS, i
         remove: tool('Remove one index. Refused for the project of an open session and for an index in use.', { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] }, removeOne),
         clean: tool('Remove what the policy says is due.', { type: 'object', properties: {} }, cleanDue),
         policy: tool('Set the store policy (idle days, total MB). 0 switches a limit off.', { type: 'object', properties: { maxIdleDays: counted, maxTotalMB: counted } }, setPolicy),
+        open: tool('Show the index store in the system file manager.', { type: 'object', properties: {} }, openStore),
       },
     });
   } catch (err) {

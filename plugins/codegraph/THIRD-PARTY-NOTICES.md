@@ -1,9 +1,12 @@
 # Third-Party Notices
 
-This plugin bundles prebuilt tree-sitter WebAssembly grammars and the
-web-tree-sitter runtime. The plugin itself adds no license terms to them.
-Each component keeps its own license; the full texts are in
-`grammars/LICENSES/` and `grammars/runtime/LICENSE.web-tree-sitter.txt`.
+This plugin bundles prebuilt tree-sitter WebAssembly grammars, the
+web-tree-sitter runtime, and Lucide icon files. The plugin itself adds no
+license terms to them. Each component keeps its own license; the full texts
+are in `grammars/LICENSES/`, `grammars/runtime/LICENSE.web-tree-sitter.txt`
+and `ui/icons/LICENSE.lucide.txt`. Sections 7 and 8 also record two things
+that are not bundles but reproductions: rules of ZCode's own stylesheet, and
+the icons as they are inlined in the view.
 
 Machine-readable provenance (sha256, source, version, license) for every
 wasm is in `grammars/manifest.json`.
@@ -182,5 +185,25 @@ the app (ZCode Desktop 4.0.10870, `out/plugin-sandbox/visualize.css`), minus the
 rules this view does not use. It is there so that the plugin's index management
 view looks the way every other sandboxed view in ZCode looks; the rules are
 reproduced as the app wrote them and are not edited. ZCode's own terms apply to
-that block. The second `<style>` block (`id="codegraph-layout"`) is this
-plugin's own and contains layout only.
+that block. The other two `<style>` blocks (`id="codegraph-layout"`, layout
+only, and `id="codegraph-decorations"`, colours and type taken from the
+contract's tokens) are this plugin's own.
+
+## 8. Lucide icons (inlined in `ui/index.html`)
+
+- Files: the `<symbol>` elements of `ui/index.html`; the files they were
+  taken from are kept in `ui/icons/` (`copy`, `database`, `file-text`,
+  `folder`, `folder-open`, `map-pin`, `refresh-cw`, `trash-2`)
+- Source: npm `lucide-static@0.468.0`, https://lucide.dev,
+  https://github.com/lucide-icons/lucide (`packages/lucide-static/icons/`)
+- License: ISC. Copyright (c) for portions of Lucide are held by Cole Bemis
+  2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are
+  held by Lucide Contributors 2022.
+- Full text: `ui/icons/LICENSE.lucide.txt`
+
+The drawings are ZCode's own icon set, inlined because the sandbox gives an
+extension view no icon runtime. They are reproduced as published: the drawing
+elements are copied as they are, while the attributes of each file's root
+(`xmlns`, `fill`, `stroke*`, `width` / `height`, `class`) are left out and
+stated once where an icon is used; the size comes from the app's
+`--icon-size`.

@@ -28,6 +28,8 @@ const TEXT = {
     inUse: 'in use',
     // The view is app-wide: "open" means some session has this project open.
     current: 'an open session',
+    // A workspace ZCode makes for a session that was never given a folder; it is no project of the user's.
+    transient: 'draft session',
   },
   zh: {
     files: (count) => `${count} 个文件`,
@@ -46,14 +48,29 @@ const TEXT = {
     inUse: '使用中',
     // 面板是应用级的：这里的「打开」指有会话打开着这个项目。
     current: '打开着的会话',
+    // ZCode 给还没指定目录的会话建的工作区，不是用户的项目。
+    transient: '临时会话',
   },
 };
 
 const VIEW_TEXT = {
   en: {
     columns: { project: 'Project', state: 'State', size: 'Size', used: 'Last used', actions: 'Actions' },
-    total: (projects, size) => `${projects} ${projects === 1 ? 'project' : 'projects'} · ${size} in all`,
-    storeLabel: 'Index store',
+    subtitle: 'Manage the indexes on this machine and how they are cleaned up',
+    statProjects: 'Projects',
+    statSize: 'Total size',
+    statFiles: 'Indexed files',
+    storeHeading: 'Index store',
+    openDir: 'Open folder',
+    copyPath: 'Copy path',
+    copied: 'Path copied.',
+    copyManual: 'The path is selected; copy it with Ctrl+C.',
+    copyManualMac: 'The path is selected; copy it with ⌘C.',
+    copyFailed: 'The path could not be copied, and it could not be selected either.',
+    opened: 'Opened the index store in your file manager.',
+    openFailed: (message) => `The folder could not be opened: ${message}`,
+    indexesHeading: 'Project indexes',
+    indexesHint: 'Every project that has an index, and its state',
     blocked: {
       current: 'The project of an open session. Its index goes with clean=current from that session.',
       'in-use': 'Another session is writing it right now.',
@@ -62,19 +79,21 @@ const VIEW_TEXT = {
     confirmDelete: 'Confirm delete',
     cancel: 'Cancel',
     confirmHint: 'It is rebuilt the next time the project is opened.',
-    clean: 'Clean what is due',
+    clean: 'Clean due indexes',
+    cleanWithCount: (count) => `Clean ${count} due ${count === 1 ? 'index' : 'indexes'}`,
     confirmClean: 'Confirm clean',
     due: (count, size) => `${count} ${count === 1 ? 'index is' : 'indexes are'} due (${size})`,
     dueNote: 'Due: "Clean what is due" removes it',
-    policyHeading: 'Cleanup policy',
-    idleLabel: 'Delete an index after this many idle days (0 keeps every index)',
+    policyHeading: 'Automatic cleanup',
+    policyHint: 'Delete an index after this many idle days, and cap the total size of the store',
+    idleLabel: 'Idle days before an index is deleted (0 keeps every index)',
     quotaLabel: 'Total size limit in MB (0 = no limit)',
     fixedByFile: 'Set by codegraph.json; change it there.',
     refresh: 'Refresh',
     keptBusy: 'it could not be removed right now (a file is in use or the filesystem refused); try again later',
     noKey: 'the index was not named',
     unknownKey: 'there is no such index on this machine',
-    save: 'Save',
+    save: 'Save settings',
     empty: 'No index on this machine yet. A project is indexed when a session opens it.',
     nothingDue: 'Nothing is due.',
     removed: (project, size) => `Removed the index of ${project}, ${size} freed.`,
@@ -85,8 +104,21 @@ const VIEW_TEXT = {
   },
   zh: {
     columns: { project: '项目', state: '状态', size: '大小', used: '上次使用', actions: '操作' },
-    total: (projects, size) => `${projects} 个项目 · 共 ${size}`,
-    storeLabel: '索引目录',
+    subtitle: '管理本地项目索引与自动清理策略',
+    statProjects: '项目数量',
+    statSize: '索引总大小',
+    statFiles: '索引文件',
+    storeHeading: '索引存储位置',
+    openDir: '打开目录',
+    copyPath: '复制路径',
+    copied: '路径已复制。',
+    copyManual: '路径已选中，按 Ctrl+C 复制。',
+    copyManualMac: '路径已选中，按 ⌘C 复制。',
+    copyFailed: '路径没能复制，也没能选中。',
+    opened: '已在文件管理器中打开索引目录。',
+    openFailed: (message) => `目录没能打开：${message}`,
+    indexesHeading: '项目索引',
+    indexesHint: '以下是已索引的项目及其状态信息',
     blocked: {
       current: '这是打开着的会话的项目；要删它的索引，在那个会话里用 clean=current。',
       'in-use': '另一个会话正在写入它。',
@@ -96,10 +128,12 @@ const VIEW_TEXT = {
     cancel: '取消',
     confirmHint: '删除后，下次打开该项目时会重建。',
     clean: '清理到期索引',
+    cleanWithCount: (count) => `清理 ${count} 个到期索引`,
     confirmClean: '确认清理',
     due: (count, size) => `${count} 个索引到期（${size}）`,
     dueNote: '已到期，清理时会删除',
-    policyHeading: '清理策略',
+    policyHeading: '自动清理策略',
+    policyHint: '配置多少天后删除闲置索引，以及总量上限',
     idleLabel: '闲置多少天后删除（0 表示一直保留）',
     quotaLabel: '总量上限，MB（0 表示不限）',
     fixedByFile: '由 codegraph.json 设定，要改就改那个文件。',
@@ -107,7 +141,7 @@ const VIEW_TEXT = {
     keptBusy: '现在删不掉（文件被占用或文件系统拒绝），稍后再试',
     noKey: '没有指定要删的索引',
     unknownKey: '本机上没有这个索引',
-    save: '保存',
+    save: '保存设置',
     empty: '本机上还没有任何索引。项目在会话打开时自动建索引。',
     nothingDue: '没有到期的索引。',
     removed: (project, size) => `已删除 ${project} 的索引，释放 ${size}。`,
@@ -216,17 +250,22 @@ export function ageLabel(ms, now, locale = '') {
 
 const percent = (entry) => (entry.state === 'building' && entry.files > 0 ? Math.min(100, Math.floor((count(entry.filesDone) / entry.files) * 100)) : null);
 
+// The workspace ZCode makes for a session that was never given a folder: under a `.zcode`
+// directory, named `draft-<id>`.
+const TRANSIENT_ROOT = /\/\.zcode\/workspace\/draft-[^/]+\/?$/i;
+
 /**
  * Everything the storage view shows, already in the user's language. One object, so the page
  * holds no copy of its own and nothing is formatted twice.
  *
  * @param {object[]} entries  `listIndexes()`
  * @param {{ maxIdleDays?: number, maxTotalMB?: number }} config
- * @param {{ current?: string[], locale?: string, now?: number, storeDir?: string|null, due?: object[] }} [options]
+ * @param {{ current?: string[], locale?: string, now?: number, storeDir?: string|null, due?: object[], platform?: string }} [options]
  *   `current` lists the project keys of the sessions that are open; `due` is what
- *   `planSweep` would remove, for the "clean what is due" action
+ *   `planSweep` would remove, for the "clean what is due" action; `platform` is
+ *   `process.platform`, for the one line that names the keyboard shortcut of the system
  */
-export function viewData(entries, config, { current = [], locale = '', now = Date.now(), storeDir = null, due = [] } = {}) {
+export function viewData(entries, config, { current = [], locale = '', now = Date.now(), storeDir = null, due = [], platform = process.platform } = {}) {
   const zh = isZh(locale);
   const t = zh ? TEXT.zh : TEXT.en;
   const v = zh ? VIEW_TEXT.zh : VIEW_TEXT.en;
@@ -237,6 +276,7 @@ export function viewData(entries, config, { current = [], locale = '', now = Dat
     // `hasOwn`: a status file that says "constructor" names no state.
     const state = Object.hasOwn(t.state, entry.state) ? entry.state : 'unknown';
     const blocked = open.has(entry.key) ? 'current' : entry.inUse ? 'in-use' : null;
+    const transient = typeof entry.root === 'string' && TRANSIENT_ROOT.test(entry.root);
     return {
       key: entry.key,
       path: entry.root ?? entry.key,
@@ -246,21 +286,31 @@ export function viewData(entries, config, { current = [], locale = '', now = Dat
       filesText: entry.files > 0 ? t.files(count(entry.files)) : '',
       size: sizeText(entry.bytes),
       used: entry.lastUsedAt > 0 ? ageLabel(entry.lastUsedAt, now, locale) : t.never,
-      notes: [entry.orphan ? t.folderMissing : null, entry.inUse ? t.inUse : null, blocked === 'current' ? t.current : null, dueKeys.has(entry.key) ? v.dueNote : null].filter(Boolean),
+      notes: [transient ? t.transient : null, entry.orphan ? t.folderMissing : null, entry.inUse ? t.inUse : null, blocked === 'current' ? t.current : null, dueKeys.has(entry.key) ? v.dueNote : null].filter(Boolean),
       // `removable` is what the extension will allow: an open session's project and an index in
       // use are refused; `due` only says that "clean what is due" would take it.
       removable: blocked === null,
       due: dueKeys.has(entry.key),
+      // The workspace of a session that was never given a folder: listed as what it is, last.
+      transient,
       blocked,
     };
   });
+  rows.sort((a, b) => Number(a.transient) - Number(b.transient));
   // The host serialises this object for the page, so it holds no function: the lines that
-  // depend on the numbers are made here, as strings.
-  const { total, due: dueLine, removed, removedN, kept, failed, ...copy } = v;
+  // depend on the numbers are made here, as strings, and the ones the extension alone uses
+  // (the messages of its tools) stay out of it.
+  const { due: dueLine, cleanWithCount, removed, removedN, kept, failed, openFailed, copyManualMac, ...copy } = v;
   return {
     locale: zh ? 'zh' : 'en',
     storeDir: storeDir ? String(storeDir).split(path.sep).join('/') : null,
-    totals: { projects: rows.length, size: sum(entries), due: due.length, dueSize: sum(due) },
+    totals: {
+      projects: rows.length,
+      files: rows.reduce((total, row) => total + row.files, 0),
+      size: sum(entries),
+      due: due.length,
+      dueSize: sum(due),
+    },
     policy: {
       maxIdleDays: count(config.maxIdleDays),
       maxTotalMB: count(config.maxTotalMB),
@@ -268,6 +318,12 @@ export function viewData(entries, config, { current = [], locale = '', now = Dat
       fixedByFile: { maxIdleDays: config.fixedByFile?.maxIdleDays === true, maxTotalMB: config.fixedByFile?.maxTotalMB === true },
     },
     rows,
-    text: { ...copy, title: t.title, total: total(rows.length, sum(entries)), due: dueLine(due.length, sum(due)) },
+    text: {
+      ...copy,
+      title: t.title,
+      due: dueLine(due.length, sum(due)),
+      cleanLabel: due.length > 0 ? cleanWithCount(due.length) : copy.clean,
+      copyManual: platform === 'darwin' ? copyManualMac : copy.copyManual,
+    },
   };
 }
