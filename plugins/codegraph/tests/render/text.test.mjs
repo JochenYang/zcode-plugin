@@ -218,7 +218,7 @@ describe('renderSearch', () => {
     const out = renderSearch([], { query: 'zzz', freshness: FRESH });
     assert.equal(lines(out)[0], '# search zzz · no matches · indexed 2m ago');
     assert.equal(lines(out).length, 2);
-    assert.match(lines(out)[1], /^hint: search matches symbol names only .*; a word of one or two letters must be a whole word\.$/);
+    assert.equal(lines(out)[1], 'hint: search matches symbol names and names that are used here without a definition; text, object keys in literals, property reads (obj.field) in JS/TS and string literals belong to Grep; a word of one or two letters must be a whole word.');
   });
 
   test('legend appears only when a visible row carries ~ or ?', () => {
@@ -289,6 +289,77 @@ describe('renderSearch', () => {
     assert.equal(out[4], ' function f src/a.ts:1-2 · 1 reference (not broken down by file)');
     assert.equal(out[5], ' function f src/a.ts:1-2 · 12 uses in 4 files');
     assert.equal(out.filter((l) => l === LEGEND).length, 1, 'the legend explains the ~ once');
+  });
+});
+
+// A name that is used but not defined (CONTRACTS.md §11 "search"): the rows are places.
+describe('renderSearch: a name that is only used', () => {
+  const HINT = 'hint: no symbol carries this name; the rows are places that use it: calls and type names. ' +
+    'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
+  const cut = (text, max) => `${text.slice(0, max - 1)}…`;
+  const ROWS = [
+    { kind: 'call', name: 'useEffect', receiver: null, count: 4, path: 'src/ThemeProvider.tsx', startLine: 63, owner: 'ThemeProvider', ownerQual: 'ThemeProvider', ownerKind: 'component' },
+    { kind: 'ref', name: 'cfg', receiver: null, count: 1, path: 'src/b.ts', startLine: 3, owner: null, ownerQual: null, ownerKind: null },
+    { kind: 'call', name: 'readFileSync', receiver: 'fs', count: 2, path: 'src/c.ts', startLine: 9, owner: 'load', ownerQual: 'load', ownerKind: 'function' },
+  ];
+  const uses = (extra = {}) => ({ uses: 90, files: 48, names: ['useEffect'], capped: false, symbols: [], symbolCount: 0, ...extra });
+  const meta = (refs, extra = {}) => ({ query: 'useEffect', freshness: FRESH, refs, ...extra });
+
+  test('the header says that no symbol carries the name and how many places use it; the rows are places, not definitions', () => {
+    assert.deepEqual(lines(renderSearch(ROWS, meta(uses({ symbols: ['useT', 'useTick'], symbolCount: 20 })))), [
+      '# search useEffect · no symbol carries this name; 90 uses in 48 files (useEffect) · also in symbol names: useT, useTick (+18 more found) · indexed 2m ago',
+      '     call useEffect ×4 in ThemeProvider src/ThemeProvider.tsx:63',
+      '      ref cfg ×1 at src/b.ts:3',
+      '     call fs.readFileSync ×2 in load src/c.ts:9',
+      HINT,
+    ]);
+  });
+
+  test('one use in one file, totals past a cut, several names, at most three symbol names', () => {
+    const one = lines(renderSearch(ROWS, meta(uses({ uses: 1, files: 1 }))));
+    assert.equal(one[0], '# search useEffect · no symbol carries this name; 1 use in 1 file (useEffect) · indexed 2m ago');
+    assert.equal(one.at(-1), HINT);
+    const capped = lines(renderSearch(ROWS, meta(uses({ uses: 5001, files: 501, names: ['e'], capped: true }), { query: 'e' })));
+    assert.equal(capped[0], '# search e · no symbol carries this name; 5001+ uses in 501+ files (e) · indexed 2m ago');
+    const several = lines(renderSearch(ROWS, meta(uses({ uses: 141, files: 40, names: ['writeFileSync', 'writeFile', 'writeCacheFile', 'written'] }), { query: 'write file' })));
+    assert.equal(several[0], '# search "write file" · no symbol carries this name; 141 uses in 40 files (writeFileSync, writeFile, writeCacheFile … (+1 more)) · indexed 2m ago');
+    const three = lines(renderSearch(ROWS, meta(uses({ symbols: ['useT', 'useTick', 'useData'], symbolCount: 3 }))));
+    assert.ok(three[0].endsWith('also in symbol names: useT, useTick, useData · indexed 2m ago'), three[0]);
+  });
+
+  test('no legend and no next-step hint; relaxed words that arrive with the uses are not shown', () => {
+    const out = renderSearch(ROWS, meta(uses({ uses: 2, files: 2 }), { matched: ['use'], dropped: ['effect'] }));
+    assert.equal(out.includes('legend'), false);
+    assert.equal(out.includes('next:'), false);
+    assert.equal(out.includes('partial'), false);
+    assert.ok(out.endsWith(HINT));
+  });
+
+  test('a long name is cut, and is in quotes when it has spaces', () => {
+    const long = 'x'.repeat(100);
+    const spaced = `(childProps[name] as ((e: unknown) => void) | undefined) ${'y'.repeat(50)}`;
+    const place = (name, receiver, startLine) => ({ kind: 'call', name, receiver, count: 1, path: 'a.ts', startLine, owner: null });
+    const [header, first, second] = lines(renderSearch(
+      [place(long, 'r'.repeat(40), 1), place(spaced, null, 2)],
+      meta(uses({ uses: 2, files: 1, names: [long, spaced] }), { query: 'e' }),
+    ));
+    assert.equal(header, `# search e · no symbol carries this name; 2 uses in 1 file (${cut(long, 40)}, "${cut(spaced, 40)}") · indexed 2m ago`);
+    assert.equal(first, `     call ${cut('r'.repeat(40), 24)}.${cut(long, 60)} ×1 at a.ts:1`);
+    assert.equal(second, `     call "${cut(spaced, 60)}" ×1 at a.ts:2`);
+  });
+
+  test('budget cut: "(N of M shown)" is the last line, rows outrank the hint, nothing exceeds the budget', () => {
+    const cut = renderSearch(ROWS, meta(uses(), { budget: 60 }));
+    assert.deepEqual(lines(cut).slice(-2), ['hint: raise budget (max 4000) or limit (max 200) to see more rows', '(0 of 3 shown)']);
+    assert.ok(estimateTokens(cut) <= 60);
+    const fits = renderSearch(ROWS, meta(uses(), { budget: 70 }));
+    assert.deepEqual(lines(fits).slice(1), [
+      '     call useEffect ×4 in ThemeProvider src/ThemeProvider.tsx:63',
+      '      ref cfg ×1 at src/b.ts:3',
+      '     call fs.readFileSync ×2 in load src/c.ts:9',
+    ]);
+    assert.equal(fits.includes(HINT), false, 'rows outrank the hint in a small budget');
+    assert.ok(estimateTokens(fits) <= 70);
   });
 });
 

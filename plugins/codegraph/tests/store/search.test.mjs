@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDatabase, close } from '../../src/store/db.mjs';
-import { SECONDARY_PATH_PARTS, identifierSegments, isSecondaryPath, replaceAllForFile, searchSymbols, searchSymbolsDetailed, upsertFile } from '../../src/store/repo.mjs';
+import { REF_GROUPS_MAX, REF_ROWS_MAX, SECONDARY_PATH_PARTS, identifierSegments, isSecondaryPath, replaceAllForFile, searchRefs, searchSymbols, searchSymbolsDetailed, upsertFile } from '../../src/store/repo.mjs';
 
 const open = [];
 
@@ -483,5 +483,171 @@ describe('searchSymbolsDetailed', () => {
     assert.deepEqual(searchSymbolsDetailed(db, 'parseConfig', { kind: 'variable' }).dropped, ['config']);
     assert.deepEqual(names(searchSymbols(db, 'parse', { kind: 'class' })), []);
     assert.deepEqual(names(searchSymbols(db, 'config parse', { kind: 'class' })), ['Config']);
+  });
+});
+
+// A name that is used but not defined here (CONTRACTS.md §7 searchRefs): the T20 sessions went
+// to grep for `membershipKind`.
+describe('searchRefs', () => {
+  const NOTHING = { rows: [], uses: 0, files: 0, names: [], capped: false };
+  const totals = (out) => ({ uses: out.uses, files: out.files, names: out.names, capped: out.capped });
+  // file ids are the store's: everything else is the contract.
+  const places = (out) => out.rows.map(({ file_id, ...row }) => row);
+  // src/a.ts         loadConfig reads maxIdleDays (line 11) and calls fs.readFile twice; helper
+  //                  reads it (21); the module level reads it (1).
+  // tests/a.test.ts  configTest reads it three times.
+  // src/b.ts         longer names that hold the words: maxIdleDaysValue, sessionId, identity.
+  const project = () => {
+    const { db } = tmpDb();
+    const add = (path, symbols, refs) => {
+      const id = upsertFile(db, { path, lang: 'ts', hash: path, mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+      replaceAllForFile(db, id, {
+        symbols: symbols.map(([kind, name], i) => ({ kind, name, qual: name, startLine: (i + 1) * 10, endLine: (i + 1) * 10 + 3, startCol: 0, parent: null })),
+        refs,
+      });
+    };
+    const read = (line, symbol, startCol = 3) => ({ name: 'maxIdleDays', kind: 'ref', startLine: line, startCol, endLine: line, symbol });
+    add('src/a.ts', [['function', 'loadConfig'], ['function', 'helper']], [
+      read(1, null, 6),
+      read(11, 0),
+      { name: 'readFile', kind: 'call', startLine: 12, startCol: 2, endLine: 12, symbol: 0, receiver: 'fs' },
+      { name: 'readFile', kind: 'call', startLine: 13, startCol: 2, endLine: 13, symbol: 0, receiver: 'fs' },
+      read(21, 1),
+    ]);
+    add('tests/a.test.ts', [['function', 'configTest']], [read(3, 0), read(4, 0), read(5, 0)]);
+    add('src/b.ts', [], [
+      { name: 'maxIdleDaysValue', kind: 'ref', startLine: 2, startCol: 4, endLine: 2, symbol: null },
+      { name: 'sessionId', kind: 'ref', startLine: 3, startCol: 4, endLine: 3, symbol: null },
+      { name: 'identity', kind: 'ref', startLine: 4, startCol: 4, endLine: 4, symbol: null },
+    ]);
+    return db;
+  };
+
+  test('a name that is only used: one row per file and containing symbol, the module level by itself, source before tests', () => {
+    assert.deepEqual(places(searchRefs(project(), 'maxIdleDays')), [
+      { name: 'maxIdleDays', kind: 'ref', receiver: null, count: 1, start_line: 1, path: 'src/a.ts', owner: null, owner_qual: null, owner_kind: null },
+      { name: 'maxIdleDays', kind: 'ref', receiver: null, count: 1, start_line: 11, path: 'src/a.ts', owner: 'loadConfig', owner_qual: 'loadConfig', owner_kind: 'function' },
+      { name: 'maxIdleDays', kind: 'ref', receiver: null, count: 1, start_line: 21, path: 'src/a.ts', owner: 'helper', owner_qual: 'helper', owner_kind: 'function' },
+      { name: 'maxIdleDays', kind: 'ref', receiver: null, count: 3, start_line: 3, path: 'tests/a.test.ts', owner: 'configTest', owner_qual: 'configTest', owner_kind: 'function' },
+    ]);
+    assert.deepEqual(totals(searchRefs(project(), 'maxIdleDays')), { uses: 6, files: 2, names: ['maxIdleDays'], capped: false });
+  });
+
+  test('the name as written is the whole answer: calls keep their receiver, longer names that hold its words are left out', () => {
+    const db = project();
+    assert.deepEqual(places(searchRefs(db, 'readFile')), [
+      { name: 'readFile', kind: 'call', receiver: 'fs', count: 2, start_line: 12, path: 'src/a.ts', owner: 'loadConfig', owner_qual: 'loadConfig', owner_kind: 'function' },
+    ]);
+    assert.deepEqual(searchRefs(db, 'maxIdleDays').names, ['maxIdleDays'], 'maxIdleDaysValue is not listed');
+    // Separators are not a name, so this is a scan by words: the name that holds them comes first.
+    assert.deepEqual(searchRefs(db, 'max-idle-days').names, ['maxIdleDays', 'maxIdleDaysValue']);
+    assert.deepEqual(places(searchRefs(db, 'max-idle-days', { limit: 3 })).map((row) => row.path), ['src/a.ts', 'src/a.ts', 'src/a.ts']);
+  });
+
+  test('any other spelling scans: words in any order, another case, and a short word only whole', () => {
+    const db = project();
+    assert.deepEqual(searchRefs(db, 'days idle').names, ['maxIdleDays', 'maxIdleDaysValue'], 'the name equal to the query comes first');
+    assert.deepEqual(searchRefs(db, 'days idle max').names, ['maxIdleDays', 'maxIdleDaysValue']);
+    assert.deepEqual(searchRefs(db, 'MaxIdleDays').names, ['maxIdleDays', 'maxIdleDaysValue'], 'another case finds the name and lists it first');
+    assert.deepEqual(searchRefs(db, 'idle').names, ['maxIdleDays', 'maxIdleDaysValue'], 'a long word may sit inside a name');
+    assert.deepEqual(searchRefs(db, 'id').names, ['sessionId'], '"id" is whole in sessionId and not in identity');
+    assert.deepEqual(searchRefs(db, 'session id').names, ['sessionId']);
+    assert.deepEqual(searchRefs(db, 'session').names, ['sessionId']);
+  });
+
+  test('test files come after source files even when their path sorts first', () => {
+    const db = project();
+    const id = upsertFile(db, { path: 'a.spec.ts', lang: 'ts', hash: 'spec', mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+    replaceAllForFile(db, id, { symbols: [], refs: [{ name: 'readFile', kind: 'call', startLine: 1, startCol: 2, endLine: 1, symbol: null }] });
+    assert.deepEqual(searchRefs(db, 'readFile').rows.map((row) => row.path), ['src/a.ts', 'a.spec.ts']);
+  });
+
+  test('limit keeps the first rows; the totals still describe every place', () => {
+    const db = project();
+    const out = searchRefs(db, 'maxIdleDays', { limit: 2 });
+    assert.equal(out.rows.length, 2);
+    assert.deepEqual(totals(out), { uses: 6, files: 2, names: ['maxIdleDays'], capped: false });
+    assert.equal(searchRefs(db, 'maxIdleDays', { limit: 500 }).rows.length, 4);
+  });
+
+  test('past a cut the totals are lower bounds and stop at the cut: many places of one name, and one place used very often', () => {
+    const { db } = tmpDb();
+    const id = upsertFile(db, { path: 'src/many.ts', lang: 'ts', hash: 'many', mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+    const def = (i) => ({ kind: 'function', name: `reader${i}`, qual: `reader${i}`, startLine: 1, endLine: 1, startCol: 0, parent: null });
+    const used = (symbol) => ({ name: 'zzqCap', kind: 'ref', startLine: 1, startCol: 2, endLine: 1, symbol });
+    const write = (symbols, refs) => replaceAllForFile(db, id, { symbols, refs });
+    const readers = (n) => Array.from({ length: n }, (_, i) => def(i));
+
+    // Twice the cut: what is counted stops one past it, whichever way the references are cut.
+    write(readers(REF_GROUPS_MAX * 2), Array.from({ length: REF_GROUPS_MAX * 2 }, (_, i) => used(i)));
+    assert.deepEqual(totals(searchRefs(db, 'zzqCap')), { uses: REF_GROUPS_MAX + 1, files: 1, names: ['zzqCap'], capped: true });
+    write(readers(REF_GROUPS_MAX), Array.from({ length: REF_GROUPS_MAX }, (_, i) => used(i)));
+    assert.equal(searchRefs(db, 'zzqCap').capped, false, 'exactly at the cut everything was counted');
+
+    write([def(0)], Array.from({ length: REF_ROWS_MAX * 2 }, (_, i) => ({ ...used(0), startLine: i + 1, endLine: i + 1 })));
+    assert.deepEqual(totals(searchRefs(db, 'zzqCap')), { uses: REF_ROWS_MAX + 1, files: 1, names: ['zzqCap'], capped: true });
+    write([def(0)], Array.from({ length: REF_ROWS_MAX }, (_, i) => ({ ...used(0), startLine: i + 1, endLine: i + 1 })));
+    assert.equal(searchRefs(db, 'zzqCap').capped, false);
+  });
+
+  test('the cut on references is decided before the word filter: rows the filter drops were read all the same', () => {
+    const { db } = tmpDb();
+    const add = (path, refs) => {
+      const id = upsertFile(db, { path, lang: 'ts', hash: path, mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+      replaceAllForFile(db, id, { symbols: [{ kind: 'function', name: 'handler', qual: 'handler', startLine: 1, endLine: 1, startCol: 0, parent: null }], refs });
+    };
+    const at = (name, line) => ({ name, kind: 'ref', startLine: line, startCol: 2, endLine: line, symbol: 0 });
+    // Indexed first, so it is read first: "id" reaches identity (which the word filter drops).
+    add('src/a-first.ts', [at('identity', 1), at('identity', 2)]);
+    add('src/b-second.ts', Array.from({ length: REF_ROWS_MAX }, (_, i) => at('userId', i + 1)));
+    // 2 + 20,000 references are more than are read; what is left after the filter is 19,999,
+    // fewer than the cut, and yet the table holds 20,000 places.
+    const out = searchRefs(db, 'Id');
+    assert.deepEqual(totals(out), { uses: REF_ROWS_MAX - 1, files: 1, names: ['userId'], capped: true });
+  });
+
+  test('a receiver tells rows apart, and a name used in more than one way says so', () => {
+    const { db } = tmpDb();
+    const id = upsertFile(db, { path: 'src/c.ts', lang: 'ts', hash: 'c', mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+    replaceAllForFile(db, id, {
+      symbols: [{ kind: 'function', name: 'handle', qual: 'handle', startLine: 1, endLine: 9, startCol: 0, parent: null }],
+      refs: [
+        { name: 'get', kind: 'call', startLine: 2, startCol: 2, endLine: 2, symbol: 0, receiver: 'req' },
+        { name: 'get', kind: 'call', startLine: 4, startCol: 2, endLine: 4, symbol: 0, receiver: 'res' },
+        { name: 'get', kind: 'call', startLine: 5, startCol: 2, endLine: 5, symbol: 0, receiver: 'res' },
+        { name: 'get', kind: 'call', startLine: 6, startCol: 2, endLine: 6, symbol: 0, receiver: 'req' },
+        { name: 'get', kind: 'ref', startLine: 7, startCol: 2, endLine: 7, symbol: 0 },
+        { name: 'validate', kind: 'call', startLine: 3, startCol: 2, endLine: 3, symbol: 0 },
+        { name: 'validate', kind: 'ref', startLine: 8, startCol: 2, endLine: 8, symbol: 0 },
+      ],
+    });
+    assert.deepEqual(places(searchRefs(db, 'get')), [
+      { name: 'get', kind: 'call', receiver: 'req', count: 2, start_line: 2, path: 'src/c.ts', owner: 'handle', owner_qual: 'handle', owner_kind: 'function' },
+      { name: 'get', kind: 'call', receiver: 'res', count: 2, start_line: 4, path: 'src/c.ts', owner: 'handle', owner_qual: 'handle', owner_kind: 'function' },
+      { name: 'get', kind: 'ref', receiver: null, count: 1, start_line: 7, path: 'src/c.ts', owner: 'handle', owner_qual: 'handle', owner_kind: 'function' },
+    ]);
+    assert.deepEqual(totals(searchRefs(db, 'get')), { uses: 5, files: 1, names: ['get'], capped: false });
+    assert.deepEqual(places(searchRefs(db, 'validate')), [
+      { name: 'validate', kind: 'use', receiver: null, count: 2, start_line: 3, path: 'src/c.ts', owner: 'handle', owner_qual: 'handle', owner_kind: 'function' },
+    ]);
+  });
+
+  test('the order of the words in the query does not change the places', () => {
+    const db = project();
+    assert.deepEqual(places(searchRefs(db, 'session id')), places(searchRefs(db, 'id session')));
+    assert.deepEqual(places(searchRefs(db, 'days idle max')), places(searchRefs(db, 'max idle days')));
+  });
+
+  test('nothing to find and bad arguments', () => {
+    const db = project();
+    assert.deepEqual(searchRefs(db, 'zzz'), NOTHING);
+    assert.deepEqual(searchRefs(db, ''), NOTHING);
+    assert.deepEqual(searchRefs(db, '   '), NOTHING);
+    assert.deepEqual(searchRefs(db, '!!!'), NOTHING);
+    assert.throws(() => searchRefs(null, 'x'), /searchRefs: "db" must be a DatabaseSync/);
+    assert.throws(() => searchRefs(db, 42), /searchRefs: "query" must be a string/);
+    assert.throws(() => searchRefs(db, 'x', { limit: 0 }), /searchRefs: "limit" must be an integer >= 1/);
+    assert.throws(() => searchRefs(db, 'x', { limit: 2.5 }), /searchRefs: "limit" must be an integer/);
+    assert.throws(() => searchRefs(db, 'x', null), /searchRefs: "options" must be an object/);
   });
 });

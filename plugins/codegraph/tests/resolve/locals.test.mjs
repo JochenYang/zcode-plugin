@@ -136,3 +136,44 @@ describe('resolveLocals', () => {
     assert.deepEqual(uses.map((i) => [i.startLine, i.localDef]), [[2, 0], [4, 0], [4, 0]]);
   });
 });
+
+// What search lists when no symbol carries a name (CONTRACTS.md §7 searchRefs): exactly the
+// references the extractor records. The hint in that output tells the model what is missing
+// here; extending the extractor means changing that hint and the README in the same change.
+describe('what the extractor records as a reference', () => {
+  const listed = (out) => out.refs.map((r) => `${r.kind} ${r.receiver ? `${r.receiver}.` : ''}${r.name}@${r.startLine}`);
+
+  test('typescript: a call with its receiver and a type; not a property read, a bracket access, an object key, or the read of a destructured field', async () => {
+    const out = await extract([
+      'export function f(row: Row, client: Client, { membershipKind = 0 }: Kind) {',
+      '  const a = row.membershipKind;',
+      '  client.takePendingDeepLink();',
+      '  const c = row["membershipKind"];',
+      '  log({ membershipKind: 1 });',
+      '  const d = membershipKind + 1;',
+      '  return a + c + d;',
+      '}',
+      '',
+    ].join('\n'));
+    assert.deepEqual(listed(out), ['call client.takePendingDeepLink@3', 'call log@5', 'type Row@1', 'type Client@1', 'type Kind@1']);
+  });
+
+  test('typescript: a call, the object it is called on and a type are references; a read of a name bound in the file is not', async () => {
+    const out = await extract([
+      "import { readConfig } from './config';",
+      'export function f(row: Row, local: number) {',
+      '  console.log(row);',
+      '  const text = readConfig(local) + row.pendingQuota;',
+      '  return text;',
+      '}',
+      '',
+    ].join('\n'));
+    assert.deepEqual(listed(out), ['call console.log@3', 'call readConfig@4', 'type Row@2', 'ref console@3']);
+  });
+
+  test('python: an attribute read is a reference', async () => {
+    const python = specs.find((s) => s.id === 'python');
+    const out = await extractFile({ path: 'sample.py', source: 'def f(row):\n    kind = row.membershipKind\n    return kind\n', spec: python });
+    assert.ok(listed(out).includes('ref membershipKind@2'), listed(out).join(', '));
+  });
+});

@@ -28,14 +28,16 @@ const PARAMETER = {
     type: 'string',
     enum: [...OPERATIONS],
     description:
-      'search: symbols by name; symbol: one symbol with callers/callees/imports; callers/callees: direct relationships; ' +
-      'impact: transitive dependents up to depth; outline: symbols of one file in source order.',
+      'search: symbols by name, or the places that use a name no symbol carries; symbol: one symbol with callers/callees/imports; ' +
+      'callers/callees: direct relationships; impact: transitive dependents up to depth; outline: symbols of one file in source order.',
   },
   query: {
     type: 'string',
     description:
       'search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). ' +
-      'When no name holds every word, the longest ones anchor a partial-match search, best match first. Required for search.',
+      'When no name holds every word, the longest ones anchor a partial-match search, best match first. ' +
+      'When no symbol carries the name, search lists where it is used (calls and type names). ' +
+      'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph. Required for search.',
   },
   name: { type: 'string', description: 'symbol/callers/callees/impact only: bare symbol name. Required for those operations.' },
   file: {

@@ -1,6 +1,6 @@
 # codegraph 内部契约（所有并行 lane 的共同依据）
 
-本文件由阶段 0 冻结。lane 只能写计划里列出的独占路径；要改本文件的任何接口，写 `.devflow/codegraph-plugin/contract-requests.md`，不要直接改。
+本文件是实现的依据，随改动一起更新：改了接口或输出格式，就在同一批里改这里与对应的测试（输出格式以 §11 的快照测试为准）。
 
 ## 0. 运行时与约定
 
@@ -176,6 +176,7 @@ searchSymbolsDetailed(db, query, { limit = 20, kind = null } = {})   // → { ro
 searchSymbols(db, query, options)                                   // 上者的 rows
 usageCounts(db, symbolIds)        // → Map<id, { refs, files, inSource, byName }>；引用数超过 `USAGE_MAX_REFS` 的符号只给 { refs, capped: true }
 isSecondaryPath(path)            // → boolean；测试 / 脚本 / 第三方目录与文件，清单 `SECONDARY_PATH_PARTS`（search 排序与 inSource 共用）
+searchRefs(db, query, { limit = 20 } = {})                        // → { rows, uses, files, names, capped }：只被使用、这里没有定义的名字（见下）；§8 的 search 在没有可用的符号行时才调它
 symbolById(db, id)           symbolsInFile(db, path)
 refsTo(db, symbolId)         refsByName(db, name)        refsInFile(db, fileId)     unresolvedRefs(db, { fileId } = {})
 importsOfFile(db, path)      importersOfPath(db, path)
@@ -191,6 +192,10 @@ metaGet(db, key)             metaSet(db, key, value)
   - 截断顺序：每层 FTS 按 `limit × 4`（40–2000 行）读取、LIKE 兜底最多读 2000 行（都按名字从短到长），**先过词边界过滤，再截到 `limit`**——被过滤掉的行不占名额，也不会让好行只能在兜底里以更低层级回来。短词查询的代价：每行最多 1 条 LIKE + 3 条 GLOB，cindy（17.8 万符号）上 `io` / `os` / `up` 实测 180–290 ms。
   - 放宽：没有任何名字含全部词时，退回到部分匹配。取查询里最长的两个词作锚（并列取靠前的），各查一次「含该词的名字」；候选池在 SQL 里按「同时含其它查询词的个数」降序截取（截断发生在 SQL 里，所以截断本身要偏向多词命中），再用词边界规则逐词核对。两个锚的结果合并后依次按：命中的查询词数 → 命中词的具体程度（词长平方和）→ 源码先于测试 / 脚本 → 名字短者优先。成本与词数无关：完整查询（一条 FTS，至多一条 LIKE）加每个锚一条查询，共 3–4 条语句；`reasoning efforts discovery merge` 第一次回退就命中 `reasoning + efforts`（按子集重试的旧做法要试 6 次，5 个词的查询连两词组合都轮不到）。`matched` 是排在最前的名字命中的词（按查询原序），`dropped` 是其余的词；全无命中时三者皆为空数组。
   - SQL 参数按其在 SQL 文本中的位置绑定（CTE 的 select 列表先于 `WHERE`）；带 `kind` 过滤时 FTS 层同样生效。
+- `searchRefs`（§8 的 `search` 在没有可用的符号行时才调）：查的是 `refs` 表，也就是抽取器记下来的引用。TypeScript 上实测（2026-11-25，当前引擎；`tests/resolve/locals.test.mjs` 钉住）：调用一定记，带接收者（`call console.log`、`call client.takePendingDeepLink`）；类型名一定记；方法调用的对象不是本文件的局部名字时也记（`console.log(x)` 另有 `ref console`）；**本文件里绑定了的名字的读取不记**——参数、局部变量、解构出来的字段，连同 `row.membershipKind` 这种点号读取的属性、方括号访问、对象字面量的键都不在表里（`src/extract/engine.mjs` 丢掉「没有局部定义的局部读取」，理由是它们不连边；要让它们可搜得改那里并重建索引）。Python 记录属性读取（`row.membershipKind` → `ref membershipKind`）；Go 的字段选择子不记录；其它语言没有逐一核对。扩充抽取器时要连同提示语与 README 一起改。开发期早期版本抽取器留下的行不算数：本仓库索引里 `storage.mjs` 的 `maxIdleDays` 有 2 条，是 11-24 的旧行，文件没再变过所以没有被重新抽取。每个「名字 × 接收者 × 文件 × 所在符号」一行（`req.get` 与 `res.get` 在同一个函数里是两行；模块级引用每个文件一行），带出现次数；同一行里的引用不全是同一种（既被调用又被读取）时 `kind` 是 `use`；行形状 `{ name, kind, receiver, count, start_line, file_id, path, owner, owner_qual, owner_kind }`。
+  - 两种查法。名字原样存在时走 `refs.name` 索引（`name = ?`），答案就只有它，不带含这些词的更长的名字；否则扫描全表，词的匹配规则与符号搜索是同一条（`poolPredicate`：任意词序、长词可子串、≤ 2 字符的 ASCII 词必须整词，再过 `wordDistance`），排序时与查询同名（不分大小写）者在前，其后源码先于测试与脚本，再按位置。带分隔符的写法（`max-idle-days`）不算原名，走扫描。多个词时长词的谓词排在前面：AND 与顺序无关，SQLite 从左到右求值，短词的四种模式只留给过了长词的行（`e props` 因此从 1.3 s 降到 0.2 s）。
+  - 字符串里的词不在 `refs` 表里，查不到：那是 Grep 的事。解析器对没法归约的调用会把整段调用文本记成名字（如 `(childProps[name] as ((e: unknown) => void) | undefined)`），它只在扫描时按子串命中，渲染层截断显示。
+  - 代价与截断（2026-11-25，合成索引，220 万条引用）：原名命中 24–150 ms；扫描 ≥ 3 字母的词（1 条 LIKE）约 180 ms；一两个字母的词要 1 条 LIKE + 3 条 GLOB，约 1.3 s。扫描到的引用先截到 `REF_ROWS_MAX`（20000）行——不截的话，`meth` 这种几十万行共有的片段光分组就 18 s；再按 `REF_GROUPS_MAX`（5000，约 100 ms）截组，`uses` / `files` / `names` 是留下的这些组的合计。是否越过截断在词过滤之前判断：被过滤掉的行也算读过（`id` 会读到 `identity`）。越过任一截断 `capped: true`，合计是下界。引用按它们在表里的顺序读，所以越过第一道截断时留下的是先索引的文件，其后的「源码先于测试」只在幸存者里生效。`node:sqlite` 对没绑定的参数报的是 `datatype mismatch`，不是参数个数错误：SQL 里的 `?` 与 `all()` 的实参要逐个对上。
 - 符号被删除时，`refs.target_id`、`refs.local_def_id` 由 schema 的 `ON DELETE SET NULL` 置 NULL，`resolution` 由 repo 显式置 NULL；B 的解析管线把「`resolution IS NULL`」当作待解析。
 - **符号 id 保留**：`replaceAllForFile` 重写一个文件时，按 `kind|qual|name` 配对旧、新定义——两边都恰好 1 个的视为同一符号，保留旧 id 就地 UPDATE（行号/签名/doc/exported/parent 变化不换 id）并同步 FTS；其它旧符号删除、新符号取新 id；键在任一边重复（重载）则整组删旧插新。其它文件里指向**保留** id 的 refs 不动；只有被删符号的 refs 置空并进入待解析。`symbolIds` 仍按输入下标返回。
 - 写组与 bulk load（阶段 2 性能）：
@@ -219,6 +224,8 @@ outline(db, { path })                         // → [{ kind, name, startLine, e
 // src/graph/map.mjs
 repoMap(db, { path, budgetTokens })           // → { text, shown, total, truncated }
 ```
+
+`search` 有两种行。默认是上面的符号行。**没有符号叫这个名字、或符号只是沾了它的部分词**（`searchSymbolsDetailed` 走了放宽分支）时改查 `searchRefs`（§7）；有使用位置且不超过 `REF_LEAD_MAX`（200）处时，行是使用位置 `{ kind, name, receiver, count, path, startLine, owner, ownerQual, ownerKind }`——不是符号行：没有 `id` / `endLine` / `signature`，也不带 `usage`——并回填 `info.refs = { uses, files, names, capped, symbols, symbolCount }`（`symbols` 是前 3 个沾词符号的名字，`symbolCount` 是这次搜索找到的个数——符号是按 `limit` 找的，所以它至多是 `limit`，不是沾词符号的总数），此时不回填 `matched` / `dropped`。四条边界：符号含全部词时符号行照旧（`theme` → `ThemeProvider`，描述式查询 `gift card redeem` → `redeemGiftCard`，猜的名字 `fetchUserData` → `fetchUserDataAsync`）；名字用在超过 200 处时不排到前面——哪里都在用的名字说明不了方向，沾词的符号更有用（`expect`、`deepEqual`）；完全没有符号行时无论多少处都给使用位置；带 `kind` 只查符号。在 coding-usage 与本仓库各约 60 个常见名字上实测，这条规则只改变了「符号只沾一个词」的查询（`useEffect` 原来给 `useT`、`useTick`，现在给 90 处使用），常见单个词（`props`、`data`、`config`）与描述式查询的结果不变。
 
 `repoMap` 的符号按输出顺序逐文件惰性读取，预算满即停；`total` / `filesTotal` 的口径与是否截断无关：整个 scope 内每文件前 6 个符号之和、有符号的文件数（截断时由一次聚合查询给出）。
 
@@ -283,13 +290,13 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 | 工具 | 参数 | 说明 |
 |---|---|---|
 | `codegraph_status` | `refresh?: boolean`，`storage?: boolean`，`clean?: 'stale'\|'all'\|'current'\|'project'`，`project?: string`，`confirm?: boolean` | 索引状态；`refresh` 强制同步一次；`storage` 附带本机全部索引的清单（§3.4）；`clean` 删除索引——`stale` 按 §3.4 的策略，`all` 除当前项目外全部，`current` 当前项目（先关掉本会话的句柄，下一次调用重建），`project` 由 `project` 指定的那个；不带 `confirm: true` 时只列出会删什么 |
-| `codegraph_lookup` | `operation: 'search'|'symbol'|'callers'|'callees'|'impact'|'outline'`，`query?: string`，`name?: string`，`file?: string`，`depth?: int(1–6, 默认 2)`，`limit?: int(1–200, 默认 20)`，`body?: boolean` | `search` 用 `query`（符号名、前缀或任意词序的描述）；其余用 `name`（`outline` 用 `file`）。`body=true` 且函数体 ≤ 30 行时内联源码，否则给 Read 行段 |
+| `codegraph_lookup` | `operation: 'search'|'symbol'|'callers'|'callees'|'impact'|'outline'`，`query?: string`，`name?: string`，`file?: string`，`depth?: int(1–6, 默认 2)`，`limit?: int(1–200, 默认 20)`，`body?: boolean` | `search` 用 `query`（符号名、前缀或任意词序的描述；没有符号叫这个名字时给使用它的位置，见 §8）；其余用 `name`（`outline` 用 `file`）。`body=true` 且函数体 ≤ 30 行时内联源码，否则给 Read 行段 |
 | `codegraph_map` | `path?: string`，`budget?: int(200–4000 tokens, 默认 1200)` | 仓库地图 |
 
 工具描述（固定文案，命令式）：
 
 - `codegraph_lookup`：`Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. symbol with body=true returns the definition source in the same call. Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. Index may lag a few seconds after external edits; codegraph_status reports staleness.`
-- `query` 参数：`search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). When no name holds every word, the longest ones anchor a partial-match search, best match first. Required for search.`
+- `query` 参数：`search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). When no name holds every word, the longest ones anchor a partial-match search, best match first. When no symbol carries the name, search lists where it is used (calls and type names). In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph. Required for search.`；`operation` 参数以 `search: symbols by name, or the places that use a name no symbol carries;` 开头。
 - `codegraph_map`：`Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.`
 - `codegraph_status`：`Code graph index status: ready/building/empty, file and symbol counts, covered languages, stale files. Call it first when unsure whether the graph is usable; refresh=true forces an incremental sync. storage=true lists every project's index on this machine; clean removes indexes (only with confirm=true). When the project is not indexed, fall back to Read/Grep.`
 - `storage` / `clean` / `project` / `confirm` 参数描述见 `src/mcp/tools.mjs` 的 `PARAMETER`（`tools.test.mjs` 钉住了 `clean` 的枚举与参数顺序）。
@@ -308,7 +315,8 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 
 - `symbol`：首行 `# symbol parseConfig · src/config/parse.ts:42-71 (30 lines) · callers 3/5 resolved`；随后 `sig` 行、`doc:` 行、`calls(n): a= b~ c?`、`called by(n): name path:line=`、`imports: a, b`、图例行（仅含 `~` 或 `?` 时出现）、`body:` 行（`30 lines → Read src/config/parse.ts offset 42 limit 30` 或内联代码块）。`function` / `method` / `component` / `macro` 的入边写作 `callers` / `called by`，其它 kind（类型、类、常量、字段……）写作 `uses` / `used by`——入边是全部引用，不只是调用。
 - `callers`/`callees`/`impact`/`outline`：每行 `<kind> <name> <signature> <path>:<start>-<end>`（`kind` 右对齐 9 列省略号，`signature` 截 80 列），按 path 再按行排序。`search` 的前 3 行在行尾追加 ` · 12 uses in 4 files (3 in source)`（`usage.refs` 为 0 或没有 `usage` 时不追加）：定向的那一次调用就带上「谁依赖它」，不必等模型之后再回来问 `callers`——T20 的 13 个会话里它在第一次编辑后一次也没回来过。其中有按唯一名字连上的引用时（`usage.byName > 0`）行尾再加 `~` 并带出图例行；被大量引用的符号（`capped`）只写 ` · 15361 references (not broken down by file)`（全部引用，含定义所在文件）。
-- `search`：行格式同上，但**保持相关度顺序**（完全同名优先；其余先看名字是否以查询开头，同一层内源码先于测试与脚本，再 bm25，最后 LIKE 兜底），不按 path 重排——小预算截断时留下的是最相关的行。首行在部分匹配时写 `# search "sign-in cookie" · 18 partial matches (no name has all words; best match: sign + cookie) · indexed 0s ago`（`matched` 是排在最前的那个名字含的词，多个词用 ` + ` 连接；靠后的行未必含这些词，所以首行只说「最佳匹配含什么」，不说整个结果集都含）；无命中写 `no matches` 并给 `hint: search matches symbol names only (text, configs and string literals belong to Grep); a word of one or two letters must be a whole word.`。
+- `search`：行格式同上，但**保持相关度顺序**（完全同名优先；其余先看名字是否以查询开头，同一层内源码先于测试与脚本，再 bm25，最后 LIKE 兜底），不按 path 重排——小预算截断时留下的是最相关的行。首行在部分匹配时写 `# search "sign-in cookie" · 18 partial matches (no name has all words; best match: sign + cookie) · indexed 0s ago`（`matched` 是排在最前的那个名字含的词，多个词用 ` + ` 连接；靠后的行未必含这些词，所以首行只说「最佳匹配含什么」，不说整个结果集都含）；无命中写 `no matches` 并给 `hint: search matches symbol names and names that are used here without a definition; text, object keys in literals, property reads (obj.field) in JS/TS and string literals belong to Grep; a word of one or two letters must be a whole word.`。
+- `search` 的「名字只被使用」结果（§8；行是使用位置时）：首行 `# search useEffect · no symbol carries this name; 90 uses in 48 files (useEffect) · also in symbol names: useT, useTick (+18 more found) · indexed 2m ago`。`uses` / `files` 是全部使用位置的总数，越过截断写 `5001+ uses in 501+ files`；括号里是命中的名字，至多 3 个（`listOrClamp`）；`also in symbol names` 只在沾词的符号存在时出现，至多 3 个名字，其余计 `(+N more found)`——N 是这次搜索找到的个数减 3（见 §8 的 `symbolCount`），不是沾词符号的总数，所以写 `found`。行是 `<kind> [<receiver>.]<name> ×<count> in <owner> <path>:<line>`，`kind` 在同一行的引用不全是同一种时是 `use`，模块级引用写 `at`、没有 `in <owner>`。名字截 60 列、接收者 24 列、首行里的名字 40 列，带空格的名字加引号。页脚固定 `hint: no symbol carries this name; the rows are places that use it: calls and type names. In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.`，没有图例行，也没有 `next:`；`matched` / `dropped` 与 `refs` 同时到达时以使用位置为准。
 - 页脚提示（`hint:` / `next:`）排在图例行之后。`search` 有结果时固定给一行 `next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); impact <name> shows what a change breaks.`。**行优先于提示**：预算装不下「首行 + 页脚 + 几行结果」时先丢页脚提示（从最后一个起，页脚剩给行的空间少于 48 token 即丢），再丢截断提示；行与首行始终保留。
 - `map`：按目录分组，`dir/` 行后缩进 `<file>  <kind> <name>:<line> ...`，每文件最多 6 个符号。
 - `status` 的存储清单（`storage: true` 时接在其它行之后）：`indexes: 4 projects · 1.2 GB in all`、`under <数据目录>/indexes`、每个索引一行 ` <项目根> · <N files | building | empty> · <大小> · used <多久前>[ · in use]`（项目目录不存在的写 `project folder missing`），最后一行 `policy: <闲置策略>; <总量策略>; an index whose project folder is gone goes by the same age rule`。大小写作 `7.6 MB` / `471 MB` / `1.2 GB`（不足 1 MB 写 KB）。

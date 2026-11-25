@@ -3,7 +3,7 @@
 // §8 / §11 (camelCase, `path` relative to the project root) so the renderer
 // needs no knowledge of the schema.
 
-import { findSymbolsByName, importsOfFile, searchSymbolsDetailed, symbolsInFile, usageCounts } from '../store/repo.mjs';
+import { findSymbolsByName, importsOfFile, searchRefs, searchSymbolsDetailed, symbolsInFile, usageCounts } from '../store/repo.mjs';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 200;
@@ -12,6 +12,8 @@ const MAX_IMPACT_NODES = 2000;
 const RESOLUTION_RANK = { '=': 3, '~': 2, '?': 1 };
 /** Search results say who uses only this many of their leading rows (tokens per search). */
 export const SEARCH_USAGE_ROWS = 3;
+/** A name used in more places than this is a hub: symbols that share one of its words stay in front of it. */
+export const REF_LEAD_MAX = 200;
 
 function describe(value) {
   if (value === null) return 'null';
@@ -33,6 +35,7 @@ function limitOf(fn, limit) {
 const CAMEL_KEYS = {
   file_id: 'fileId', parent_id: 'parentId', symbol_id: 'symbolId', target_id: 'targetId', local_def_id: 'localDefId',
   resolved_file_id: 'resolvedFileId', start_line: 'startLine', end_line: 'endLine', start_col: 'startCol', end_col: 'endCol',
+  owner_qual: 'ownerQual', owner_kind: 'ownerKind',
 };
 
 function camelRow(row) {
@@ -47,6 +50,8 @@ const pick = (row, keys) => {
 };
 
 const searchRow = (row) => pick(row, ['id', 'kind', 'name', 'qual', 'path', 'startLine', 'endLine', 'startCol', 'signature']);
+// A place that uses a name no symbol defines (CONTRACTS.md §8 `search`, the reference rows).
+const refRow = (row) => pick(row, ['kind', 'name', 'receiver', 'count', 'path', 'startLine', 'owner', 'ownerQual', 'ownerKind']);
 const symbolRow = (row) => {
   const out = pick(row, ['id', 'kind', 'name', 'qual', 'path', 'startLine', 'endLine', 'startCol', 'endCol', 'signature', 'doc', 'parentId']);
   out.exported = row.exported === null || row.exported === undefined ? null : row.exported === 1;
@@ -74,16 +79,43 @@ const bestResolution = (values) => values.reduce((best, v) => (RESOLUTION_RANK[v
 /**
  * Symbols by name (CONTRACTS.md §8 `search`), best match first. When `info` is given it
  * receives the words the search matched and those it had to drop (`matched`, `dropped`).
+ *
+ * No symbol carries the name, or none carries all of its words: the rows are the places that
+ * use such a name (a reference: a call, a type name, a name read the language keeps), and `info.refs`
+ * says how many there are (`{ uses, files, names, capped, symbols, symbolCount }`; `symbols`
+ * names up to three symbols that share a word with the name and `symbolCount` is how many the
+ * search found, which is bounded by `limit`). That is
+ * the name the T20 sessions went to grep for (`membershipKind`). A symbol that carries every
+ * word outranks it, and so does a symbol that shares one word with a name used in more than
+ * `REF_LEAD_MAX` places: where such a name is used says nothing about orientation. With a
+ * `kind` only symbols qualify.
  * @returns {{ id: number, kind: string, name: string, qual: string, path: string, startLine: number, endLine: number, signature: string|null, usage?: object }[]}
+ *   or reference rows `{ kind, name, receiver, count, path, startLine, owner, ownerQual, ownerKind }`
  */
 export function search(db, { query, kind = null, limit = DEFAULT_LIMIT } = {}, info = null) {
   requireDb('search', db);
   if (typeof query !== 'string' || query.trim() === '') return [];
   const found = searchSymbolsDetailed(db, query, { limit: limitOf('search', limit), kind });
+  const partial = found.rows.length === 0 || found.dropped.length > 0;
+  const refs = !kind && partial ? searchRefs(db, query, { limit: limitOf('search', limit) }) : null;
+  if (refs?.rows.length > 0 && (found.rows.length === 0 || refs.uses <= REF_LEAD_MAX)) {
+    if (info) {
+      info.refs = {
+        uses: refs.uses,
+        files: refs.files,
+        names: refs.names,
+        capped: refs.capped,
+        symbols: found.rows.slice(0, 3).map((row) => row.name),
+        symbolCount: found.rows.length,
+      };
+    }
+    return refs.rows.map(refRow);
+  }
   if (info) {
     info.matched = found.matched;
     info.dropped = found.dropped;
   }
+  if (found.rows.length === 0) return [];
   const rows = found.rows.map(searchRow);
   // The leading rows carry who uses them: codegraph is an orientation tool, and in the T20
   // sessions the model never came back for `callers` once it had started editing. Symbols with

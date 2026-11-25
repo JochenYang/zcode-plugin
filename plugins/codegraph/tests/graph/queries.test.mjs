@@ -4,7 +4,7 @@ import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase, close } from '../../src/store/db.mjs';
 import { refsInFile, replaceFile, setRefResolution } from '../../src/store/repo.mjs';
-import { SEARCH_USAGE_ROWS, search, symbol, callers, callees, impact, outline } from '../../src/graph/queries.mjs';
+import { REF_LEAD_MAX, SEARCH_USAGE_ROWS, search, symbol, callers, callees, impact, outline } from '../../src/graph/queries.mjs';
 import { buildProject } from '../resolve/fixture.mjs';
 
 const UTIL = 'src/util.ts';
@@ -17,9 +17,17 @@ let db;
 await buildProject().then((d) => {
   db = d;
 });
+// Own database for the names that are only used: the fixture's symbols must not be able to
+// share a word with them.
+const own = openDatabase(':memory:');
 after(() => {
   try {
     db?.close();
+  } catch {
+    // already closed
+  }
+  try {
+    own.close();
   } catch {
     // already closed
   }
@@ -89,6 +97,74 @@ describe('search', () => {
     } finally {
       close(mem);
     }
+  });
+});
+
+// A name that is used but not defined: the T20 sessions went to grep for `membershipKind`.
+describe('search for a name that is only used', () => {
+  const meta = { path: 'src/used.ts', lang: 'typescript', hash: 'used', mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 };
+  // `membershipCache` is the only definition (lines 2-6). Inside it `membershipKind` is read
+  // `reads` times and `zzqPlugh` once; the module level reads both once.
+  const write = (reads) => replaceFile(own, meta, {
+    symbols: [{ kind: 'function', name: 'membershipCache', qual: 'membershipCache', startLine: 2, endLine: 6, startCol: 0, parent: null }],
+    refs: [
+      ...Array.from({ length: reads }, () => ({ name: 'membershipKind', kind: 'ref', startLine: 3, startCol: 3, endLine: 3, symbol: 0 })),
+      { name: 'zzqPlugh', kind: 'ref', startLine: 4, startCol: 3, endLine: 4, symbol: 0 },
+      { name: 'membershipKind', kind: 'ref', startLine: 8, startCol: 3, endLine: 8, symbol: null },
+      { name: 'zzqPlugh', kind: 'ref', startLine: 9, startCol: 3, endLine: 9, symbol: null },
+    ],
+  });
+
+  test('no symbol carries the name: the rows are the places that use it', () => {
+    write(2);
+    const info = {};
+    const rows = search(own, { query: 'zzqPlugh' }, info);
+    assert.deepEqual(rows, [
+      { kind: 'ref', name: 'zzqPlugh', receiver: null, count: 1, path: 'src/used.ts', startLine: 4, owner: 'membershipCache', ownerQual: 'membershipCache', ownerKind: 'function' },
+      { kind: 'ref', name: 'zzqPlugh', receiver: null, count: 1, path: 'src/used.ts', startLine: 9, owner: null, ownerQual: null, ownerKind: null },
+    ]);
+    assert.deepEqual(info, { refs: { uses: 2, files: 1, names: ['zzqPlugh'], capped: false, symbols: [], symbolCount: 0 } });
+    assert.equal('start_line' in rows[0], false, 'the §8 shape, no column name');
+  });
+
+  test('symbols that share a word, but not all of them: the uses come first and the header learns their names', () => {
+    write(2);
+    const info = {};
+    const rows = search(own, { query: 'membershipKind' }, info);
+    assert.deepEqual(rows.map((row) => [row.count, row.startLine, row.owner]), [[2, 3, 'membershipCache'], [1, 8, null]]);
+    assert.deepEqual(info, { refs: { uses: 3, files: 1, names: ['membershipKind'], capped: false, symbols: ['membershipCache'], symbolCount: 1 } });
+  });
+
+  test('a symbol that carries every word of the name comes first, as before', () => {
+    write(2);
+    const info = {};
+    assert.deepEqual(search(own, { query: 'membershipCache' }, info).map((row) => row.name), ['membershipCache']);
+    assert.equal('refs' in info, false);
+    assert.deepEqual([info.matched, info.dropped], [['membership', 'cache'], []]);
+  });
+
+  test('a name used in more than REF_LEAD_MAX places does not lead: the symbols that share a word stay', () => {
+    // The count is written out because it is the contract (CONTRACTS.md §8), not a property of the constant.
+    assert.equal(REF_LEAD_MAX, 200);
+    write(REF_LEAD_MAX + 1);
+    const info = {};
+    assert.deepEqual(search(own, { query: 'membershipKind' }, info).map((row) => row.name), ['membershipCache']);
+    assert.equal('refs' in info, false);
+    assert.deepEqual([info.matched, info.dropped], [['membership'], ['kind']]);
+    // Exactly at the limit the uses still lead (the module level adds one to `reads`).
+    write(REF_LEAD_MAX - 1);
+    assert.ok(search(own, { query: 'membershipKind' }, {}).every((row) => row.name === 'membershipKind'));
+  });
+
+  test('with a kind only symbols qualify; the limit keeps the first rows; nothing found gives []', () => {
+    write(2);
+    const info = {};
+    assert.deepEqual(search(own, { query: 'zzqPlugh', kind: 'function' }, info), []);
+    assert.equal('refs' in info, false);
+    assert.equal(search(own, { query: 'zzqPlugh', limit: 1 }).length, 1);
+    const nothing = {};
+    assert.deepEqual(search(own, { query: 'zzq-nothing' }, nothing), []);
+    assert.deepEqual(nothing, { matched: [], dropped: [] });
   });
 });
 

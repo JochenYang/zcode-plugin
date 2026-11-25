@@ -505,6 +505,29 @@ describe('codegraph_lookup', () => {
     assert.equal(limited.split('\n').at(-2), 'hint: raise budget (max 4000) or limit (max 200) to see more rows');
   });
 
+  test('search for a name that is only used (real modules): the tool prints the places that use it', async () => {
+    // parseConfig calls validate(text, opts); nothing in the fixture defines validate.
+    const out = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'search', query: 'validate' }));
+    assert.equal(
+      out,
+      [
+        `# search validate · no symbol carries this name; 1 use in 1 file (validate) · ${FRESH}`,
+        '     call validate ×1 in parseConfig src/graph/sample.ts:10',
+        'hint: no symbol carries this name; the rows are places that use it: calls and type names. ' +
+          'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.',
+      ].join('\n'),
+    );
+    const limited = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'search', query: 'validate', limit: 1 }));
+    assert.ok(limited.startsWith(`# search validate · no symbol carries this name; 1 use in 1 file (validate) · ${FRESH}`));
+    // The model decides whether to call search from the schema: a name nothing defines must be
+    // listed as something search answers, and the schema must not promise property reads
+    // (CONTRACTS.md §10).
+    const { operation, query } = TOOLS[1].inputSchema.properties;
+    assert.ok(operation.description.startsWith('search: symbols by name, or the places that use a name no symbol carries;'));
+    assert.ok(query.description.includes('When no symbol carries the name, search lists where it is used (calls and type names).'));
+    assert.ok(query.description.includes('In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph.'));
+  });
+
   test('symbol: header, relations with markers and legend, inline body from disk, Read line for long bodies', async () => {
     const log = [];
     const ctx = fakeCtx(READY(), { queries: storeQueries(log) });

@@ -38,6 +38,8 @@
 | 引入 npm 运行时依赖（含 `tree-sitter-wasms` 包本身） | 插件从市场安装不跑 `npm install`；只取 wasm 产物与 `web-tree-sitter` 运行时文件随包 |
 | `tree-sitter-wasms` 搭配 `web-tree-sitter` ≥ 0.26 | 不兼容（tree-sitter issue #5171）；固定 `web-tree-sitter@0.25.10` |
 | Node 18/20 兼容 | `node:sqlite` 需 ≥ 22.13；改用 sql.js 会失去已验证的 FTS5 与落盘能力，不值得 |
+| 把触发条件放宽成「没有同名符号就查引用」（W28，用户 11-25 把工程判断交给我） | 实测会改变约一半的常见单个词查询：`props`、`data`、`theme` 这些词多半没有同名符号，结果会从「相关符号」（`ThemeProvider`、`useTheme`）整体变成「参数的使用位置」。所以只在符号行不含全部词时才让引用排在前面 |
+| 会话途中提醒模型「索引变了」（同上，交给我判断） | 新鲜度在调用时保证（每次调用前同步改过的文件），首行已有 `stale: N` / `indexing N% (results partial)`，模型不需要据此做任何决定，每条提示都占上下文。会话开头那行指引已顶在 120 token 的上限上；新行为写在工具描述里，模型调用时看的是那里 |
 
 ## Work items
 
@@ -70,6 +72,7 @@
 | W25 | P1 | 索引存储管理与按项目关闭（用户 11-24 晚：「都知道缺陷，为什么不去调研环境和同类做法再优化好；索引清理功能显示在哪里、ZCode 有没有扩展接口」）。同类做法：JetBrains 自动清 180 天没更新的目录、Cursor / Roo 都有「列出索引 + 删除」入口；ZCode 有未公开文档的扩展接口（输入框状态位、侧边栏入口、HTML 面板、通知、插件设置）。本轮做与界面无关的核心：`src/index/storage.mjs`（清单、最近使用、清理：孤儿 / 闲置 `maxIdleDays` / 总量 `maxTotalMB`，永不删当前项目与在用的索引）；会话开始时自动整理；`codegraph_status` 的 `storage` / `clean` / `project` / `confirm` 与 `/codegraph storage|clean`；项目根 `.zcode/codegraph.json` 只能收紧；状态文件丢失自愈；`autoIndex` 关闭时工具不再自动同步。审查 `review-7-store-management.md`（无阻塞；4 条 P2：孤儿不绕过闲置期、自动清理不探测远端路径、逐项隔离删除错误、补 `clean=current` 重建的端到端）。界面入口（状态位 + 面板）另开 | 主 agent | [x] |
 | W26 | P1 | 索引管理的界面入口（用户 11-24 晚：「把界面入口做好，一定要按照 Z Code 的官方主题、主题组件和 UI 风格设计，不能随意」）。`bin/extension.mjs`（输入框状态位 `composer.status`、侧边栏入口、命令、视图与四个工具）、`src/extension/describe.mjs`、`ui/index.html`（`#zcode-contract` = 应用沙箱样式表逐条原文，`#codegraph-layout` 只有版式）、清单的 `extension` / `slots`。共用进程里对项目路径先探测再同步调用；删除与清理两步确认；迟到的会话快照丢弃、绘制串行。审查 `review-8-ui-entry.md`（两轮，均无阻塞） | 主 agent | [x] |
 | W27 | P2 | 索引管理面板的视觉整理（用户 11-25 看过真实效果：「徽章还行，面板不好看」，明天再做）。截图里的问题：路径被画成整列宽的灰条（`.storage-path` 是纵向 flex，`<code>` 被拉伸）；列太挤导致词内断行（徽章「未索 / 引」、「291 个文 / 件」、「4 小时 / 前」、表头「上次使 / 用」）；长路径中间硬断；标题、统计、目录、表格、按钮、卡片全是小字、没有层级；ZCode 内部的草稿工作区（`zcode-cache/.zcode/workspace/draft-*`）作为「未索引」条目混在列表里。方案已定（用户 11-25 夜）：版式照用户给的原型图——标题与说明、三张统计卡、存储位置卡、带标题的两个分区卡片、策略卡；补两样官方样式表里没有的装饰（按状态着色的标签、标题左侧的竖条），颜色全部取官方令牌；图标用内联的 Lucide SVG（npm `lucide-static`，ISC 许可；沙箱没有图标运行时，`data-lucide` 不生效），`stroke="currentColor"` 随主题走。用户 11-25 另选定：索引目录那一行加「打开目录」按钮——宿主没有对外打开目录的能力，由扩展用 `child_process` 启动系统文件管理器（`explorer` / `open` / `xdg-open`），路径固定为插件数据目录。逐项清单在 `.devflow/codegraph-plugin/t20-progress.md` 顶部。实现时另加：说明文字的次要文字色（官方的次要文字色在浅色主题下只有 4.26:1，与正文色混合后 4.99:1）；「复制路径」；路径只在分隔符处断、至多两行；状态色按实测比例与前景色混合。审查 `review-9-view-restyle.md`（一轮，无阻塞） | 主 agent | [x] |
+| W28 | P1 | search 列出「只被使用」的名字（用户 11-25 选定）。T20 里模型转去 grep 的 `membershipKind`、`requirePersonalAccount`、`takePendingDeepLink` 是 `refs` 表里的引用名而非符号。`searchRefs`（`repo.mjs`）：名字原样存在时走 `refs_name` 索引，答案只有它；否则按词扫描全表再过词边界过滤，带上含这些词的更长的名字；原始引用先截到 2 万行（不截的话 `meth` 这类片段在 220 万条引用上光分组就 18 秒），再截到 5000 组，越过截断合计是下界。触发规则（`queries.mjs`）：没有符号行、或符号行只是放宽匹配（不含全部词）时才查引用；使用位置不超过 200 处时排在前面，首行列出沾词的符号；符号含全部词、或名字用在 200 处以上时符号照旧。输出（`text.mjs`）：`# search useEffect · no symbol carries this name; 90 uses in 48 files (useEffect) · also in symbol names: useT, useTick (+18 more found)`，行 ` call useEffect ×4 in ThemeProvider src/components/ThemeProvider.tsx:63`。实测这条规则只改变「符号只沾一个词」的查询（`useEffect` 原来给 `useT`、`useTick`），常见单个词与描述式查询不变。审查 `review-10-reference-fallback.md`（一轮，无阻塞；P2-1「截断与词过滤同时发生时 `capped` 漏报」与五条 P3 都已处理）。审查后经真实协议发现并更正：JS/TS 里点号读取的属性、变量与参数的读取、解构出来的字段都不在图谱里（抽取层 `engine.mjs` 的既有边界），文档与提示语原先写的「对象的字段」言过其实，已按实测改写并由 `tests/resolve/locals.test.mjs` 钉住；要让它们可搜是另一项工作 | 主 agent | [x] |
 
 类目：P0 不做就走不通 · P1 静默失败或数据风险 · P2 清理与一致性 · OPT 可选（不做要写明理由）。
 
@@ -84,7 +87,7 @@
 | 0 契约与骨架 | W1–W5 | T1–T5 PASS；35 种语法全部可加载；子智能体审查无阻塞 |
 | 1 并行开发 | W6–W14 | T6–T15 PASS；每条 lane 的文件边界未被越界；子智能体审查无阻塞 |
 | 2 集成与验证 | W15–W19 | T16–T20 PASS（T20 由用户执行，未完成前不得标 done） |
-| 3 收尾 | W21、W22、W23、W24、W25、W26（W20 视 W19 数据：未开启） | T21–T27 PASS；安装进 ZCode 跑通 |
+| 3 收尾 | W21、W22、W23、W24、W25、W26、W27、W28（W20 视 W19 数据：未开启） | T21–T29 PASS；安装进 ZCode 跑通 |
 
 ## Parallel lanes（阶段 1）
 
@@ -143,6 +146,7 @@
 | 26 (W25) | 索引存储管理与按项目关闭 | 单元测试（存储策略纯函数、真实目录、被占用索引）；真实服务进程端到端（握手后清理、预演与确认、删当前项目后重建、按项目关闭的三种情形）；变异验证 | 孤儿与闲置索引被删、当前项目与在用的索引永不删；`clean` 不带 `confirm` 只列不删；项目文件只能收紧；状态文件丢失后工具照常回答 | `node --test plugins/codegraph/tests/index/storage.test.mjs plugins/codegraph/tests/e2e/warm-start.test.mjs plugins/codegraph/tests/mcp/`；`node .tmp/e2e/storage-probe.mjs`；`node .tmp/e2e/project-off-probe.mjs` | PASS（2026-11-24 深夜：526 项 520 过 0 失败 6 跳过；三轮共 11 处变异都被抓住；已安装副本经真实协议验证清单、预演、确认清理、`clean=current` 后重建、按项目关闭的三种情形；审查 `review-7-store-management.md` 无阻塞。本机真实存储只读预演：两个索引 15 MB，下次会话开始不删任何东西。未做：界面入口；macOS / Linux 没有环境；真实会话里 `/codegraph storage` 的那次调用在等用户点授权弹窗） |
 | 27 (W26) | 界面入口 | 单元测试（状态位四种状态与长度上限、`viewData` 能过 JSON、视图工具的拒绝与成功、清单与注册项一致、不应答的路径、迟到的会话快照、刷新循环不产生未处理拒绝）；页面在无头 Chrome 里的检查（320 px 与 1280、中英文、明暗）；对页面 16 处、对扩展入口 6 处变异；官方样式块与应用样式表逐条比对 | 状态位按状态显示且不超宿主上限；面板里删除与清理都要第二次点击；打开会话的项目与在用的索引不能从面板删；页面只用官方工具类、自己的样式只有版式；改坏页面时检查失败 | `node --test plugins/codegraph/tests/extension/`；`node .tmp/page-mutate.mjs`；`node .tmp/zcode-ui/verbatim.mjs .tmp/zcode-ui/visualize.css` | PASS（2026-11-25：`node --test plugins/codegraph/tests/extension/` → 29 项全过，其中 4 项在无头 Chrome 里打开页面；全套 557 项 551 过 0 失败 6 跳过；`check-consistency.py` ALL CHECKS PASSED；selftest 15 断言、32 个语法、193 项许可检查；22 处变异全部被抓住；官方样式块 56 条规则与应用样式表逐条一致；用 ZCode 4.0.10870 的真实令牌实测对比度——浅色主题下官方的状态徽章 2.04:1、错误色 2.81:1、次要文字 4.26:1 不到 WCAG AA，深色主题全部 ≥ 5.76，没有改这些工具类。审查 `review-8-ui-entry.md` 第一轮无阻塞。已安装，缓存与市场副本与工作树一致。**未做：真实应用里的验证**——扩展要完全退出应用再打开才会加载，首次激活要用户点确认，这两步我做不了） |
 | 28 (W27) | 面板重排 | 单元测试（数据层的新字段与文案、`open` 工具、图标与 Lucide 原件逐字对照）；页面在无头浏览器里的检查（1280 / 760 / 320 像素，中英文，明暗）；变异 14 处；ZCode 真实主题下的对比度；设计技能的 `audit.mjs`；Playwright 真实鼠标与键盘 | 版式照原型；装饰只取官方令牌；标签不换行、路径至多两行；文字 ≥ 4.5:1、图标 ≥ 3:1；打开目录与复制路径可用 | `node --test plugins/codegraph/tests/extension/`；`node .tmp/w27-shots.mjs`；`node .tmp/w27-real-input.mjs` | PASS（2026-11-25：`tests/extension/` 36 项全过；全套 564 项 558 过 0 失败 6 跳过；真实主题下面板自己的文字全部达标——状态标签 5.07:1、说明 4.99:1、图标 3.99:1；`audit.mjs` 必须修 0；官方 lint 在自己的样式块 0 条；审查 `review-9-view-restyle.md` 无阻塞。已安装。**未做：面板在真实应用里的样子**——截图留给用户看；用户要完全退出应用再打开） |
+| 29 (W28) | search 列出只被使用的名字 | 单元测试（存储层 `searchRefs` 10 条：分组、两种查法、词序、短词整词、两级截断各插入上限的两倍、截断在词过滤之前判断、接收者与种类、参数校验；查询层触发规则 5 条，含上限 200 的边界；输出层 5 条；工具层走真实模块 1 条；抽取层「什么算引用」3 条）；变异 27 处；两个真实索引上的只读对比（各约 60 个常见名字与库 API）；合成 220 万条引用上的耗时；工作树与**已安装副本**各通过真实 MCP 协议端到端 | 没有符号叫这个名字、或符号只沾部分词时给出使用位置，沾词的符号在首行；符号含全部词、或名字用在 200 处以上时结果不变；常见单个词与描述式查询不变；最坏查询有界 | `node --test plugins/codegraph/tests/store/search.test.mjs plugins/codegraph/tests/graph/ plugins/codegraph/tests/render/ plugins/codegraph/tests/mcp/ plugins/codegraph/tests/resolve/locals.test.mjs`；`node .tmp/w28-mutate.mjs`；`node .tmp/w28-trigger.mjs`（输出留在 `.tmp/w28-trigger.txt`）；`node .tmp/e2e/mcp-search.mjs "<query>"…`；`node .tmp/e2e/installed-refs-probe.mjs` | PASS（2026-11-25：全套 588 项 582 过 0 失败 6 跳过；`check-consistency.py` ALL CHECKS PASSED；selftest 三项通过；27 处变异全部被对应用例抓住；合成索引 220 万条引用上原名命中 24–150 ms、扫描约 180 ms、子串热点 114 ms、一两个字母且无同名引用约 1.3 s；审查 `review-10-reference-fallback.md` 一轮无阻塞，P2-1 与五条 P3 都已处理。已安装副本经真实协议：`membershipKind`（库调用）、`requirePersonalAccount`、`client.takePendingDeepLink()` 给出使用位置，属性读取 `row.pendingLinkQuota` 返回无匹配并说明原因。**未做：真实会话里模型是否真的少用 grep**；JS/TS 的属性读取、变量与参数的读取不在图谱里，是抽取层的边界） |
 
 ## Verification commands
 
@@ -164,9 +168,8 @@
 | 语法包按需下载（镜像） | 全量随包约 65 MB 换零外联与离线可用 | 仓库体积成为问题时 |
 | 仓库内共享索引 | 团队共享需求未提出 | 有多人协作诉求时 |
 | 向量检索、SCIP 后端、`explore`、前置注入 | 见 W20/W21 与 Ruled out | W19 数据出来后 |
-| search 无符号命中时回退查 `refs` | W23 先解决空结果与排序；模型 grep 的 `membershipKind`、`requirePersonalAccount` 是 `refs` 表里的引用名而非符号，回退能直接答「谁引用了它」 | W23 装进 ZCode 的开臂数据出来后 |
 | Bash 检索时由钩子提醒改用 codegraph | 多一个每条 Bash 都会起的 node 进程；先看 W23 的开臂是否已经把退回 grep 的比例降下来 | W23 开臂数据出来后 |
-| 文件变化后在后台立即增量同步（上游 codegraph 的做法：监听 + 2 秒去抖后直接重解析） | 现在是标脏后等下一次工具调用；T20 的会话里没有观察到「调用时等同步」成为问题 | 用户反馈首次调用变慢时 |
+| 文件变化后在后台立即增量同步（上游 codegraph 的做法：监听 + 2 秒去抖后直接重解析） | 现在是标脏后等下一次工具调用；T20 的 13 个会话里模型在第一次编辑后 0 次 codegraph 调用，单文件增量 35–57 ms，主动同步做的是没人消费的工作 | 用户反馈首次调用变慢时 |
 
 ## Rollback
 

@@ -1047,6 +1047,91 @@ export function searchSymbols(db, query, options = {}) {
   return searchSymbolsDetailed(db, query, options).rows;
 }
 
+// How much a search for a name that is only a reference reads before it stops counting. A name
+// can be a fragment of very many others (`meth` sits in two million references of a large
+// repository): grouping those took 18 s, so the references are cut first and the scan stops
+// there. A name that is used in tens of thousands of places (`toBe`) is then cut again, by the
+// groups the totals are counted over (about 100 ms for 5,000). Past a cut the totals are lower
+// bounds (`capped`). References are read in the order they sit in the table, so past the first
+// cut the places come from the files that were indexed first.
+export const REF_ROWS_MAX = 20000;
+export const REF_GROUPS_MAX = 5000;
+
+// Places that use a name, one row per name, receiver, file and the symbol that contains it
+// (`req.get` and `res.get` inside one function are two rows). The order is decided in SQL,
+// because that is what decides which rows survive the cut: names equal to the query, then
+// source before tests, then by place. Parameters follow their position in the SQL text: the
+// WHERE clause's, the reference cut, the exact-name tier, one per test-file part (the ORDER BY),
+// the group cut.
+const REF_GROUPS_SQL = (where) =>
+  "SELECT r.name AS name, CASE WHEN COUNT(DISTINCT r.kind) = 1 THEN MIN(r.kind) ELSE 'use' END AS kind, NULLIF(r.receiver, '') AS receiver, COUNT(*) AS count," +
+  ' MIN(r.start_line) AS start_line, r.file_id AS file_id, f.path AS path, s.name AS owner, s.qual AS owner_qual, s.kind AS owner_kind' +
+  ` FROM (SELECT * FROM refs WHERE ${where} LIMIT ?) r JOIN files f ON f.id = r.file_id LEFT JOIN symbols s ON s.id = r.symbol_id` +
+  " GROUP BY r.name, NULLIF(r.receiver, ''), r.file_id, r.symbol_id" +
+  ` ORDER BY r.name = ? COLLATE NOCASE DESC, CASE WHEN ${SECONDARY_SQL} THEN 1 ELSE 0 END, f.path, MIN(r.start_line), r.name, NULLIF(r.receiver, '') LIMIT ?`;
+
+/**
+ * Places that use a name no symbol defines here. What counts as a reference is what the
+ * extractor records: calls with their receiver (`requirePersonalAccount(x)`,
+ * `client.takePendingDeepLink()`) and type names, plus the name reads a language keeps (Python:
+ * attribute reads; JS/TS/Ruby: reads of a local that has a definition). A property read in JS/TS
+ * (`row.membershipKind`) is not one, nor is the read of a destructured field there; both are
+ * dropped in `extract/engine.mjs`, and `tests/resolve/locals.test.mjs` holds that line.
+ * One row per name, receiver, file and the symbol that contains it (module-level references form
+ * one row per file), with how often it occurs there. A row whose references are not all of one
+ * kind (a call and a read of the same name) says `use`.
+ *
+ * Called for a search whose symbols do not carry the name or all of its words (graph/queries.mjs
+ * `search`). A name that is used exactly as written is read through the index on `refs.name`,
+ * however many places use it. Any other query (a guess, other words of a longer name, another
+ * case, separators) scans the table: about 180 ms per 2.2 million references for a word of three
+ * letters or more, about 1.3 s for one or two letters (those need GLOB to see word boundaries).
+ * Its words match as they do for symbols (any order; a short ASCII word must be a whole word).
+ * Object keys in literals and words in strings are not references: grep finds those.
+ *
+ * @param {DatabaseSync} db
+ * @param {string} query
+ * @param {{ limit?: number }} [options]
+ * @returns {{ rows: object[], uses: number, files: number, names: string[], capped: boolean }}
+ *   rows: `{ name, kind, receiver, count, start_line, file_id, path, owner, owner_qual, owner_kind }`.
+ *   `uses`, `files` and `names` describe every place, not only the rows the limit kept;
+ *   `capped` says there were more places than were read.
+ */
+export function searchRefs(db, query, options = {}) {
+  requireDb('searchRefs', db);
+  requireString('searchRefs', 'query', query, { allowEmpty: true });
+  const { limit = 20 } = requireObject('searchRefs', 'options', options);
+  requireInteger('searchRefs', 'limit', limit, 1);
+
+  const segments = [...new Set(identifierSegments(query))];
+  if (segments.length === 0) return { rows: [], uses: 0, files: 0, names: [], capped: false };
+  const exact = query.trim();
+  const groupsOf = (where, parameters) =>
+    db.prepare(REF_GROUPS_SQL(where)).all(...parameters, REF_ROWS_MAX + 1, exact, ...SECONDARY_PARAMS, REF_GROUPS_MAX + 1);
+  let groups = exact ? groupsOf('name = ?', [exact]) : [];
+  if (groups.length === 0) {
+    // AND does not care about the order and SQLite evaluates left to right: a word of three
+    // letters or more is one LIKE, a shorter one is four patterns, so the long words come first
+    // and the short one is tried only on the rows that passed.
+    const predicates = [...segments].sort((a, b) => b.length - a.length).map((seg) => namePoolPredicate(seg, 'name'));
+    groups = groupsOf(predicates.map(([sql]) => `(${sql})`).join(' AND '), predicates.flatMap(([, parameter]) => [parameter]));
+  }
+  // Whether the references were cut is decided before the word filter: rows the filter takes
+  // away were read all the same ("id" reads `identity` and `userId`), so they count here.
+  const read = groups.reduce((total, row) => total + row.count, 0);
+  const capped = groups.length > REF_GROUPS_MAX || read > REF_ROWS_MAX;
+  // The pool has to hold every row the word filter could accept (see poolPredicate), so the
+  // filter only removes: the order the rows came in is kept.
+  groups = groups.filter((row) => wordDistance(row.name, segments) !== null);
+  return {
+    rows: groups.slice(0, limit),
+    uses: groups.reduce((total, row) => total + row.count, 0),
+    files: new Set(groups.map((row) => row.file_id)).size,
+    names: [...new Set(groups.map((row) => row.name))],
+    capped,
+  };
+}
+
 // Above this many references a symbol is a hub (`Error`, `stringify`, a core type): which files
 // they sit in says nothing about orientation, and it is the one case that costs. Counting by the
 // index alone took ~2 ms for the 55,000 references of cindy's three most referenced symbols;
@@ -1183,21 +1268,28 @@ function wordDistance(name, segments) {
  * Matching that here keeps a two-letter query's pool from filling with `width` and `video`
  * before `sessionId` is reached. GLOB is case-sensitive, hence one pattern per spelling.
  *
+ * @param {string} seg
  * @returns {[string, string]} `[sql, parameter]`
  */
+// One parameter on purpose: it is passed to `map` directly, which would hand the index to a
+// second one. A name in another column goes through `namePoolPredicate`.
 export function poolPredicate(seg) {
+  return namePoolPredicate(seg, 's.name');
+}
+
+function namePoolPredicate(seg, column) {
   if (seg.length > SHORT_SEGMENT || !ASCII_SEGMENT.test(seg)) {
-    return ["s.name LIKE ? ESCAPE '\\'", `%${escapeLike(seg)}%`];
+    return [`${column} LIKE ? ESCAPE '\\'`, `%${escapeLike(seg)}%`];
   }
   const capitalised = seg[0].toUpperCase() + seg.slice(1);
   const upper = seg.toUpperCase();
   // Either spelling of every letter, so one GLOB covers the separator case for all of them.
   const anyCase = [...seg].map((ch) => (/[0-9]/.test(ch) ? ch : `[${ch}${ch.toUpperCase()}]`)).join('');
   const sql = [
-    "s.name LIKE ? ESCAPE '\\'",
-    `s.name GLOB '*[^a-zA-Z0-9]${anyCase}*'`,
-    `s.name GLOB '*[a-zA-Z0-9]${capitalised}*'`,
-    `s.name GLOB '*[a-z0-9]${upper}*'`,
+    `${column} LIKE ? ESCAPE '\\'`,
+    `${column} GLOB '*[^a-zA-Z0-9]${anyCase}*'`,
+    `${column} GLOB '*[a-zA-Z0-9]${capitalised}*'`,
+    `${column} GLOB '*[a-z0-9]${upper}*'`,
   ].join(' OR ');
   return [sql, `${escapeLike(seg)}%`];
 }

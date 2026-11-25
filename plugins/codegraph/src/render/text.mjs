@@ -31,11 +31,14 @@ const FOOTER_MIN_ROOM = 48;
 const CALLABLE_KINDS = new Set(['function', 'method', 'component', 'macro']);
 const TRUNCATION_HINT = 'hint: raise budget (max 4000) or limit (max 200) to see more rows';
 const SEARCH_EMPTY_HINT =
-  'hint: search matches symbol names only (text, configs and string literals belong to Grep); ' +
-  'a word of one or two letters must be a whole word.';
+  'hint: search matches symbol names and names that are used here without a definition; text, object keys in literals, ' +
+  'property reads (obj.field) in JS/TS and string literals belong to Grep; a word of one or two letters must be a whole word.';
 const SEARCH_NEXT_HINT =
   'next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); ' +
   'impact <name> shows what a change breaks.';
+const SEARCH_REFS_HINT =
+  'hint: no symbol carries this name; the rows are places that use it: calls and type names. ' +
+  'In JS/TS, property reads (obj.field), variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.';
 const RELATIONS_EMPTY_HINT =
   'hint: confirm the name with operation=search; dynamic references (reflection, getattr, dynamic import) are never linked.';
 const NOT_FOUND_HINT =
@@ -482,25 +485,53 @@ export function renderClean({ target, remove, removed = [], busy = [], total, do
   });
 }
 
+// A name on one line, cut with an ellipsis, in quotes when it has spaces (a reference name is
+// not always an identifier: the parser keeps the text of a call it could not reduce).
+function nameText(name, max) {
+  const text = clip(oneLine(name), max);
+  return /\s/.test(text) ? `"${text}"` : text;
+}
+
+// A place that uses a name no symbol defines: `<kind> <receiver>.<name> ×<count> in <owner> <path>:<line>`.
+// Module-level references have no owner and say where they are instead. No marker: a reference
+// row carries no resolution.
+function refEntry(row) {
+  const name = `${row.receiver ? `${nameText(row.receiver, 24)}.` : ''}${nameText(row.name, 60)}`;
+  return { line: `${kindLabel(row.kind)} ${name} ×${count(row.count)} ${row.owner ? `in ${oneLine(row.owner)}` : 'at'} ${oneLine(row.path)}:${count(row.startLine)}`, marker: false };
+}
+
 /**
- * operation=search. `meta`: `{ query, more, matched?, dropped?, budget, freshness }`.
+ * operation=search. `meta`: `{ query, more, matched?, dropped?, refs?, budget, freshness }`.
  * Rows arrive best match first and keep that order: the first rows are what a small budget keeps.
  * `dropped` marks a relaxed search (no name has every word): `matched` is what the best row
  * contains. Later rows may contain other words, so the header speaks of the best match only.
+ * `refs` marks a search whose rows are the places that use the name (no symbol carries it), and
+ * `refs.symbols` names the symbols that share a word with it.
  */
 export function renderSearch(rows, meta = {}) {
   const list = Array.isArray(rows) ? rows : [];
-  const relaxed = Array.isArray(meta.dropped) && meta.dropped.length > 0 && Array.isArray(meta.matched) && meta.matched.length > 0;
+  const refs = meta.refs && typeof meta.refs === 'object' ? meta.refs : null;
+  const relaxed = !refs && Array.isArray(meta.dropped) && meta.dropped.length > 0 && Array.isArray(meta.matched) && meta.matched.length > 0;
+  const amount = (n, word) => `${count(n)}${refs?.capped ? '+' : ''} ${plural(count(n), word)}`;
+  const listed = (names) => listOrClamp(names.map((name) => nameText(name, 40)), 3);
+  // Symbols that share a word with the name: three by name, the rest as a count of what the
+  // search found (it looks for as many symbols as the caller asked for rows, so not all of them).
+  const others = Array.isArray(refs?.symbols) && refs.symbols.length > 0
+    ? ` · also in symbol names: ${listed(refs.symbols)}${count(refs.symbolCount) > refs.symbols.length ? ` (+${count(refs.symbolCount) - refs.symbols.length} more found)` : ''}`
+    : '';
   const summary = list.length === 0
     ? 'no matches'
-    : relaxed
-      ? `${list.length} partial ${plural(list.length, 'match', 'matches')} (no name has all words; best match: ${meta.matched.join(' + ')})`
-      : `${list.length} ${plural(list.length, 'match', 'matches')}`;
-  const entries = list.map((row) => rowEntry(row));
+    : refs
+      ? `no symbol carries this name; ${amount(refs.uses, 'use')} in ${amount(refs.files, 'file')} (${listed(refs.names ?? [])})${others}`
+      : relaxed
+        ? `${list.length} partial ${plural(list.length, 'match', 'matches')} (no name has all words; best match: ${meta.matched.join(' + ')})`
+        : `${list.length} ${plural(list.length, 'match', 'matches')}`;
+  const entries = list.map((row) => (refs ? refEntry(row) : rowEntry(row)));
+  const hint = refs ? SEARCH_REFS_HINT : list.length === 0 ? SEARCH_EMPTY_HINT : SEARCH_NEXT_HINT;
   return finish({
     header: headerLine('search', argText([meta.query]), summary, meta),
     rows: entries,
-    footer: (shown) => [legendIfNeeded(shown), list.length === 0 ? SEARCH_EMPTY_HINT : SEARCH_NEXT_HINT],
+    footer: (shown) => [legendIfNeeded(shown), hint],
     budget: meta.budget,
     more: meta.more === true,
   });
