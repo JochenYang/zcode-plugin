@@ -7,7 +7,7 @@ import { test, describe, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Indexer } from '../../src/index/indexer.mjs';
-import { scanPropertyReads, setScanWorkerFactory, warmPropertyReads } from '../../src/graph/propertyReads.mjs';
+import { primePropertyReads, scanPropertyReads, setScanWorkerFactory, warmPropertyReads } from '../../src/graph/propertyReads.mjs';
 import { scratchDir, rmrf, writeProject, closeAll, useScratchData } from '../index/_helpers.mjs';
 
 const data = useScratchData('data-propreads-worker');
@@ -56,7 +56,7 @@ class HeldWorker extends EventEmitter {
   }
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve));
-const NOTHING = { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false };
+const NOTHING = { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false, cut: null };
 const READ = { receiver: 'row', line: 2, column: 10 };
 
 // A project of one file, and a factory that hands out held workers, two at most: a third means
@@ -123,5 +123,89 @@ describe('the life of the scan worker', () => {
     await tick();
     made[1].answer(made[1].sent[0], [READ]);
     assert.equal((await next).uses, 1);
+  });
+
+  test('priming asks again while the worker says files are left, stops when there are none, and never asks more often than it may', async () => {
+    const { root, db, made } = await held();
+    const warming = warmPropertyReads();
+    made[0].ready();
+    assert.equal(await warming, true);
+    const until = async (check) => {
+      for (const end = Date.now() + 2000; !check() && Date.now() < end;) await tick();
+      assert.ok(check(), 'the worker was asked again');
+    };
+    // Three rounds: files are left after the first two, none after the third.
+    const prime = primePropertyReads({ root, db, rounds: 5 });
+    await until(() => made[0].sent.length === 1);
+    for (const [i, unseen] of [3, 1].entries()) {
+      made[0].emit('message', { type: 'prime', id: made[0].sent[i].id, unseen });
+      await until(() => made[0].sent.length === i + 2);
+    }
+    made[0].emit('message', { type: 'prime', id: made[0].sent[2].id, unseen: 0 });
+    assert.equal(await prime, true);
+    await tick();
+    assert.deepEqual(made[0].sent.map((message) => message.type), ['prime', 'prime', 'prime'], 'nothing is left: no fourth round');
+    // A worker that always says files are left is asked `rounds` times, and no more.
+    made[0].sent.length = 0;
+    const bounded = primePropertyReads({ root, db, rounds: 2 });
+    await until(() => made[0].sent.length === 1);
+    made[0].emit('message', { type: 'prime', id: made[0].sent[0].id, unseen: 2 });
+    await until(() => made[0].sent.length === 2);
+    made[0].emit('message', { type: 'prime', id: made[0].sent[1].id, unseen: 2 });
+    assert.equal(await bounded, true);
+    await tick();
+    assert.equal(made[0].sent.length, 2);
+    // An answer that names nothing is not taken for a priming.
+    made[0].sent.length = 0;
+    const silent = primePropertyReads({ root, db, rounds: 3 });
+    await until(() => made[0].sent.length === 1);
+    made[0].emit('message', { id: made[0].sent[0].id });
+    assert.equal(await silent, false);
+    await tick();
+    assert.equal(made[0].sent.length, 1, 'nothing was answered: no second round');
+  });
+
+  // It puts a real worker in place of the held ones and terminates it, so the next test starts
+  // with none. The test of a worker that cannot start comes last: it switches the scan off for
+  // the life of the process.
+  test('with the real worker, a priming answer says how many files are left, and the priming goes on until there are none or it has asked enough', async () => {
+    const { Worker } = await import('node:worker_threads');
+    const ctx = await indexed({
+      'src/a.ts': 'export function f(row: Row) {\n  return row.zzqP;\n}\n',
+      'src/b.ts': 'export const b = other.zzqP;\n',
+    });
+    const answers = [];
+    let real = null;
+    setScanWorkerFactory((url) => {
+      real = new Worker(url);
+      real.on('message', (msg) => { if (msg?.type === 'prime') answers.push(msg.unseen); });
+      return real;
+    });
+    try {
+      assert.equal(await primePropertyReads(ctx), true);
+      assert.deepEqual(answers, [0], 'a project that fits in one round: nothing is left');
+      // Another project, and no time to read in a round: both of its files are left, every round.
+      const other = await indexed({ 'src/c.ts': 'export const c = row.zzqP;\n', 'src/d.ts': 'export const d = other.zzqP;\n' });
+      answers.length = 0;
+      assert.equal(await primePropertyReads({ ...other, limits: { readDeadlineMs: -1 } }), true);
+      assert.deepEqual(answers, [2, 2, 2, 2], 'files are left every round: asked four times, no more');
+      answers.length = 0;
+      assert.equal(await primePropertyReads({ ...other, limits: { readDeadlineMs: -1 }, rounds: 1 }), true);
+      assert.deepEqual(answers, [2]);
+    } finally {
+      await real.terminate().catch(() => {});
+    }
+  });
+
+  test('a worker that cannot start: the scan is off for the life of the process, and nothing waits', async () => {
+    const { root, db, made } = await held();
+    const warming = warmPropertyReads();
+    made[0].emit('error', new Error('no such module'));
+    made[0].emit('exit', 1);
+    assert.equal(await warming, false);
+    assert.deepEqual(await scanPropertyReads({ root, db, query: 'zzqP' }), { ...NOTHING, skipped: 'not-ready' });
+    assert.equal(await warmPropertyReads(), false, 'not tried again: what is broken stays broken');
+    assert.equal(made.length, 1);
+    assert.equal(made[0].sent.length, 0, 'nothing was ever asked of it');
   });
 });

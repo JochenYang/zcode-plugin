@@ -524,47 +524,61 @@ describe('codegraph_lookup', () => {
         `# search validate · no symbol carries this name; 1 use in 1 file (validate) · ${FRESH}`,
         '     call validate ×1 in parseConfig src/graph/sample.ts:10',
         'hint: no symbol carries this name; the rows are places that use it: calls and type names from the index. ' +
-          'JS/TS property reads (obj.field) were looked for in the source: there were none. ' +
-          'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.',
+          'JS/TS property reads (obj.field) and object keys ({ field }) were looked for in the source: there were none. ' +
+          'Variables and parameters and words in strings are not in the graph: grep for those.',
       ].join('\n'),
     );
     const limited = text(await call(fakeCtx(), 'codegraph_lookup', { operation: 'search', query: 'validate', limit: 1 }));
     assert.ok(limited.startsWith(`# search validate · no symbol carries this name; 1 use in 1 file (validate) · ${FRESH}`));
     // The model decides whether to call search from the schema: a name nothing defines must be
-    // listed as something search answers, and the schema must not promise property reads
-    // (CONTRACTS.md §10).
+    // listed as something search answers, with everything the scan finds (CONTRACTS.md §10).
     const { operation, query } = TOOLS[1].inputSchema.properties;
     assert.ok(operation.description.startsWith('search: symbols by name, or the places that use a name no symbol carries;'));
     assert.ok(query.description.includes('When no symbol carries the name, search lists where it is used: calls and type names from the index, and for JS/TS the '));
-    assert.ok(query.description.includes('property reads (obj.field) of that name, found by scanning the source. Variables and parameters, object keys in literals '));
-    assert.ok(query.description.includes('and words in strings are not in the graph.'));
+    assert.ok(query.description.includes('property reads (obj.field), the object keys ({ field }, also when destructuring), the attribute names of JSX elements and the members of types of that name, found by scanning the source.'));
+    assert.ok(query.description.includes('Variables and parameters and words in strings are not in the graph.'));
   });
 
-  test('a name that is only read as a property: the tool, the real search and the source scan together', async () => {
+  test('a name that is only read as a property or used as a key: the tool, the real search and the source scan together', async () => {
     // The tool builds the scan with the session's root and the project's database; the real
-    // search asks it when the index has nothing; the rows come back as property reads.
+    // search asks it when the index has nothing; the rows come back as property reads and keys.
     const { warmPropertyReads } = await import('../../src/graph/propertyReads.mjs');
     await warmPropertyReads();
     const scanRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-tools-scan-'));
     const scanDb = openDatabase(':memory:');
     try {
-      const rel = 'src/graph/sheet.tsx';
-      const source = ['export function Cell({ row }: Props) {', '  return row.zzqPlugh + this.fallback.zzqPlugh;', '}', ''].join('\n');
-      const abs = path.join(scanRoot, rel);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, source);
-      const extracted = await extractFile({ path: rel, source, spec: specForPath(rel, await loadSpecs()) });
-      assert.equal(extracted.parseOk, true);
-      replaceFile(scanDb, { path: rel, lang: extracted.lang, hash: extracted.hash, mtimeMs: indexedAt, size: extracted.size, parseOk: extracted.parseOk, errorNodes: extracted.errorNodes, indexedAt }, extracted);
+      const specs = await loadSpecs();
+      const index = async (rel, source) => {
+        const abs = path.join(scanRoot, rel);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, source);
+        const extracted = await extractFile({ path: rel, source, spec: specForPath(rel, specs) });
+        assert.equal(extracted.parseOk, true, rel);
+        replaceFile(scanDb, { path: rel, lang: extracted.lang, hash: extracted.hash, mtimeMs: indexedAt, size: extracted.size, parseOk: extracted.parseOk, errorNodes: extracted.errorNodes, indexedAt }, extracted);
+      };
+      await index('src/graph/sheet.tsx', ['export function Cell({ row }: Props) {', '  return row.zzqPlugh + this.fallback.zzqPlugh;', '}', ''].join('\n'));
+      await index('src/graph/sweep.ts', [
+        'export function sweep(policy: Policy) {',
+        '  const written = { zzqPlugh: 1 };',
+        '  const { zzqPlugh } = policy;',
+        '  return written;',
+        '}',
+        'interface Policy {',
+        '  zzqPlugh: number;',
+        '}',
+        '',
+      ].join('\n'));
       const ctx = fakeCtx(READY(), { root: scanRoot, db: scanDb, queries: graphQueries });
       const out = text(await call(ctx, 'codegraph_lookup', { operation: 'search', query: 'zzqPlugh' }));
       assert.deepEqual(out.split('\n'), [
-        `# search zzqPlugh · no symbol carries this name; 2 property reads in 1 file (zzqPlugh) · ${FRESH}`,
+        `# search zzqPlugh · no symbol carries this name; 5 uses in 2 files (zzqPlugh) · ${FRESH}`,
         ' property row.zzqPlugh ×1 in Cell src/graph/sheet.tsx:2',
         ' property this.fallback.zzqPlugh ×1 in Cell src/graph/sheet.tsx:2',
-        'hint: no symbol carries this name; the rows are property reads (obj.name), found by scanning the JavaScript and TypeScript ' +
+        '      key zzqPlugh ×2 in sweep src/graph/sweep.ts:2',
+        '    field zzqPlugh ×1 in Policy src/graph/sweep.ts:7',
+        'hint: no symbol carries this name; the rows are property reads (obj.name), object keys ({ name }) and members of types, found by scanning the JavaScript and TypeScript ' +
           'source just now; the index had no call or type of that name. ' +
-          'Variables and parameters, object keys in literals and words in strings are not in the graph: grep for those.',
+          'Variables and parameters and words in strings are not in the graph: grep for those.',
       ]);
     } finally {
       close(scanDb);

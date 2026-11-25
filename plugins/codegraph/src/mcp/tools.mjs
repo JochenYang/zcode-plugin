@@ -38,8 +38,9 @@ const PARAMETER = {
       'search only: symbol name, prefix, or words in any order ("parse config", "gift card redeem"). ' +
       'When no name holds every word, the longest ones anchor a partial-match search, best match first. ' +
       'When no symbol carries the name, search lists where it is used: calls and type names from the index, and for JS/TS the ' +
-      'property reads (obj.field) of that name, found by scanning the source. Variables and parameters, object keys in literals ' +
-      'and words in strings are not in the graph. Required for search.',
+      'property reads (obj.field), the object keys ({ field }, also when destructuring), the attribute names of JSX elements and the ' +
+      'members of types of that name, found by scanning the source. Variables and parameters and words in strings are not in the ' +
+      'graph. Required for search.',
   },
   name: { type: 'string', description: 'symbol/callers/callees/impact only: bare symbol name. Required for those operations.' },
   file: {

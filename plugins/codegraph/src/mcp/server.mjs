@@ -127,10 +127,12 @@ async function silentIndexStart() {
   for (const entry of busy) process.stderr.write(`codegraph: index of ${entry.root ?? entry.key} is in use and was kept\n`);
   // Last: a search with nothing else to show looks for a property read in the source files
   // (src/graph/propertyReads.mjs). Its worker starts now, in the background, so the first such
-  // search of the session does not go without it. Were this module to fail to load, nothing
-  // above would have been skipped.
-  const { warmPropertyReads } = await import('../graph/propertyReads.mjs');
+  // search of the session does not go without it, and reads the project's JS/TS files once, so
+  // that the first such search does not pay for the whole project. Were this module to fail to
+  // load, nothing above would have been skipped.
+  const { primePropertyReads, warmPropertyReads } = await import('../graph/propertyReads.mjs');
   warmPropertyReads();
+  void primePropertyReads({ root, db: indexer.db }).catch(() => {});
 }
 
 // Wire the pure handler to stdin/stdout. stdout is protocol-only; diagnostics go to stderr.

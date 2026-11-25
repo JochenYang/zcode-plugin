@@ -123,7 +123,7 @@ describe('search for a name that is only used', () => {
       { kind: 'ref', name: 'zzqPlugh', receiver: null, count: 1, path: 'src/used.ts', startLine: 4, owner: 'membershipCache', ownerQual: 'membershipCache', ownerKind: 'function' },
       { kind: 'ref', name: 'zzqPlugh', receiver: null, count: 1, path: 'src/used.ts', startLine: 9, owner: null, ownerQual: null, ownerKind: null },
     ]);
-    assert.deepEqual(info, { refs: { uses: 2, files: 1, names: ['zzqPlugh'], capped: false, fromIndex: 2, fromScan: 0, skipped: 'not-asked', symbols: [], symbolCount: 0 } }, 'no scan was passed: that is said, so that "none found in the source" is not');
+    assert.deepEqual(info, { refs: { uses: 2, files: 1, names: ['zzqPlugh'], capped: false, fromIndex: 2, fromScan: 0, kinds: ['ref'], cut: null, skipped: 'not-asked', symbols: [], symbolCount: 0 } }, 'no scan was passed: that is said, so that "none found in the source" is not');
     assert.equal('start_line' in rows[0], false, 'the §8 shape, no column name');
   });
 
@@ -132,7 +132,7 @@ describe('search for a name that is only used', () => {
     const info = {};
     const rows = search(own, { query: 'membershipKind' }, info);
     assert.deepEqual(rows.map((row) => [row.count, row.startLine, row.owner]), [[2, 3, 'membershipCache'], [1, 8, null]]);
-    assert.deepEqual(info, { refs: { uses: 3, files: 1, names: ['membershipKind'], capped: false, fromIndex: 2, fromScan: 0, skipped: 'not-asked', symbols: ['membershipCache'], symbolCount: 1 } });
+    assert.deepEqual(info, { refs: { uses: 3, files: 1, names: ['membershipKind'], capped: false, fromIndex: 2, fromScan: 0, kinds: ['ref'], cut: null, skipped: 'not-asked', symbols: ['membershipCache'], symbolCount: 1 } });
   });
 
   test('searchIsPartial is what search decides on: no symbol, or symbols that only share words', () => {

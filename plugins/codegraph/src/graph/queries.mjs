@@ -82,15 +82,18 @@ const bestResolution = (values) => values.reduce((best, v) => (RESOLUTION_RANK[v
 // the same place. Totals are summed; files are counted over every row of either, cut or not; a
 // cut in either is a cut of the whole. Neither has a row: null, unless one was cut or the scan
 // said why it has nothing (`skipped`), which is passed on so the caller knows the answer is
-// not "nothing" and the header does not claim a look that never happened.
+// not "nothing" and the header does not claim a look that never happened. `kinds` lists the
+// kinds the rows have, so that a caller can tell a list of property reads from a mixed one;
+// `cut` names a lookup of the scan that was cut while the other has rows.
 function mergePlaces(indexed, scan) {
   const a = indexed?.rows.length > 0 ? indexed : null;
   const b = scan?.rows.length > 0 ? scan : null;
   const capped = Boolean(indexed?.capped || scan?.capped);
   const skipped = b ? null : (scan?.skipped ?? null);
-  if (!a && !b) return capped || skipped ? { rows: [], uses: 0, files: 0, names: [], capped, skipped, fromIndex: 0, fromScan: 0 } : null;
-  if (!b) return { ...a, capped, skipped, fromIndex: a.rows.length, fromScan: 0 };
-  if (!a) return { ...b, capped, skipped, fromIndex: 0, fromScan: b.rows.length };
+  const kindsOf = (rows) => [...new Set(rows.map((row) => row.kind))];
+  if (!a && !b) return capped || skipped ? { rows: [], uses: 0, files: 0, names: [], kinds: [], cut: null, capped, skipped, fromIndex: 0, fromScan: 0 } : null;
+  if (!b) return { ...a, capped, skipped, cut: null, fromIndex: a.rows.length, fromScan: 0, kinds: kindsOf(a.rows) };
+  if (!a) return { ...b, capped, skipped, fromIndex: 0, fromScan: b.rows.length, kinds: kindsOf(b.rows) };
   const place = (row) => [Number(isSecondaryPath(row.path)), row.path, row.start_line];
   const compare = (p, q) => p[0] - q[0] || (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) || p[2] - q[2];
   const rows = [
@@ -106,6 +109,8 @@ function mergePlaces(indexed, scan) {
     files: fileIds.size,
     fileIds: [...fileIds],
     names: [...new Set([...a.names, ...b.names])],
+    kinds: kindsOf(rows),
+    cut: b.cut ?? null,
     capped,
     skipped: null,
     fromIndex: a.rows.length,
@@ -123,19 +128,21 @@ const listsPlaces = (found) => found.rows.length === 0 || found.dropped.length >
  *
  * No symbol carries the name, or none carries all of its words: the rows are the places that
  * use such a name, and `info.refs` says how many there are (`{ uses, files, names, capped,
- * fromIndex, fromScan, skipped, symbols, symbolCount }`). That is the name the T20 sessions
+ * fromIndex, fromScan, kinds, cut, skipped, symbols, symbolCount }`). That is the name the T20 sessions
  * went to grep for (`membershipKind`). The places come from two sources, merged into one list:
  * the index (a call, a type name, a read a language records) and, when the caller passed
- * `extra.propertyReads`, a scan of the JS/TS source for a property read (`row.membershipKind`,
- * CONTRACTS.md §8 "property reads"); `fromIndex` and `fromScan` count the rows of each, and
- * `skipped` says why the scan has none: `not-asked` when the caller passed no scan; otherwise
- * not ready, not a single name, a hub: read in more files than it lists, a limit: more hits or
- * more bytes than one scan takes, or files it could not read. Rows are cut to
- * `limit`; the totals are not. A symbol that carries
+ * `extra.propertyReads`, a scan of the JS/TS source for a property read (`row.membershipKind`),
+ * the key of an object (`{ membershipKind }`), the attribute of a JSX element or the member of a
+ * type (CONTRACTS.md §8 "property reads"); `fromIndex` and `fromScan` count the rows of each,
+ * `kinds` lists the kinds the rows have, `cut` names a lookup of the scan that was cut while the
+ * other has rows (`reads` or `keys`), and `skipped` says why the scan has none: `not-asked` when
+ * the caller passed no scan; otherwise not ready, not a single name, a hub: read or used as a
+ * key in more files than it lists, a limit: more hits or more bytes than one scan takes, or files
+ * it could not read. Rows are cut to `limit`; the totals are not. A symbol that carries
  * every word outranks the places, and so does a symbol that shares one word with a name used
  * in more than `REF_LEAD_MAX` places: where such a name is used says nothing about
- * orientation. When nothing leads, `info.hub` is set for a name that is read as a property in
- * more files than the scan lists. With a `kind` only symbols qualify.
+ * orientation. When nothing leads, `info.hub` is set for a name that is read as a property or
+ * used as a key in more files than the scan lists. With a `kind` only symbols qualify.
  * @returns {{ id: number, kind: string, name: string, qual: string, path: string, startLine: number, endLine: number, signature: string|null, usage?: object }[]}
  *   or reference rows `{ kind, name, receiver, count, path, startLine, owner, ownerQual, ownerKind }`
  */
@@ -160,6 +167,8 @@ export function search(db, { query, kind = null, limit = DEFAULT_LIMIT } = {}, i
         capped: places.capped,
         fromIndex: places.fromIndex,
         fromScan: places.fromScan,
+        kinds: places.kinds,
+        cut: places.cut ?? null,
         skipped: places.skipped,
         symbols: found.rows.slice(0, 3).map((row) => row.name),
         symbolCount: found.rows.length,

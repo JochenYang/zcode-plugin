@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Indexer } from '../../src/index/indexer.mjs';
-import { SCAN_FILES_MAX, scanPropertyReads, warmPropertyReads } from '../../src/graph/propertyReads.mjs';
-import { propertyReadNeedle } from '../../src/graph/prefilter.mjs';
+import { SCAN_FILES_MAX, primePropertyReads, scanPropertyReads, warmPropertyReads } from '../../src/graph/propertyReads.mjs';
+import { bareName, propertyReadNeedle } from '../../src/graph/prefilter.mjs';
 import { search } from '../../src/graph/queries.mjs';
 import { upsertFile } from '../../src/store/repo.mjs';
 import { scratchDir, rmrf, writeProject, closeAll, useScratchData } from '../index/_helpers.mjs';
@@ -33,7 +33,7 @@ async function indexed(files, config = { minFilesToAutoIndex: 1 }) {
   await ix.buildAll();
   return { root, db: ix.db };
 }
-const NOTHING = { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false, skipped: null };
+const NOTHING = { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false, cut: null, skipped: null };
 // `places` drops what is the file's own: rows are compared without file ids.
 const places = (out) => out.rows.map(({ file_id, ...row }) => row);
 const scan = (ctx, query, options = {}) => scanPropertyReads({ ...ctx, query, ...options });
@@ -81,6 +81,8 @@ describe('scanPropertyReads', () => {
     assert.deepEqual(places(out), [
       { name: 'maxIdleDays', kind: 'property', receiver: 'alpha', count: 1, start_line: 2, path: 'src/order.ts', owner: 'g', owner_qual: 'g', owner_kind: 'function' },
       { name: 'maxIdleDays', kind: 'property', receiver: 'zeta', count: 1, start_line: 2, path: 'src/order.ts', owner: 'g', owner_qual: 'g', owner_kind: 'function' },
+      // The interface's member is a row of the scan too, owned by the interface (CONTRACTS.md §8 "keys").
+      { name: 'maxIdleDays', kind: 'field', receiver: null, count: 1, start_line: 2, path: 'src/sweep.ts', owner: 'Policy', owner_qual: 'Policy', owner_kind: 'interface' },
       { name: 'maxIdleDays', kind: 'property', receiver: 'policy', count: 2, start_line: 7, path: 'src/sweep.ts', owner: 'run', owner_qual: 'Sweeper.run', owner_kind: 'method' },
       { name: 'maxIdleDays', kind: 'property', receiver: 'this.fallback', count: 1, start_line: 7, path: 'src/sweep.ts', owner: 'run', owner_qual: 'Sweeper.run', owner_kind: 'method' },
       { name: 'maxIdleDays', kind: 'property', receiver: 'cfg', count: 1, start_line: 11, path: 'src/sweep.ts', owner: null, owner_qual: null, owner_kind: null },
@@ -88,11 +90,115 @@ describe('scanPropertyReads', () => {
       { name: 'maxIdleDays', kind: 'property', receiver: 'policy', count: 1, start_line: 2, path: 'e2e/sweep.spec.ts', owner: 'specSweep', owner_qual: 'specSweep', owner_kind: 'function' },
       { name: 'maxIdleDays', kind: 'property', receiver: 'policy', count: 1, start_line: 2, path: 'tests/sweep.test.ts', owner: 'testSweep', owner_qual: 'testSweep', owner_kind: 'function' },
     ]);
-    assert.deepEqual({ uses: out.uses, files: out.files, names: out.names, capped: out.capped, skipped: out.skipped }, { uses: 9, files: 5, names: ['maxIdleDays'], capped: false, skipped: null });
+    assert.deepEqual({ uses: out.uses, files: out.files, names: out.names, capped: out.capped, skipped: out.skipped }, { uses: 10, files: 5, names: ['maxIdleDays'], capped: false, skipped: null });
     // One id per file with a read, whatever the number of rows.
     assert.equal(out.fileIds.length, 5);
     // Rows in a file come in line order, then by receiver, whatever order the tree yielded them.
-    assert.deepEqual((await scan({ root, db }, 'maxIdleDays')).rows.map((row) => `${row.path}:${row.start_line}`), ['src/order.ts:2', 'src/order.ts:2', 'src/sweep.ts:7', 'src/sweep.ts:7', 'src/sweep.ts:11', 'src/ui.tsx:2', 'e2e/sweep.spec.ts:2', 'tests/sweep.test.ts:2']);
+    assert.deepEqual((await scan({ root, db }, 'maxIdleDays')).rows.map((row) => `${row.path}:${row.start_line}`), ['src/order.ts:2', 'src/order.ts:2', 'src/sweep.ts:2', 'src/sweep.ts:7', 'src/sweep.ts:7', 'src/sweep.ts:11', 'src/ui.tsx:2', 'e2e/sweep.spec.ts:2', 'tests/sweep.test.ts:2']);
+  });
+
+  test('a name that is the key of an object or the attribute of a JSX element: set in a literal, read by destructuring, declared in a type — not a class field, a method, a computed key or a string', async () => {
+    await warmPropertyReads();
+    const { root, db } = await indexed({
+      'src/a.ts': [
+        'export interface Policy { maxIdleDays: number; readonly retryCount?: number; }',
+        'export type Shape = { maxIdleDays: number };',
+        'class C { maxIdleDays: number = 1; }',
+        'export function f(policy: Policy) {',
+        '  const written = { maxIdleDays: 3, retryCount, label() { return 1; } };',
+        '  const { maxIdleDays, retryCount: attempts, label: l = 1 } = policy;',
+        '  const { label2 = 2 } = policy;',
+        '  ({ maxIdleDays } = policy);',
+        '  const computed = { ["maxIdleDays"]: 1 };',
+        '  return `${maxIdleDays}"maxIdleDays"`; // maxIdleDays',
+        '}',
+        'export function g({ maxIdleDays, nested: { label } }: Shape) {',
+        '  return maxIdleDays + label;',
+        '}',
+        '',
+      ].join('\n'),
+      // The kinds on one line: property, key, field (a property of a type), field (a method of one).
+      'src/line.ts': 'interface P { maxIdleDays: number }; interface N { maxIdleDays(): void }; export function q(policy: Policy) { return { maxIdleDays: policy.maxIdleDays }; }\n',
+      // An attribute of a JSX element is a key too; one with a hyphen is never asked for.
+      'src/page.tsx': 'export function Page({ row }: Props) {\n  return <Input maxIdleDays={row.maxIdleDays} data-max-idle-days="1" />;\n}\n',
+      // The same in a file of the JavaScript grammar, which has JSX as well.
+      'src/tag.jsx': 'export function Tag(row) {\n  return <Input maxIdleDays={row.maxIdleDays} />;\n}\n',
+    });
+    const placesOf = (out) => places(out).map((row) => [row.kind, row.count, row.start_line, row.owner]);
+    assert.deepEqual(placesOf(await scan({ root, db }, 'maxIdleDays')), [
+      ['field', 1, 1, 'Policy'],
+      ['field', 1, 2, 'Shape'],
+      // In `f`: set in a literal (line 5), read by destructuring (lines 6 and 8) — one row, as one
+      // receiver's reads would be.
+      ['key', 3, 5, 'f'],
+      // A parameter pattern, owned by the function that takes it.
+      ['key', 1, 12, 'g'],
+      ['property', 1, 1, 'q'],
+      ['key', 1, 1, 'q'],
+      ['field', 1, 1, 'P'],
+      ['field', 1, 1, 'N'],
+      ['property', 1, 2, 'Page'],
+      ['key', 1, 2, 'Page'],
+      ['property', 1, 2, 'Tag'],
+      ['key', 1, 2, 'Tag'],
+    ]);
+    // A method of an object literal is a symbol in the index, as a class field is, so it is not a
+    // key here; a renamed destructuring is the key, not the alias.
+    assert.deepEqual(placesOf(await scan({ root, db }, 'label')), [['key', 1, 6, 'f'], ['key', 1, 12, 'g']]);
+    assert.deepEqual(placesOf(await scan({ root, db }, 'label2')), [['key', 1, 7, 'f']]);
+    assert.deepEqual((await scan({ root, db }, 'attempts')).uses, 0, 'the alias is not the key');
+    assert.deepEqual((await scan({ root, db }, 'l')).uses, 0, 'nor the default value');
+    // `maxIdleDays` on its own as a variable is a read the scan does not look for; nothing else on those lines is counted.
+    const out = await scan({ root, db }, 'retryCount');
+    assert.deepEqual(placesOf(out), [['field', 1, 1, 'Policy'], ['key', 2, 5, 'f']]);
+  });
+
+  test('the two lookups are cut on their own, and the cut of keys is the higher one: a name that is everywhere on its own keeps the few files that read it as a property, and the other way round', async () => {
+    await warmPropertyReads();
+    // The cut of keys is higher than the cut of reads; these scenarios put it where the other is.
+    const tight = { limits: { maxKeyFiles: SCAN_FILES_MAX } };
+    // On its own as a variable in every other file, as the key of an object in the rest: either way
+    // the bare name is what the worker remembers, and a key cut gives no key.
+    const files = Object.fromEntries(Array.from({ length: 70 }, (_, i) => [
+      `src/bare${i}.ts`,
+      i % 2 ? `export const zzqEverywhere = ${i};\n` : `export const out${i} = { zzqEverywhere: ${i} };\n`,
+    ]));
+    files['src/read1.ts'] = 'export const one = row.zzqEverywhere;\n';
+    files['src/read2.ts'] = 'export const two = other.zzqEverywhere;\n';
+    const { root, db } = await indexed(files);
+    const out = await scan({ root, db }, 'zzqEverywhere', tight);
+    assert.deepEqual([out.uses, out.files, out.skipped, new Set(out.rows.map((row) => row.kind))], [2, 2, null, new Set(['property'])], 'seventy files with the name on its own are a hub of keys; the two reads are still listed, and no key is');
+    // What is listed is then one side of the name: a lower bound, which says which side is missing.
+    assert.deepEqual([out.capped, out.cut], [true, 'keys']);
+    const other = await indexed(Object.fromEntries([
+      ...Array.from({ length: 70 }, (_, i) => [`src/call${i}.ts`, `export const c${i} = client.zzqKeyed;\n`]),
+      ['src/keys.ts', 'export const k = { zzqKeyed: 1 };\n'],
+      // A file that has both keeps its key, and lists it once.
+      ['src/both.ts', 'export const b = client.zzqKeyed; export function f(policy: Policy) { return { zzqKeyed: 1 }; }\n'],
+    ]));
+    const keyed = await scan({ ...other }, 'zzqKeyed');
+    assert.deepEqual([keyed.uses, keyed.files, keyed.skipped, keyed.rows.map((row) => row.kind)], [2, 2, null, ['key', 'key']], 'seventy files with the name behind a dot are a hub of reads; the keys are still listed');
+    assert.deepEqual([keyed.capped, keyed.cut], [true, 'reads']);
+    // Both lookups cut: nothing is listed, and the answer is a hub.
+    const everywhere = await indexed(Object.fromEntries(Array.from({ length: 70 }, (_, i) => [
+      `src/both${i}.ts`,
+      `export const c${i} = client.zzqBoth; export const out${i} = { zzqBoth: ${i} };\n`,
+    ])));
+    assert.deepEqual(await scan({ ...everywhere }, 'zzqBoth', tight), { ...NOTHING, capped: true, skipped: 'hub' });
+    const keysOnly = await indexed(Object.fromEntries(Array.from({ length: 70 }, (_, i) => [
+      `src/key${i}.ts`,
+      `export const out${i} = { zzqKeyOnly: ${i} };\n`,
+    ])));
+    // With the limits as they are, seventy files with the key are listed: the cut of keys is higher.
+    assert.equal((await scan({ ...keysOnly }, 'zzqKeyOnly')).files, 70);
+    assert.deepEqual(await scan({ ...keysOnly }, 'zzqKeyOnly', tight), { ...NOTHING, capped: true, skipped: 'hub' });
+    // A longer name is another name: sixty files with the name as a key are not made a hub by a
+    // file that only has `zzqTailTwo`.
+    const tail = await indexed(Object.fromEntries([
+      ...Array.from({ length: 60 }, (_, i) => [`src/key${i}.ts`, `export const out${i} = { zzqTail: ${i} };\n`]),
+      ['src/longer.ts', 'export const longer = zzqTailTwo;\n'],
+    ]));
+    assert.equal((await scan({ ...tail }, 'zzqTail', tight)).files, 60);
   });
 
   test('a method call, a construction, a decorator, a plain write, a destructuring target, a string, a comment, another language and another spelling are not reads', async () => {
@@ -204,30 +310,124 @@ describe('scanPropertyReads', () => {
     assert.deepEqual([out.rows.length, out.rows[0].receiver, out.rows[0].count], [1, 'getList( 1 )', 2]);
   });
 
-  test('the limits bound every step: a file too big, too many bytes to read, too many hits to be worth parsing, too many bytes to parse', async () => {
+  test('the limits bound every step: bytes to read, hits to be worth parsing, bytes to parse, a file too big', async () => {
     await warmPropertyReads();
     const { root, db } = await indexed({
       'src/0-hits.ts': `${Array.from({ length: 40 }, (_, i) => `const h${i} = row.zzqP;`).join('\n')}\n`,
       'src/a.ts': 'export const a = row.zzqP;\n',
-      // Two hundred kilobytes with one read: over a small `maxFileBytes`, and last to be parsed.
-      'src/big.ts': 'export const big = row.zzqP; const text = "' + 'x'.repeat(200_000) + '.zzqP";\n',
+      // Two hundred kilobytes with two reads: past a small read budget, over a small `maxFileBytes`,
+      // and last to be parsed.
+      'src/big.ts': 'export const big = row.zzqP; const other = row.zzqBig; const text = "' + 'x'.repeat(200_000) + '.zzqP";\n',
       'src/zz.ts': 'export const z = row.zzqP;\n',
     });
+    // Bytes to read: asked first, while nothing is remembered of these files. What one request may
+    // read stops before the big file; the files read are answered, the rest is said to be unseen,
+    // and what was found is a lower bound.
+    // Time comes first: with no time to read at all, nothing is read and nothing is claimed found.
+    assert.deepEqual(await scan({ root, db }, 'zzqP', { limits: { readDeadlineMs: -1 } }), { ...NOTHING, capped: true, skipped: 'limit' });
+    const tight = await scan({ root, db }, 'zzqP', { limits: { maxReadBytes: 150_000 } });
+    assert.deepEqual([tight.capped, tight.uses, [...new Set(tight.rows.map((row) => row.path))].sort()], [true, 42, ['src/0-hits.ts', 'src/a.ts', 'src/zz.ts']]);
+    // A name that is only read in the file that was not got to: no row, and the limit is why —
+    // "none found" would be false.
+    assert.deepEqual(await scan({ root, db }, 'zzqBig', { limits: { maxReadBytes: 150_000 } }), { ...NOTHING, capped: true, skipped: 'limit' });
+    // With room to read, the next request gets to it, and the answer is whole.
+    const whole = await scan({ root, db }, 'zzqBig');
+    assert.deepEqual([whole.capped, whole.uses, whole.rows.map((row) => row.path)], [false, 1, ['src/big.ts']]);
     // `maxFileBytes` is the caller's (the indexer's own limit).
     const small = await scan({ root, db }, 'zzqP', { maxFileBytes: 1000 });
     assert.deepEqual([...new Set(small.rows.map((row) => row.path))].sort(), ['src/0-hits.ts', 'src/a.ts', 'src/zz.ts']);
     assert.equal(small.capped, false, 'a skipped file is not a cut');
-    // Hits: forty in the first file read are more than are worth parsing, whatever the file count.
+    // Hits: more than are worth parsing, whatever the file count.
     assert.deepEqual(await scan({ root, db }, 'zzqP', { limits: { maxHits: 20 } }), { ...NOTHING, capped: true, skipped: 'limit' });
-    // Bytes: the read step stops once it has read more than it may. Both say why there is no
-    // row: "none found" would be false.
-    assert.deepEqual(await scan({ root, db }, 'zzqP', { limits: { maxReadBytes: 150_000 } }), { ...NOTHING, capped: true, skipped: 'limit' });
     // The parse step, the smallest files first: the one file that would cross the budget is left
     // out, and what was parsed is returned, as a lower bound.
     const parsed = await scan({ root, db }, 'zzqP', { limits: { maxParseBytes: 1000 } });
     assert.deepEqual([parsed.capped, parsed.skipped, parsed.uses, parsed.files, [...new Set(parsed.rows.map((row) => row.path))].sort()], [true, null, 42, 3, ['src/0-hits.ts', 'src/a.ts', 'src/zz.ts']]);
     // Nothing is small enough for the budget: no row, and the limit is why.
     assert.deepEqual(await scan({ root, db }, 'zzqP', { limits: { maxParseBytes: 10 } }), { ...NOTHING, capped: true, skipped: 'limit' });
+    // Reading the candidates again stops at the deadline of the first read: with no time left, a
+    // file that is remembered is not read again, and the answer says it is short of it.
+    assert.deepEqual(await scan({ root, db }, 'zzqBig', { limits: { readDeadlineMs: -1 } }), { ...NOTHING, capped: true, skipped: 'limit' });
+  });
+
+  test('what is remembered of a file is as fresh as the index: a file changed behind the index’s back is read again once the index says so', async () => {
+    await warmPropertyReads();
+    const { root, db } = await indexed({ 'src/a.ts': 'export const a = row.zzqP;\n' });
+    assert.equal((await scan({ root, db }, 'zzqP')).uses, 1);
+    // Changed on disk; the index still holds the old size and mtime, and so its own rows are stale too.
+    writeProject(root, { 'src/a.ts': 'export const a = row.zzqP + row.zzqLater;\n' });
+    assert.equal((await scan({ root, db }, 'zzqLater')).uses, 0, 'the scan goes by what the index holds of the file');
+    // The index catches up, as it does before a tool call: so does the scan.
+    await indexers.at(-1).ensureFresh({ force: true });
+    assert.equal((await scan({ root, db }, 'zzqLater')).uses, 1);
+    assert.equal((await scan({ root, db }, 'zzqP')).uses, 1);
+  });
+
+  test('a file that could not be read is not written off: it is tried again at the next search', async () => {
+    await warmPropertyReads();
+    const { root, db } = await indexed({ 'src/a.ts': 'export const a = row.zzqP;\n', 'src/locked.ts': 'export const l = row.zzqLocked;\n' });
+    // A directory where the index has a file (as a lock or a permission would, which a test cannot make here).
+    const file = path.join(root, 'src', 'locked.ts');
+    fs.rmSync(file);
+    fs.mkdirSync(file);
+    const first = await scan({ root, db }, 'zzqLocked');
+    assert.deepEqual([first.uses, first.capped, first.skipped], [0, false, 'unreadable']);
+    fs.rmdirSync(file);
+    fs.writeFileSync(file, 'export const l = row.zzqLocked;\n');
+    assert.equal((await scan({ root, db }, 'zzqLocked')).uses, 1, 'tried again, and read this time');
+  });
+
+  test('priming answers, and the first search after it is answered too', async () => {
+    const { root, db } = await indexed({ 'src/a.ts': 'export const a = row.zzqP;\n' });
+    assert.equal(await primePropertyReads({ root, db }), true);
+    assert.equal((await scan({ root, db }, 'zzqP')).uses, 1);
+  });
+
+  test('the reading time of a request counts from when it was sent: one queued behind a long priming does not get a deadline of its own', async () => {
+    await warmPropertyReads();
+    // Comments full of dots: nothing for the indexer to chew, and plenty for the two passes that
+    // list the names behind dots — far more than the deadline lets one request read.
+    const filler = `// ${'a.b '.repeat(50_000)}\n`;
+    const files = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`src/f${String(i).padStart(3, '0')}.ts`, `${filler}export const f${i} = 1;\n`]));
+    files['src/f199.ts'] = `${filler}export const last = row.zzqLast;\n`;
+    const { root, db } = await indexed(files);
+    const at = Date.now();
+    const priming = primePropertyReads({ root, db, limits: { readDeadlineMs: 400 } });
+    let answeredAt = 0;
+    const queued = scan({ root, db }, 'zzqLast', { limits: { readDeadlineMs: 400 } }).then((out) => {
+      answeredAt = Date.now();
+      return out;
+    });
+    const out = await queued;
+    // The priming stopped at its deadline long before the last file; the scan, sent just after
+    // it, found no time left and read nothing more. The priming then asks again, a round at a
+    // time: the scan is ahead of those rounds in the queue, and does not wait for them.
+    assert.deepEqual([out.skipped, out.capped], ['limit', true]);
+    assert.ok(answeredAt - at < 600, `the scan answered right after the first round of the priming (${answeredAt - at} ms)`);
+    assert.equal(await priming, true);
+  });
+
+  test('a `//` inside a string does not hide the reads that follow it on the line', async () => {
+    await warmPropertyReads();
+    // The gap of the pattern that lists the names behind dots runs on through what only looks
+    // like a line comment, up to the first name of the next line: it would cover the two reads.
+    const { root, db } = await indexed({
+      'src/a.ts': 'const v = "y.// neither"; export const f = (row: Row) => row.zzqSame + row.zzqNext;\nconst after = 1;\n',
+    });
+    const out = await scan({ root, db }, 'zzqSame');
+    assert.deepEqual([out.uses, out.rows[0]?.owner, out.capped, out.skipped], [1, 'f', false, null]);
+    assert.equal((await scan({ root, db }, 'zzqNext')).uses, 1);
+  });
+
+  test('a name that is only called does not make its file one to look in: calls are what the index has', async () => {
+    await warmPropertyReads();
+    const files = Object.fromEntries(Array.from({ length: 70 }, (_, i) => [`src/c${i}.ts`, `export function c${i}(client: Client) {\n  client.zzqCalled();\n}\n`]));
+    files['src/read.ts'] = 'export function r(row: Row) {\n  return row.zzqCalled;\n}\n';
+    const { root, db } = await indexed(files);
+    // Seventy files call it: were calls what is remembered of a file, the name would be a hub and
+    // the one read would be lost with it.
+    const out = await scan({ root, db }, 'zzqCalled');
+    assert.deepEqual([out.uses, out.files, out.rows.map((row) => row.path), out.capped, out.skipped], [1, 1, ['src/read.ts'], false, null]);
   });
 
   test('a scan that cannot finish in time gives up, and is reported as not looked for', async () => {
@@ -267,6 +467,23 @@ describe('the prefilter of the scan', () => {
     // Cannot be asked through the scan (it takes identifiers only); the escaping still holds.
     assert.equal(found('a.b', 'x.a\\b'), 0, 'the dot of the name is a dot, not any character');
     assert.equal(found('a.b', 'x.a.b'), 1);
+  });
+
+  test('a name on its own, for the keys: not behind a dot, and a longer name is another name', () => {
+    const own = (text) => [...text.matchAll(bareName)].map((match) => match[1]);
+    assert.deepEqual(own('{ zzqP: 1, zzqQ } zzqP'), ['zzqP', 'zzqQ', 'zzqP']);
+    // Everything else on its own is in it too (a keyword, a declaration, a parameter); the parse
+    // decides what is a key.
+    assert.deepEqual(own('const { zzqP } = row;'), ['const', 'zzqP', 'row']);
+    // Behind a dot it is a read, which the other patterns list; the receiver is on its own.
+    assert.deepEqual(own('row.zzqP'), ['row']);
+    assert.deepEqual(own('row?.zzqP'), ['row']);
+    assert.deepEqual(own('obj.zzqPicker'), ['obj']);
+    // A file of names costs time in proportion to its length.
+    const text = 'const value = other.value;\n'.repeat(8_000);
+    const at = performance.now();
+    assert.equal(own(text).length, 24_000);
+    assert.ok(performance.now() - at < 250, `200 KB took ${(performance.now() - at).toFixed(0)} ms`);
   });
 
   test('the gap between the dot and the name is bounded: whitespace runs of 40 characters, block comments of 200, line comments of 1000, eight comments', () => {
@@ -318,7 +535,7 @@ describe('search with property reads', () => {
     const info = {};
     const rows = search(ctx.db, { query: 'zzqPlugh' }, info, await scanned(ctx, 'zzqPlugh'));
     assert.deepEqual(rows, [refShape('zzqPlugh')]);
-    assert.deepEqual(info, { refs: { uses: 1, files: 1, names: ['zzqPlugh'], capped: false, fromIndex: 0, fromScan: 1, skipped: null, symbols: [], symbolCount: 0 } });
+    assert.deepEqual(info, { refs: { uses: 1, files: 1, names: ['zzqPlugh'], capped: false, fromIndex: 0, fromScan: 1, kinds: ['property'], cut: null, skipped: null, symbols: [], symbolCount: 0 } });
   });
 
   test('a name the index has in one language is still looked for in the JS/TS source: one list, index rows first at the same place', async () => {
@@ -337,12 +554,12 @@ describe('search with property reads', () => {
       ['ref', 'src/b.py', 2, 1],
       ['property', 'tests/a.test.ts', 2, 1],
     ]);
-    assert.deepEqual(info, { refs: { uses: 5, files: 3, names: ['zzqPlugh'], capped: false, fromIndex: 2, fromScan: 2, skipped: null, symbols: [], symbolCount: 0 } });
+    assert.deepEqual(info, { refs: { uses: 5, files: 3, names: ['zzqPlugh'], capped: false, fromIndex: 2, fromScan: 2, kinds: ['call', 'property', 'ref'], cut: null, skipped: null, symbols: [], symbolCount: 0 } });
     // A scan that gave up (the name is read in too many files) leaves the index's rows and marks
     // the totals as lower bounds.
     const hub = {};
     assert.equal(search(ctx.db, { query: 'zzqPlugh' }, hub, scannedFor({ ...NOTHING, capped: true })).length, 2);
-    assert.deepEqual(hub.refs, { uses: 2, files: 2, names: ['zzqPlugh'], capped: true, fromIndex: 2, fromScan: 0, skipped: null, symbols: [], symbolCount: 0 });
+    assert.deepEqual(hub.refs, { uses: 2, files: 2, names: ['zzqPlugh'], capped: true, fromIndex: 2, fromScan: 0, kinds: ['call', 'ref'], cut: null, skipped: null, symbols: [], symbolCount: 0 });
   });
 
   test('the files of the index are counted over all its rows, cut or not; rows are cut to the limit', async () => {
@@ -353,7 +570,7 @@ describe('search with property reads', () => {
     const info = {};
     const rows = search(ctx.db, { query: 'zzqPlugh', limit: 3 }, info, await scanned(ctx, 'zzqPlugh'));
     assert.equal(rows.length, 3, 'the caller asked for three rows');
-    assert.deepEqual(info.refs, { uses: 13, files: 13, names: ['zzqPlugh'], capped: false, fromIndex: 3, fromScan: 1, skipped: null, symbols: [], symbolCount: 0 });
+    assert.deepEqual(info.refs, { uses: 13, files: 13, names: ['zzqPlugh'], capped: false, fromIndex: 3, fromScan: 1, kinds: ['call', 'property'], cut: null, skipped: null, symbols: [], symbolCount: 0 });
   });
 
   test('why the scan has no row is passed on: a hub is told apart from a scan that never looked', async () => {
@@ -374,6 +591,25 @@ describe('search with property reads', () => {
     const nowhere = {};
     assert.deepEqual(search(ctx.db, { query: 'xyzzyPlugh' }, nowhere, scannedFor({ ...NOTHING, capped: true, skipped: 'hub' })), []);
     assert.equal(nowhere.hub, true);
+    // A lookup that was cut while the other has rows: which side is missing is passed on with the rows.
+    const side = await indexed(Object.fromEntries([
+      ...Array.from({ length: 4 }, (_, i) => [`src/read${i}.ts`, `export const r${i} = row.zzqSide;\n`]),
+      ['src/keys.ts', 'export function k(policy: Policy) {\n  return { zzqSide: 1 };\n}\n'],
+    ]));
+    const sides = {};
+    const sideRows = search(side.db, { query: 'zzqSide' }, sides, await scanned(side, 'zzqSide', { limits: { maxFiles: 3 } }));
+    assert.deepEqual(sideRows.map((row) => row.kind), ['key'], 'the four reads are past the cut of reads; the key is listed');
+    assert.deepEqual([sides.refs.capped, sides.refs.cut, sides.refs.kinds], [true, 'reads', ['key']]);
+    // The same with rows of the index in the list: which side is missing travels with them.
+    const both = await indexed(Object.fromEntries([
+      ['src/call.ts', 'export function f(client: Client) {\n  client.zzqBothSides();\n}\n'],
+      ...Array.from({ length: 4 }, (_, i) => [`src/read${i}.ts`, `export const r${i} = row.zzqBothSides;\n`]),
+      ['src/keys.ts', 'export function k(policy: Policy) {\n  return { zzqBothSides: 1 };\n}\n'],
+    ]));
+    const bothSides = {};
+    const bothRows = search(both.db, { query: 'zzqBothSides' }, bothSides, await scanned(both, 'zzqBothSides', { limits: { maxFiles: 3 } }));
+    assert.deepEqual(bothRows.map((row) => row.kind), ['call', 'key']);
+    assert.deepEqual([bothSides.refs.fromIndex, bothSides.refs.fromScan, bothSides.refs.capped, bothSides.refs.cut], [1, 1, true, 'reads']);
   });
 
   test('a fake provider drives the decision the same way: empty answers never lead, a kind never asks', async () => {
