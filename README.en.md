@@ -191,7 +191,7 @@ Tool parameters, config keys, the language table, privacy and limits: `plugins/c
 Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them after changing a plugin:
 
 ```bash
-python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax
+python scripts/check-consistency.py             # versions, agent count, frontmatter, agent descriptions, references, line endings, shell syntax; notes a stale personal rules backup
 python plugins/guardrails/tests/test-hooks.py   # verdict matrices for both hooks, 198 cases including the permission-mode dimension
 python plugins/websearch/tests/test-server.py   # the websearch MCP server (add --live to hit the real network)
 node --test plugins/websearch/tests/*.test.mjs  # the websearch network layer: engine keys never follow a cross-origin redirect, the deadline covers the body, GBK decoding, the descriptions defer to the built-ins
@@ -206,6 +206,17 @@ node --test plugins/codegraph/tests/extension/       # the codegraph desktop ext
 `check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism, an agent description that hands off to an agent that does not exist or collides with a built-in type. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.
 
 Whether dispatch is used well is measured on this machine's session database: `node scripts/dispatch-stats.mjs 2026-11-01` reports dispatches per agent type, the `general-purpose` share, the share of small dispatches (at most three tool calls), how often `SendMessage` continued an agent, and the tokens and duration of a dispatch. It is read-only and prints no prompts, commands or paths; it needs Node 22.13+.
+
+## Personal rules backup
+
+`zcode-personal-rules/AGENTS.md` is a backup of `~/.zcode/AGENTS.md`, the ZCode global rules. It is not a plugin asset and is never installed with a plugin; the live file stays the source, so refresh the backup after changing it:
+
+```bash
+cp ~/.zcode/AGENTS.md zcode-personal-rules/AGENTS.md   # back up
+cp zcode-personal-rules/AGENTS.md ~/.zcode/AGENTS.md   # restore
+```
+
+`check-consistency.py` compares the two and reports when the backup is behind (a note, never a failure); it skips machines that have no `~/.zcode/AGENTS.md`. The copy shared by Kimi and DSH lives in kimicode-configure under `kimi-personal-rules/`; the two are meant to differ.
 
 ## References
 

@@ -235,6 +235,25 @@ def check_agent_tool_wording():
     check("agent tool wording", not bad, "; ".join(bad))
 
 
+def check_personal_rules_backup():
+    """zcode-personal-rules/AGENTS.md backs up the author's ~/.zcode/AGENTS.md, and the live file
+    stays the source. A difference means the backup is behind, not that the repo is broken: report
+    it and never fail on it. A machine without the live file has nothing to compare."""
+    backup = os.path.join(ROOT, "zcode-personal-rules", "AGENTS.md")
+    live = os.path.join(os.path.expanduser("~"), ".zcode", "AGENTS.md")
+    if not (os.path.isfile(live) and os.path.isfile(backup)):
+        return
+
+    def text(path):
+        with open(path, encoding="utf-8") as handle:
+            return handle.read().replace("\r\n", "\n")
+
+    same = text(live) == text(backup)
+    print(f"{'OK  ' if same else 'NOTE'} personal rules backup "
+          f"{'matches' if same else 'differs from'} ~/.zcode/AGENTS.md"
+          + ("" if same else " — refresh it with: cp ~/.zcode/AGENTS.md zcode-personal-rules/AGENTS.md"))
+
+
 def check_stale_markers():
     hits = []
     # Local scratch and plan directories are not part of the repository even
@@ -363,7 +382,8 @@ def main():
     for probe in (check_json, check_versions, check_marketplace_sources,
                   check_agent_count, check_frontmatter, check_agent_descriptions,
                   check_agent_tool_wording, check_stale_markers, check_line_endings,
-                  check_shell_syntax, check_hook_scripts, check_skill_references):
+                  check_shell_syntax, check_hook_scripts, check_skill_references,
+                  check_personal_rules_backup):
         probe()
     if FAILS:
         print(f"\n{len(FAILS)} CHECK(S) FAILED: {', '.join(FAILS)}")

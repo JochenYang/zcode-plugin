@@ -191,7 +191,7 @@ plugins/<plugin-name>/
 仓库自带两个零依赖检查（需要 Python 3.8+ 与 bash），改动插件后手动跑：
 
 ```bash
-python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、agent 描述、引用、行尾、shell 语法
+python scripts/check-consistency.py             # 版本、agent 数量、frontmatter、agent 描述、引用、行尾、shell 语法；个人规则备份落后时提示
 python plugins/guardrails/tests/test-hooks.py   # 两个钩子的判定矩阵，198 个用例（含权限模式维度）
 python plugins/websearch/tests/test-server.py   # websearch MCP server（加 --live 才发真实网络请求）
 node --test plugins/websearch/tests/*.test.mjs  # websearch 网络层：跨源重定向不带引擎 Key、截止时间覆盖响应体、GBK 解码、描述里的让位句
@@ -206,6 +206,17 @@ node --test plugins/codegraph/tests/extension/       # codegraph 桌面端扩展
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法、agent 描述把任务交给一个不存在的 agent 或与内置类型撞名。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。
 
 派发是否用对，拿本机会话库量：`node scripts/dispatch-stats.mjs 2026-11-01` 读出各类型的派发数、`general-purpose` 占比、小派发占比（不超过 3 次工具调用）、`SendMessage` 续用次数，以及每次派发的 token 与耗时。它只读，不打印提示词、命令和路径；需要 Node 22.13+。
+
+## 个人规则备份
+
+`zcode-personal-rules/AGENTS.md` 是 `~/.zcode/AGENTS.md`（ZCode 全局规则）的备份。它不是插件资产，不随插件安装；源头仍是 `~/.zcode/AGENTS.md`，改了之后把备份跟上：
+
+```bash
+cp ~/.zcode/AGENTS.md zcode-personal-rules/AGENTS.md   # 备份
+cp zcode-personal-rules/AGENTS.md ~/.zcode/AGENTS.md   # 恢复
+```
+
+`check-consistency.py` 会比对两份内容，不一致时提示备份没跟上（只提示，不算失败）；机器上没有 `~/.zcode/AGENTS.md` 时跳过。Kimi 与 DSH 共用的那份在 kimicode-configure 的 `kimi-personal-rules/`，两边是有意分开的。
 
 ## 参考
 
