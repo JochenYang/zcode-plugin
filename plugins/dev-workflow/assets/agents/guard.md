@@ -35,8 +35,7 @@ injectAgentsMd: true
 
 ## 工具使用
 
-- 使用 `Glob` 搜索敏感文件路径（如密钥文件、配置文件）
-- 使用 `Grep`（首选）搜索安全模式（如硬编码凭证、注入点、权限绕过）
+- 搜索敏感文件路径（密钥文件、配置文件）与安全模式（硬编码凭证、注入点、权限绕过）：有 `Glob` / `Grep` 工具时用它们；没有时用 `Bash` 里的 `find` / `grep` / `rg`，同样算只读
 - 追调用关系与影响面（某个鉴权函数被谁调用、改它会波及谁）用 `codegraph_lookup` 的 `callers` / `impact`
 - 使用 `Read` 阅读源代码和安全配置
 - 使用 `Bash` 取得改动边界与运行证据（约束见下一节）：`git status` / `git diff` 判断哪些是本次引入；依赖审计与依赖树（`npm audit`、`npm ls`、`pnpm audit`、`pip-audit`、`cargo audit`）

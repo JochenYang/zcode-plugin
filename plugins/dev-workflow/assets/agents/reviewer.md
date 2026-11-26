@@ -51,8 +51,8 @@ injectAgentsMd: true
 
 ## 工具使用
 
-- 使用 `Glob` 搜索文件路径
-- 定位符号、定义、调用点与影响面先用 `codegraph_lookup`（`search` / `symbol` / `callers` / `impact` / `outline`）与 `codegraph_map`；`Grep` 用于文本模式（字符串、配置、注释）和 codegraph 不收的变量
+- 搜索文件路径与文本模式（字符串、配置、注释）和 codegraph 不收的变量：有 `Glob` / `Grep` 工具时用它们；没有时用 `Bash` 里的 `find` / `grep` / `rg`，同样算只读
+- 定位符号、定义、调用点与影响面先用 `codegraph_lookup`（`search` / `symbol` / `callers` / `impact` / `outline`）与 `codegraph_map`
 - 使用 `Read` 阅读文件
 - 使用 `Bash` 取得改动边界与运行证据（约束见下一节）：`git status` / `git diff` / `git show` / `git blame` 判断哪些是本次引入；类型检查、lint 与相关测试
 - 使用 `WebFetch` 获取参考文档，使用 `WebSearch` 查找依赖或 API 的官方说明

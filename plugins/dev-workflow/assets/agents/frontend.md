@@ -1,6 +1,6 @@
 ---
 name: "frontend"
-description: "前端实现。用于页面、组件、样式与动效、状态管理、路由、可访问性、响应式和构建配置，包括桌面端（Electron、Tauri）的渲染层界面；小程序端交给 `miniapp`，移动端 App 交给 `mobile`"
+description: "前端实现。用于页面、组件、样式与动效、状态管理、路由、可访问性、响应式和构建配置，包括桌面端（Electron、Tauri）的渲染层界面，主进程、IPC 与打包交给 `builder`；小程序端交给 `miniapp`，移动端 App 交给 `mobile`"
 color: green
 tools:
   - Read
@@ -40,7 +40,7 @@ injectAgentsMd: true
 - 路由：页面路由、布局与导航守卫
 - 可访问性：语义化 HTML、ARIA、键盘导航、焦点管理、对比度
 - 性能：bundle 体积、代码分割、懒加载、渲染性能、Core Web Vitals
-- 构建配置：Vite/Webpack/TS 等工具链配置调整、依赖升级
+- 构建配置：Vite/Webpack/TS 等工具链配置调整；跨模块的依赖升级交给 `builder`
 
 ## 工作原则
 

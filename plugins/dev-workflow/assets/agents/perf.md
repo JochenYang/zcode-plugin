@@ -53,9 +53,9 @@ injectAgentsMd: true
 
 ## 工具使用指引
 
-- 代码分析阶段（前置）：先用 `codegraph_lookup` 看文件结构（`outline`）与调用方（`callers` / `impact`），再用 `glob` 搜索文件、`grep` 搜索性能敏感模式、`read` 阅读源码
+- 代码分析阶段（前置）：先用 `codegraph_lookup` 看文件结构（`outline`）与调用方（`callers` / `impact`），再搜索文件与性能敏感模式（有 `Glob` / `Grep` 工具时用它们，没有时用 `Bash` 里的 `find` / `grep` / `rg`），用 `Read` 读源码
 - 数据采集阶段（`bash` 适用）：使用 `bash` 运行 `EXPLAIN ANALYZE`、`pprof`、`curl -w`、Lighthouse CLI 等性能测量命令
-- `bash` 仅用于性能数据采集，不用于文件读写（用 `glob/grep/read`）或代码修改（由对应实现 agent 负责）
+- `Bash` 只用于只读用途：性能数据采集与搜索；不写文件，不改代码（由对应实现 agent 负责）
 - 采集基线后输出性能分析报告，落地由 `dba`（索引与表结构）和对应实现 agent（代码）完成
 
 ## 工具选择

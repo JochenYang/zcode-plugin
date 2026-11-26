@@ -45,6 +45,9 @@ BUILTIN_AGENTS = {"general-purpose", "Explore"}
 # an agent, so the description is its only trigger; past this it stops being
 # scannable next to the others.
 AGENT_DESCRIPTION_LIMIT = 200
+# How the four prose sources state how many subagents dev-workflow ships. Only the
+# qualified wording counts: a sentence such as "派 2 个子智能体审查" is a local number.
+STATED_AGENT_COUNT = re.compile(r"(\d+) (?:个(?:专项|专职)子智能体|specialist subagents)")
 # Mechanisms this repo removed on purpose; a mention means a stale reference.
 STALE_MARKERS = ["Anti-rationalization", "AR-1", "KIMI_SKILL_DIR", "git_conventions", "whenToUse",
                  "gcommit", "git-workflow"]
@@ -116,7 +119,11 @@ def check_agent_count():
         "README.en.md": read("README.en.md"),
     }
     for label, text in sources.items():
-        check(f"dev-workflow: {label} states {count} agents", f"{count} " in text)
+        # Every stated count has to be the real one, and each source has to state it:
+        # a stale "22 subagents" beside a fresh "23" is exactly the drift this finds.
+        stated = {int(n) for n in STATED_AGENT_COUNT.findall(text)}
+        check(f"dev-workflow: {label} states {count} agents", stated == {count},
+              f"states {sorted(stated)}" if stated != {count} else "")
 
 
 def frontmatter_keys(path):
@@ -204,6 +211,28 @@ def check_agent_descriptions():
             if ref.lower() not in known:
                 bad.append(f"{stem}: hands off to unknown agent `{ref}`")
     check("agent descriptions", not bad, "; ".join(bad))
+
+
+def check_agent_tool_wording():
+    """The host registers Grep/Glob only for an agent without Bash (search moves into
+    Bash otherwise), so a prompt that names those tools for a Bash agent has to offer
+    Bash on the same line, or it tells the agent to use a tool it never receives."""
+    bad = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "plugins/dev-workflow/assets/agents/*.md"))):
+        owner = os.path.basename(path)
+        text = open(path, encoding="utf-8").read()
+        front = frontmatter_keys(path)[1] or ""
+        listed = re.search(r"^tools:\n((?:  - \S+\n)+)", front, re.M)
+        tools = re.findall(r"  - (\S+)", listed.group(1)) if listed else []
+        if "Bash" not in tools:
+            continue
+        head = re.match(r"^---\n.*?\n---\n", text, re.S)
+        first_line = text[:head.end()].count("\n") + 1
+        for offset, line in enumerate(text[head.end():].splitlines()):
+            named = re.findall(r"`(Grep|Glob)`", line)
+            if named and "Bash" not in line:
+                bad.append(f"{owner}:{first_line + offset} names {named[0]} without Bash")
+    check("agent tool wording", not bad, "; ".join(bad))
 
 
 def check_stale_markers():
@@ -333,8 +362,8 @@ def main():
         return 2
     for probe in (check_json, check_versions, check_marketplace_sources,
                   check_agent_count, check_frontmatter, check_agent_descriptions,
-                  check_stale_markers, check_line_endings, check_shell_syntax,
-                  check_hook_scripts, check_skill_references):
+                  check_agent_tool_wording, check_stale_markers, check_line_endings,
+                  check_shell_syntax, check_hook_scripts, check_skill_references):
         probe()
     if FAILS:
         print(f"\n{len(FAILS)} CHECK(S) FAILED: {', '.join(FAILS)}")

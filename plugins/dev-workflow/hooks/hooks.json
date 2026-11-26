@@ -29,6 +29,22 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Agent$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "bash",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/on-dispatch.sh"
+            ],
+            "timeoutMs": 5000,
+            "statusMessage": "Reminding how to close the loop on a subagent"
+          }
+        ]
+      }
     ]
   }
 }
