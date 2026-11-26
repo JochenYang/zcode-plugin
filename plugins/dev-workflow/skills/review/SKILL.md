@@ -29,7 +29,7 @@ when_to_use: 要检查代码改动、找潜在问题、评估能不能合并时�
 单轮低风险审查用上面的流程即可。进入第二轮，或改动为 high 风险时按本协议执行，细则见 `references/convergence-protocol.md`。
 
 - **角色分离**：高风险或多轮时必须派 `reviewer` subagent，只产出 findings 与证据；主会话逐条打开代码核实并写裁决；用户只在确认闸回答。主会话不得同时产出 findings 和写 decision；低风险单轮可一次完成，但要写明未使用独立审计方。
-- **每轮状态文件**：`.devflow/<slug>/review-<round>.json`，记录 `round`、`max_rounds`、`findings[]`（id/severity/original_severity/decision/repeat_count/confirmed/verified_fixed）、`baseline_finding_ids`、`structure_comparison`、`context_not_read`、`status_inconsistent`、`manual_stop_count`、`clean_rounds`、`baseline_frozen`。
+- **每轮状态文件**：`.devflow/<slug>/review-<round>.json`，记录 `round`、`max_rounds`、`findings[]`（id/severity/original_severity/decision/repeat_count/confirmed/verified_fixed）、`baseline_finding_ids`、`structure_comparison`、`context_not_read`、`status_inconsistent`、`manual_stop_count`、`clean_rounds`、`baseline_frozen`，另记 `reviewer_agent_id`（本轮 reviewer 的 agentId，下一轮用它续用；闸门脚本不读这个字段）。
 - **slug 与轮次**：`<slug>` 取自当前任务的 `change-plan`（`.devflow/<slug>.md`），没有计划时按 kebab-case 自拟一个；`<round>` 从 1 起每轮加一。写状态文件前确认 `.devflow/` 已在 `.gitignore`，否则它会被 `git add -A` 带进提交。
 - **裁决值**：`pending` / `accepted` / `rejected` / `downgraded` / `intentional`；每条 finding 必须有裁决，不能沉默携带。`accepted` 表示承诺修复，任何 accepted 未 `verified_fixed` 都算未闭合；不修的用 `intentional`（附理由）或 `rejected`。
 - **闸门顺序**（first-match-wins）：blocking 被驳回/降级/标 intentional 未确认 → 交用户；重复 finding → 交用户；Round > 1 结构对比未通过 → 交用户；上下文未读或状态不一致 → 交用户；手动停止达上限 → 交用户；连续干净轮 + 冻结基线 + 无未闭合条目 + 结构通过 → `converged`；`round ≥ max_rounds` → `stop_max_rounds`；其余 → `continue`。

@@ -23,6 +23,7 @@
 {
   "round": 2,
   "max_rounds": 3,
+  "reviewer_agent_id": "agent_xxx",
   "required_clean_rounds": 2,
   "clean_rounds": 0,
   "new_blocking_count": 1,
@@ -61,6 +62,7 @@
 - `structure_comparison`：Round > 1 必填；`pass` 或 `warn + warnings_reviewed` 才可收敛，`fail` 不可收敛。
 - `context_not_read` / `status_inconsistent`：为 true 时必须附 `context_not_read_evidence` / `status_inconsistent_evidence`（缺失文件、矛盾的状态对）。
 - `manual_stop_count` / `manual_stop_retry_limit`：同轮手动停止达到上限时交用户；`manual_stop_count > 0` 时必须附 `manual_stop_reason`。
+- `reviewer_agent_id`（可选）：本轮 `reviewer` 的 agentId，下一轮用 `SendMessage` 续用同一个审查方。闸门脚本不读它；没有它就只能新派。
 
 ## 结构对比比什么
 

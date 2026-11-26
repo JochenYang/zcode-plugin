@@ -20,7 +20,7 @@
 | 插件 | 版本 | 说明 |
 |---|---|---|
 | `plugins/git-conventions` | 0.1.0 | 提交信息规范钩子：`PreToolUse` 在 git 运行前校验 `git commit` 写下的提交信息（标题格式与 50 字符上限、正文 `-` 列表与末尾 `Verified:` 行），不合规直接拒绝 |
-| `plugins/dev-workflow` | 0.9.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents`（它们用 codegraph 定位代码，需要同时启用 `codegraph`） |
+| `plugins/dev-workflow` | 0.9.1 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 23 个专项子智能体自动安装到 `~/.zcode/agents`（它们用 codegraph 定位代码，需要同时启用 `codegraph`） |
 | `plugins/guardrails` | 0.2.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
@@ -82,7 +82,7 @@
 - 23 个专项子智能体都带 codegraph 的两个工具（`codegraph_lookup`、`codegraph_map`）来定位代码与调用关系，正文里也写了先 codegraph 再 `grep`。**`tools:` 里出现 MCP 工具名就是硬性要求**：codegraph 没装、被禁用或它的服务没连上时，这 23 个子智能体都派不出去（宿主报 `Required MCP tool is not available in the parent MCP snapshot`），所以 0.8.0 起 dev-workflow 依赖 codegraph。要卸载 codegraph，先把 dev-workflow 回到 0.7.0，或删掉 23 个文件里 `tools:` 下的那两行
 - `/agents-sync [diff|export|install]` — 安装已是自动的，这里只用于：`diff` 对比本地与插件资产、`export` 把本地手改的 agent 推回仓库、`install` 强制覆盖重装
 
-核心机制：`change-plan` 把计划与验收标准落盘为 `.devflow/<slug>.md`（有回归面时加 `docs/plans/<slug>.md`），下游 5 个 skill 与全部子智能体都按它对照；持久计划用 Work items 状态流转与 Phases Gate 管进度，Gate 行只能由 `test-changed` 在跑完验证后写入。ZCode 没有按匹配度派发的机制，派谁全靠主模型读子智能体清单来决定，所以 `debug`、`test-changed`、`change-plan`、`release-check` 在该交接的步骤点名角色：排查与取证派 `detective`，验证派 `tester`，审查派 `reviewer`（安全面加 `guard`，跨层加 `integrator`），重大决策前派 `oracle`，发布配置派 `ops`，实现按层派专才、没有归属的派 `builder`。`change-plan` 的「派发」一节定了什么时候派（读写量大、可并行、要独立，三者至少一项）、什么时候自己做（点、线的改动与难而小的推理）、交接单写什么，以及派发批次如何对应 Work items（返回后是 `[~]`，Gate 与审查通过才是 `[x]`）。5 个下游 skill（`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`）结案前各做一次自查：命令绿了不等于验收满足、看起来合理不算证据、用户说测过了只是口述——任一条不满足，`commit-review` 不得 READY、`release-check` 不得 GO。
+核心机制：`change-plan` 把计划与验收标准落盘为 `.devflow/<slug>.md`（有回归面时加 `docs/plans/<slug>.md`），下游 5 个 skill 与全部子智能体都按它对照；持久计划用 Work items 状态流转与 Phases Gate 管进度，Gate 行只能由 `test-changed` 在跑完验证后写入。ZCode 没有按匹配度派发的机制，派谁全靠主模型读子智能体清单来决定，所以 `debug`、`test-changed`、`change-plan`、`release-check` 在该交接的步骤点名角色：排查与取证派 `detective`，验证派 `tester`，审查派 `reviewer`（安全面加 `guard`，跨层加 `integrator`），重大决策前派 `oracle`，发布配置派 `ops`，新页面与改版先派 `ux-designer` 出规格，实现按层派专才、没有归属的派 `builder`。`change-plan` 的「派发」一节定了什么时候派（读写量大、可并行、要独立，三者至少一项）、什么时候自己做（点、线的改动与难而小的推理）、交接单写什么，以及派发批次如何对应 Work items（返回后是 `[~]`，Gate 与审查通过才是 `[x]`）。5 个下游 skill（`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`）结案前各做一次自查：命令绿了不等于验收满足、看起来合理不算证据、用户说测过了只是口述——任一条不满足，`commit-review` 不得 READY、`release-check` 不得 GO。
 
 多轮审查收敛：审查进入第二轮，或改动为高风险时，`reviewer` 只产出 findings 与证据，主会话逐条核实并把裁决写进 `.devflow/<slug>/review-<round>.json`，`scripts/review-gate.mjs` 按八道闸门判出 `converged` / `needs_user_confirmation` / `stop_max_rounds` / `continue`。存在状态文件时，`commit-review` 只在最新一轮 `converged` 后放行。
 
