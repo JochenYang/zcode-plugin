@@ -3,21 +3,21 @@
 // database holds data produced by the real extraction engine from
 // fixtures/graph/sample.ts; graph queries are injected (`ctx.queries`) because
 // the real module may still be the phase-0 stub.
-import { test, describe, before, after } from 'node:test';
+import { test, describe, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from '../../src/mcp/server.mjs';
-import { BUDGET_RANGE, DEPTH_RANGE, LIMIT_RANGE, OPERATIONS, TOOLS, callTool, resolveGraph } from '../../src/mcp/tools.mjs';
+import { BUDGET_RANGE, DEPTH_RANGE, FILES_MAX, LIMIT_RANGE, OPERATIONS, TOOLS, callTool, resolveGraph } from '../../src/mcp/tools.mjs';
 import * as graphQueries from '../../src/graph/queries.mjs';
 import * as graphMap from '../../src/graph/map.mjs';
 import { DEFAULT_CONFIG } from '../../src/config.mjs';
 import { planSweep } from '../../src/index/storage.mjs';
 import { projectKey } from '../../src/paths.mjs';
 import { close, openDatabase } from '../../src/store/db.mjs';
-import { findSymbolsByName, importsOfFile, refsByName, replaceFile, symbolsInFile } from '../../src/store/repo.mjs';
+import { findSymbolsByName, importsOfFile, markDirty, refsByName, replaceFile, symbolsInFile, takeDirty } from '../../src/store/repo.mjs';
 import { extractFile, initEngine, loadSpecs, specForPath } from '../../src/extract/engine.mjs';
 import { INSTRUCTIONS } from '../../src/mcp/instructions.mjs';
 import { estimateTokens, MAX_OUTPUT_BYTES } from '../../src/render/budget.mjs';
@@ -32,7 +32,7 @@ const SEARCH_NEXT_HINT =
 
 const CONTRACT_DESCRIPTIONS = {
   codegraph_lookup:
-    'Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. symbol with body=true returns the definition source in the same call. Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. Index may lag a few seconds after external edits; codegraph_status reports staleness.',
+    'Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. cycles lists import cycles; affected lists the test files that depend on given files (files=...). symbol with body=true returns the definition source in the same call. Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. Index may lag a few seconds after external edits; codegraph_status reports staleness.',
   codegraph_map:
     'Repository map: directories -> files -> key symbols, ranked by reference count and cut to a token budget. Use this INSTEAD of Glob plus reading file heads when you need to see what a project or directory contains. Symbols only, no source.',
   codegraph_status:
@@ -191,10 +191,15 @@ describe('TOOLS', () => {
 describe('argument validation (TypeError -> in-band error)', () => {
   const cases = [
     ['codegraph_lookup', {}, '"operation" is required'],
-    ['codegraph_lookup', { operation: 'grep' }, /"operation" must be one of search, symbol, callers, callees, impact, outline \(got "grep"\)/],
+    ['codegraph_lookup', { operation: 'grep' }, /"operation" must be one of search, symbol, callers, callees, impact, outline, cycles, affected \(got "grep"\)/],
     ['codegraph_lookup', { operation: 'search' }, /operation=search requires "query"/],
     ['codegraph_lookup', { operation: 'symbol' }, /operation=symbol requires "name"/],
     ['codegraph_lookup', { operation: 'outline' }, /operation=outline requires "file"/],
+    ['codegraph_lookup', { operation: 'affected' }, /operation=affected requires "files"/],
+    ['codegraph_lookup', { operation: 'affected', files: ' , ' }, /"files" must name at least one path \(got " , "\)/],
+    ['codegraph_lookup', { operation: 'affected', files: Array.from({ length: FILES_MAX + 1 }, (_, i) => `f${i}.ts`).join(',') }, new RegExp(`"files" must name at most ${FILES_MAX} paths`)],
+    ['codegraph_lookup', { operation: 'affected', files: 5 }, /"files" must be a non-empty string \(got 5\)/],
+    ['codegraph_lookup', { operation: 'affected', files: 'a.ts', depth: 0 }, /"depth" must be an integer between 1 and 6 \(got 0\)/],
     ['codegraph_lookup', { operation: 'search', query: '  ' }, /"query" must be a non-empty string \(got "  "\)/],
     ['codegraph_lookup', { operation: 'search', query: 'x', depth: 0 }, /"depth" must be an integer between 1 and 6 \(got 0\)/],
     ['codegraph_lookup', { operation: 'impact', name: 'x', depth: 7 }, /"depth" must be an integer between 1 and 6 \(got 7\)/],
@@ -662,6 +667,48 @@ describe('codegraph_lookup', () => {
     );
   });
 
+  test('cycles and affected: argument mapping, defaults and rendering', async () => {
+    const log = [];
+    const queries = {
+      ...storeQueries(log),
+      importCycles: (_db, options) => {
+        log.push(['importCycles', options]);
+        return { cycles: [{ paths: ['src/a.ts', 'src/b.ts', 'src/a.ts'], walked: true }], total: 1, truncated: false };
+      },
+      affectedTests: (_db, options) => {
+        log.push(['affectedTests', options]);
+        return { tests: ['tests/a.test.ts'], otherFiles: 1, scanned: 3, truncated: false, unknown: [] };
+      },
+    };
+    const ctx = fakeCtx(READY(), { queries });
+    assert.equal(text(await call(ctx, 'codegraph_lookup', { operation: 'cycles', limit: 5 })), [
+      `# cycles · 1 import cycle in 2 files · ${FRESH}`,
+      'cycle 1 (2 files): src/a.ts → src/b.ts → src/a.ts',
+      'hint: cycles follow resolved imports only; dynamic imports and unresolved specifiers are not in the graph.',
+    ].join('\n'));
+    assert.deepEqual(log.at(-1), ['importCycles', { limit: 5 }]);
+    // The path list is normalised; the query asks for one more row than the caller wants.
+    const affected = text(await call(ctx, 'codegraph_lookup', { operation: 'affected', files: './src/a.ts, src\\b.ts', depth: 2, limit: 10 }));
+    assert.deepEqual(log.at(-1), ['affectedTests', { files: ['src/a.ts', 'src/b.ts'], depth: 2, limit: 11 }]);
+    assert.equal(affected.split('\n')[0], `# affected src/a.ts, src/b.ts · 1 test file reaches them (3 files scanned) · ${FRESH}`);
+    // A path named twice (here in two spellings of the same file) is asked about once.
+    const twice = text(await call(ctx, 'codegraph_lookup', { operation: 'affected', files: 'src/a.ts, ./src/a.ts' }));
+    assert.deepEqual(log.at(-1), ['affectedTests', { files: ['src/a.ts'], depth: 3, limit: 21 }]);
+    assert.ok(twice.startsWith('# affected src/a.ts · '), twice.split('\n')[0]);
+    await call(ctx, 'codegraph_lookup', { operation: 'affected', files: 'src/a.ts' });
+    assert.deepEqual(log.at(-1), ['affectedTests', { files: ['src/a.ts'], depth: 3, limit: 21 }], 'depth defaults to 3');
+    // Too many paths is an argument error (see the validation table), not a slower call.
+    const many = Array.from({ length: FILES_MAX }, (_, i) => `src/f${i}.ts`);
+    await call(ctx, 'codegraph_lookup', { operation: 'affected', files: many.join(',') });
+    assert.deepEqual(log.at(-1), ['affectedTests', { files: many, depth: 3, limit: 21 }], 'the cap itself is accepted');
+    // The real module is what an unmodified context gets: both operations exist and answer.
+    const real = fakeCtx();
+    assert.match(text(await call(real, 'codegraph_lookup', { operation: 'cycles' })), new RegExp(`^# cycles · no import cycles · ${FRESH}`));
+    const realAffected = text(await call(real, 'codegraph_lookup', { operation: 'affected', files: 'src/nowhere.ts' }));
+    assert.ok(realAffected.startsWith(`# affected src/nowhere.ts · no test files reach them (0 files scanned)`), realAffected.split('\n')[0]);
+    assert.ok(realAffected.includes('not in the index: src/nowhere.ts'), realAffected);
+  });
+
   test('paths are normalised to the index form (native separators, absolute inside root, leading "./")', async () => {
     const log = [];
     const ctx = fakeCtx(READY(), { queries: storeQueries(log) });
@@ -693,6 +740,108 @@ describe('codegraph_lookup', () => {
       assert.ok(estimateTokens(big) <= budget);
       assert.ok(Buffer.byteLength(big) <= MAX_OUTPUT_BYTES);
     }
+  });
+});
+
+// Per-file staleness (CONTRACTS.md §11): the header says how many files changed, the line after
+// it names the ones this result rests on, so the model can Read them.
+describe('per-file staleness line', () => {
+  const STALE_STATUS = () => ({ ...READY(), dirty: 1, stale: 1 });
+  const HEAD = 'stale: 1 files changed since index';
+  const banner = (path, more = 0) => `stale: ${path}${more > 0 ? ` (+${more} more)` : ''} changed since index — Read them for the current content`;
+  afterEach(() => {
+    takeDirty(db, 10_000);
+  });
+
+  test('a result that names a dirty file gets one line after the header; the header keeps its count', async () => {
+    markDirty(db, [SAMPLE]);
+    const expected = {
+      search: `# search parse · 1 match · ${FRESH} · ${HEAD}`,
+      symbol: `# symbol parseConfig · ${SAMPLE}:8-11 (4 lines) · callers 1/1 resolved · ${FRESH} · ${HEAD}`,
+      impact: `# impact parseConfig depth=1 · 4 nodes in 1 file · ${FRESH} · ${HEAD}`,
+      outline: `# outline ${SAMPLE} · 4 symbols · ${FRESH} · ${HEAD}`,
+    };
+    const args = {
+      search: { query: 'parse' },
+      symbol: { name: 'parseConfig' },
+      impact: { name: 'parseConfig', depth: 1 },
+      outline: { file: SAMPLE },
+    };
+    for (const [operation, head] of Object.entries(expected)) {
+      const lines = text(await call(fakeCtx(STALE_STATUS(), { queries: storeQueries() }), 'codegraph_lookup', { operation, ...args[operation] })).split('\n');
+      assert.equal(lines[0], head, operation);
+      assert.equal(lines[1], banner(SAMPLE), operation);
+    }
+  });
+
+  test('nothing in common: no line, and the header still counts the dirty files', async () => {
+    markDirty(db, ['src/elsewhere.ts']);
+    const lines = text(await call(fakeCtx(STALE_STATUS(), { queries: storeQueries() }), 'codegraph_lookup', { operation: 'outline', file: SAMPLE })).split('\n');
+    assert.equal(lines[0], `# outline ${SAMPLE} · 4 symbols · ${FRESH} · ${HEAD}`);
+    assert.equal(lines.some((line) => line.startsWith('stale: ')), false);
+  });
+
+  test('more than three paths: three are named and the rest are a count', async () => {
+    const paths = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.gen.ts'];
+    const nodes = paths.map((path, i) => ({ kind: 'function', name: `n${i}`, path, startLine: 1, endLine: 2, depth: 1 }));
+    markDirty(db, paths);
+    const queries = { ...storeQueries(), impact: () => ({ nodes, files: [], truncated: false }) };
+    const out = text(await call(fakeCtx(STALE_STATUS(), { queries }), 'codegraph_lookup', { operation: 'impact', name: 'x' }));
+    // The generated file sorts last, so the first three rows (source) are the ones named.
+    assert.equal(out.split('\n')[1], 'stale: a.ts, b.ts, c.ts (+2 more) changed since index — Read them for the current content');
+  });
+
+  test('a path longer than 100 characters is cut in the line', async () => {
+    const long = `src/${'x'.repeat(150)}.ts`;
+    const nodes = [{ kind: 'function', name: 'n', path: long, startLine: 1, endLine: 2, depth: 1 }];
+    markDirty(db, [long]);
+    const queries = { ...storeQueries(), impact: () => ({ nodes, files: [], truncated: false }) };
+    const out = text(await call(fakeCtx(STALE_STATUS(), { queries }), 'codegraph_lookup', { operation: 'impact', name: 'x' }));
+    assert.equal(out.split('\n')[1], `stale: ${long.slice(0, 99)}… changed since index — Read them for the current content`);
+  });
+
+  test('with files dirty, only the paths this result names are looked up', async () => {
+    markDirty(db, ['src/elsewhere.ts']);
+    // A database that refuses to list the dirty table: the lookup must name the paths it asks about.
+    const guarded = new Proxy(db, {
+      get(target, prop) {
+        if (prop === 'prepare') {
+          return (sql) => {
+            if (/from\s+dirty\b/i.test(sql) && !/where\s+path\s+in\s*\(/i.test(sql)) throw new Error('the dirty table was listed, not asked about paths');
+            return target.prepare(sql);
+          };
+        }
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const out = text(await call(fakeCtx(STALE_STATUS(), { queries: storeQueries(), db: guarded }), 'codegraph_lookup', { operation: 'outline', file: SAMPLE }));
+    assert.equal(out.split('\n')[0], `# outline ${SAMPLE} · 4 symbols · ${FRESH} · ${HEAD}`);
+    assert.equal(out.split('\n').some((line) => line.startsWith('stale: ')), false);
+  });
+
+  test('a clean index reads no dirty rows at all', async () => {
+    // A database that refuses the query: with nothing dirty the line must not even look.
+    const guarded = new Proxy(db, {
+      get(target, prop) {
+        if (prop === 'prepare') {
+          return (sql) => {
+            if (/from\s+dirty\b/i.test(sql)) throw new Error('the dirty table was read while nothing is dirty');
+            return target.prepare(sql);
+          };
+        }
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const ctx = fakeCtx(READY(), { db: guarded, queries: storeQueries() });
+    assert.equal(text(await call(ctx, 'codegraph_lookup', { operation: 'outline', file: SAMPLE })), [
+      `# outline ${SAMPLE} · 4 symbols · ${FRESH}`,
+      ` function parseConfig (src: string, opts?: Options): Config ${SAMPLE}:8-11`,
+      `    class Loader ${SAMPLE}:13-18`,
+      `   method load (file: string): Config ${SAMPLE}:15-17`,
+      ` function loadAll (dir: string): Config[] ${SAMPLE}:20-22`,
+    ].join('\n'));
   });
 });
 

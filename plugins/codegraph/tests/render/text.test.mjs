@@ -7,8 +7,10 @@ import {
   INLINE_BODY_MAX_LINES,
   LEGEND,
   freshnessLabel,
+  renderAffected,
   renderCallers,
   renderCallees,
+  renderCycles,
   renderImpact,
   renderMap,
   renderNotice,
@@ -63,6 +65,8 @@ describe('freshnessLabel', () => {
     assert.equal(freshnessLabel(readyStatus(), { now: NOW }), FRESH);
     assert.equal(freshnessLabel(readyStatus({ stale: 3 }), { now: NOW }), STALE);
     assert.equal(freshnessLabel(readyStatus({ dirty: 2, stale: undefined }), { now: NOW }), 'indexed 2m ago · stale: 2 files changed since index');
+    // The live count wins: the stored one is still 0 until the sync of those files finishes.
+    assert.equal(freshnessLabel(readyStatus({ dirty: 4, stale: 0 }), { now: NOW }), 'indexed 2m ago · stale: 4 files changed since index');
     assert.equal(freshnessLabel({ state: 'building', filesTotal: 16, filesDone: 7 }, { now: NOW }), 'indexing 43% (results partial)');
     assert.equal(freshnessLabel({ state: 'building', filesTotal: 16, filesDone: 7, stale: 3 }, { now: NOW }), 'stale: 3 files changed since index · indexing 43% (results partial)');
     assert.equal(freshnessLabel({ state: 'building', filesTotal: 0, filesDone: 0 }, { now: NOW }), 'indexing (results partial)');
@@ -212,6 +216,29 @@ describe('renderSearch', () => {
       out,
       ['# search "parse config" · 1 match · indexed 2m ago', '…function f f() a.ts:1-2', NEXT].join('\n'),
     );
+  });
+
+  test('a result that names files changed since the index says so on the line after the header', () => {
+    const stale = { paths: ['src/a.ts', 'src/b.ts'], more: 0 };
+    const out = lines(renderSearch(SEARCH_ROWS, { query: 'parseConfig', freshness: STALE, stale }));
+    assert.equal(out[0], '# search parseConfig · 4 matches · indexed 2m ago · stale: 3 files changed since index');
+    assert.equal(out[1], 'stale: src/a.ts, src/b.ts changed since index — Read them for the current content');
+    assert.equal(out[2], '   method parseConfig parseConfig(file: string) src/loader.ts:8-20');
+    // Paths beyond the three are a count, written before the sentence continues.
+    const more = lines(renderSearch(SEARCH_ROWS, { query: 'parseConfig', freshness: STALE, stale: { paths: ['a.ts', 'b.ts', 'c.ts'], more: 2 } }));
+    assert.equal(more[1], 'stale: a.ts, b.ts, c.ts (+2 more) changed since index — Read them for the current content');
+    // No paths, or no meta at all: no line (the header count alone stays).
+    for (const meta of [{ query: 'parseConfig', freshness: STALE }, { query: 'parseConfig', freshness: STALE, stale: { paths: [], more: 0 } }]) {
+      const plain = lines(renderSearch(SEARCH_ROWS, meta));
+      assert.ok(plain[1].includes('parseConfig(file: string)'), plain[1]);
+      assert.equal(plain.some((line) => line.startsWith('stale: ')), false);
+    }
+    // The line survives a small budget that drops the rows around it.
+    const tiny = lines(renderSearch(SEARCH_ROWS, { query: 'parseConfig', freshness: STALE, stale: { paths: ['src/a.ts'], more: 0 }, budget: 60 }));
+    assert.equal(tiny[0], '# search parseConfig · 4 matches · indexed 2m ago · stale: 3 files changed since index');
+    assert.equal(tiny[1], 'stale: src/a.ts changed since index — Read them for the current content');
+    assert.match(tiny.at(-1), /^\(\d of 4 shown\)$/);
+    assert.ok(estimateTokens(tiny.join('\n')) <= 60);
   });
 
   test('empty result', () => {
@@ -592,6 +619,22 @@ describe('renderCallers / renderCallees', () => {
     );
   });
 
+  test('relation rows sort by file tier (source, tests, generated) before path', () => {
+    const rows = [
+      { name: 'gen', path: 'a.gen.ts', startLine: 1, resolution: '=', count: 1 },
+      { name: 'test', path: 'tests/b.ts', startLine: 1, resolution: '=', count: 1 },
+      { name: 'src', path: 'src/c.ts', startLine: 1, resolution: '=', count: 1 },
+    ];
+    assert.deepEqual(lines(renderCallers(rows, { name: 'x', freshness: FRESH })).slice(1, 4), [
+      '     call src src/c.ts:1=',
+      '     call test tests/b.ts:1=',
+      '     call gen a.gen.ts:1=',
+    ]);
+    // The impact renderer uses the same order, so a generated node is not shown before a source one.
+    const impact = lines(renderImpact({ nodes: rows.map((row) => ({ ...row, kind: 'function', endLine: row.startLine })), files: [], truncated: false }, { name: 'x', freshness: FRESH }));
+    assert.deepEqual(impact.slice(1, 4).map((line) => line.split(' ')[2]), ['src', 'test', 'gen']);
+  });
+
   test('empty relations, limit cut', () => {
     const empty = lines(renderCallers([], { name: 'x', freshness: FRESH }));
     assert.equal(empty[0], '# callers x · no callers · indexed 2m ago');
@@ -667,6 +710,129 @@ describe('renderOutline', () => {
     assert.equal(empty[0], '# outline nope.ts · no symbols · indexed 2m ago');
     assert.equal(empty.length, 2);
     assert.match(empty[1], /^hint: file is not in the index/);
+  });
+});
+
+describe('renderCycles', () => {
+  const HINT = 'hint: cycles follow resolved imports only; dynamic imports and unresolved specifiers are not in the graph.';
+  const walk = (...paths) => ({ paths, walked: true });
+  const RESULT = {
+    cycles: [walk('src/a.ts', 'src/b.ts', 'src/c.ts', 'src/a.ts'), walk('lib/x.ts', 'lib/y.ts', 'lib/z.ts', 'lib/w.ts', 'lib/x.ts')],
+    total: 2,
+    truncated: false,
+  };
+
+  test('a walk that repeats files counts the files it holds, not its steps', () => {
+    const out = lines(renderCycles({ cycles: [walk('src/a.ts', 'src/b.ts', 'src/a.ts', 'src/c.ts', 'src/a.ts')], total: 1, truncated: false }, { freshness: FRESH }));
+    assert.equal(out[0], '# cycles · 1 import cycle in 3 files · indexed 2m ago');
+    assert.equal(out[1], 'cycle 1 (3 files): src/a.ts → src/b.ts → src/a.ts → src/c.ts → src/a.ts');
+  });
+
+  test('a long walk is cut inside its row; a component that was only listed says so', () => {
+    const ring = Array.from({ length: 25 }, (_, i) => `src/f${String(i).padStart(2, '0')}.ts`);
+    const long = lines(renderCycles({ cycles: [walk(...ring, ring[0])], total: 1, truncated: false }, { freshness: FRESH }));
+    assert.equal(long[0], '# cycles · 1 import cycle in 25 files · indexed 2m ago');
+    assert.equal(long[1], `cycle 1 (25 files): ${ring.slice(0, 20).join(' → ')} … (+5 more) → ${ring[0]}`);
+    const listed = lines(renderCycles({ cycles: [{ paths: ring.slice(0, 22), walked: false }], total: 1, truncated: false }, { freshness: FRESH }));
+    assert.equal(listed[0], '# cycles · 1 import cycle in 22 files · indexed 2m ago');
+    assert.equal(listed[1], `cycle 1 (22 files, listed not walked): ${ring.slice(0, 20).join(', ')} … (+2 more)`);
+    // A cycle without paths is not a row.
+    assert.deepEqual(lines(renderCycles({ cycles: [{ paths: [], walked: true }, null], total: 0, truncated: false }, { freshness: FRESH })), ['# cycles · no import cycles · indexed 2m ago', HINT]);
+  });
+
+  test('one line per cycle, the summary counts the files it holds', () => {
+    assert.deepEqual(lines(renderCycles(RESULT, { freshness: FRESH })), [
+      '# cycles · 2 import cycles in 7 files · indexed 2m ago',
+      'cycle 1 (3 files): src/a.ts → src/b.ts → src/c.ts → src/a.ts',
+      'cycle 2 (4 files): lib/x.ts → lib/y.ts → lib/z.ts → lib/w.ts → lib/x.ts',
+      HINT,
+    ]);
+    assert.equal(
+      renderCycles({ cycles: [RESULT.cycles[0]], total: 1, truncated: false }, { freshness: FRESH }),
+      ['# cycles · 1 import cycle in 3 files · indexed 2m ago', 'cycle 1 (3 files): src/a.ts → src/b.ts → src/c.ts → src/a.ts', HINT].join('\n'),
+    );
+  });
+
+  test('no cycles; a limit cut says how many of how many; a graph cut says why', () => {
+    assert.equal(
+      renderCycles({ cycles: [], total: 0, truncated: false }, { freshness: FRESH }),
+      ['# cycles · no import cycles · indexed 2m ago', HINT].join('\n'),
+    );
+    const cut = lines(renderCycles({ cycles: [RESULT.cycles[0]], total: 3, truncated: true }, { freshness: FRESH }));
+    assert.equal(cut.at(-2), 'hint: raise limit (max 200) for a longer list, or budget when rows were cut for space.');
+    // Rows cut for space, not by the limit: the same hint, and the count of what is shown.
+    const six = { cycles: Array.from({ length: 6 }, (_, i) => walk(`s/${i}a.ts`, `s/${i}b.ts`, `s/${i}c.ts`, `s/${i}a.ts`)), total: 6, truncated: false };
+    const budget = 123;
+    const tight = lines(renderCycles(six, { freshness: FRESH, budget }));
+    assert.ok(estimateTokens(tight.join('\n')) <= budget);
+    const rows = tight.filter((line) => line.startsWith('cycle ')).length;
+    assert.ok(rows >= 1 && rows < 6, `${rows} of 6 rows kept at budget ${budget}`);
+    assert.deepEqual(tight.slice(0, rows + 1), ['# cycles · 6 import cycles in 18 files · indexed 2m ago', ...six.cycles.slice(0, rows).map((cycle, i) => `cycle ${i + 1} (3 files): ${cycle.paths.join(' → ')}`)], 'the first rows, whole and in order');
+    assert.equal(tight.at(-2), 'hint: raise limit (max 200) for a longer list, or budget when rows were cut for space.');
+    assert.equal(tight.at(-1), `(${rows} of 6 shown)`);
+    assert.equal(cut.at(-1), '(1 of 3 shown)');
+    assert.ok(cut.includes(HINT), 'the standing hint stays');
+    // Truncated without a cut of this list: the graph itself was cut.
+    const capped = lines(renderCycles({ ...RESULT, truncated: true }, { freshness: FRESH }));
+    assert.equal(capped.at(-1), 'hint: the import graph was cut at the size one walk reads; cycles beyond the cut are not listed.');
+  });
+});
+
+describe('renderAffected', () => {
+  const HINT = "hint: candidates from imports and resolved references; run the project's own test selection for the final list.";
+  const RESULT = {
+    tests: ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts', 'tests/d.test.ts'],
+    otherFiles: 8,
+    scanned: 13,
+    truncated: false,
+    unknown: [],
+  };
+
+  test('header names the inputs and how many test files reach them; one path per line', () => {
+    assert.deepEqual(lines(renderAffected(RESULT, { files: ['src/a.ts', 'src/b.ts'], freshness: FRESH })), [
+      '# affected src/a.ts, src/b.ts · 4 test files reach them (13 files scanned) · indexed 2m ago',
+      'tests/a.test.ts',
+      'tests/b.test.ts',
+      'tests/c.test.ts',
+      'tests/d.test.ts',
+      HINT,
+    ]);
+    assert.equal(
+      renderAffected({ ...RESULT, tests: ['tests/a.test.ts'], scanned: 2 }, { files: ['src/a.ts'], freshness: FRESH }).split('\n')[0],
+      '# affected src/a.ts · 1 test file reaches them (2 files scanned) · indexed 2m ago',
+    );
+    assert.equal(
+      renderAffected({ tests: [], otherFiles: 2, scanned: 3, truncated: false, unknown: [] }, { files: ['src/a.ts'], freshness: FRESH }).split('\n')[0],
+      '# affected src/a.ts · no test files reach them (3 files scanned) · indexed 2m ago',
+    );
+  });
+
+  test('unknown inputs get one line; a cut walk says where it stopped; a limit cut is the regular line', () => {
+    const unknown = lines(renderAffected({ ...RESULT, tests: [], unknown: ['src/gone.ts', 'src/also-gone.ts'] }, { files: ['src/a.ts'], freshness: FRESH }));
+    assert.equal(unknown[1], 'not in the index: src/gone.ts, src/also-gone.ts');
+    // It is a footer line, so a tight budget cuts rows before it (the standing hint goes first).
+    const dozen = { ...RESULT, tests: Array.from({ length: 12 }, (_, i) => `tests/t${i}.test.ts`), unknown: ['src/gone.ts'] };
+    const budget = 66;
+    const tight = lines(renderAffected(dozen, { files: ['src/a.ts'], freshness: FRESH, budget }));
+    assert.ok(estimateTokens(tight.join('\n')) <= budget);
+    const rows = tight.filter((line) => line.startsWith('tests/')).length;
+    assert.ok(rows >= 1 && rows < 12, `${rows} of 12 rows kept at budget ${budget}`);
+    assert.deepEqual(tight.slice(1, rows + 1), dozen.tests.slice(0, rows), 'the first rows, whole and in order');
+    assert.equal(tight[rows + 1], 'not in the index: src/gone.ts', 'the footer line follows the rows');
+    assert.ok(tight.includes(`(${rows} of 12 shown)`), tight.join('\n'));
+    const stopped = lines(renderAffected({ ...RESULT, truncated: true }, { files: ['src/a.ts'], depth: 3, freshness: FRESH }));
+    assert.equal(stopped.at(-1), 'hint: the walk stopped at depth 3 or the file cap; some dependents may not be listed.');
+    const limited = lines(renderAffected({ ...RESULT, tests: RESULT.tests.slice(0, 2) }, { files: ['src/a.ts'], freshness: FRESH, more: true }));
+    assert.equal(limited.at(-2), 'hint: raise limit (max 200) to see more test files.');
+    assert.equal(limited.at(-1), '(2 of 3+ shown)');
+  });
+
+  test('the header names a few input files and counts the rest; a long unknown path is cut', () => {
+    const files = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts', 'src/f.ts', 'src/g.ts'];
+    const long = `src/${'x'.repeat(150)}.ts`;
+    const out = lines(renderAffected({ ...RESULT, unknown: [long] }, { files, freshness: FRESH }));
+    assert.equal(out[0], '# affected src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts … (+2 more) · 4 test files reach them (13 files scanned) · indexed 2m ago');
+    assert.equal(out.at(-2), `not in the index: ${long.slice(0, 99)}…`);
   });
 });
 

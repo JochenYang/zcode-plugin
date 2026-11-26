@@ -55,6 +55,15 @@ test('a reference linked by a unique name is counted, and the count says so', ()
   assert.deepEqual(usageCounts(db, [alpha]).get(alpha), { refs: 3, files: 2, inSource: 1, byName: 1 });
 });
 
+test('only test and script files leave "in source": a generated file counts as source', () => {
+  const { db, alpha } = project();
+  // usageCounts shares SECONDARY_PATH_PARTS with the ordering tiers, which a generated file is
+  // not part of (it has its own, later tier): the split by file stays what it was.
+  const gen = replaceFile(db, meta('src/generated/api.ts'), { symbols: [], refs: [call('alpha', 2)] });
+  link(db, gen.fileId, alpha);
+  assert.deepEqual(usageCounts(db, [alpha]).get(alpha), { refs: 4, files: 3, inSource: 2, byName: 0 });
+});
+
 test('a symbol nothing outside refers to gets no entry; unknown ids and empty input give an empty map', () => {
   const { db, alpha, lonely } = project();
   assert.equal(usageCounts(db, [lonely]).has(lonely), false);

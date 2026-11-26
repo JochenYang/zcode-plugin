@@ -990,8 +990,8 @@ function ftsMatchExpression(segments) {
  * Match tiers: exact name, joined prefix ("parseconfig" → parseConfig), further FTS5
  * hits by bm25, then a LIKE pool for names the tokenizer cannot reach ("parse2config"
  * for "parseConfig") and for words in another order ("config parse"). Source files come
- * before tests, scripts and vendored code; only a name that starts with the query may
- * outrank them from such a file.
+ * before tests and scripts, which come before generated files; only a name that starts with
+ * the query may outrank them from such a file.
  *
  * A query written as a description ("sign-in cookie") names more than any symbol holds.
  * When nothing matches every word, the search falls back to partial matches: names that
@@ -1021,7 +1021,7 @@ export function searchSymbolsDetailed(db, query, options = {}) {
   if (segments.length < 2) return { rows: [], matched: [], dropped: [] };
 
   // Partial matches from every anchor, best first: the most query words contained, then the
-  // most specific words, then source before tests, then the shorter name.
+  // most specific words, then source before tests and generated files, then the shorter name.
   const candidates = new Map();
   for (const anchor of relaxationAnchors(segments)) {
     for (const row of anchoredLevel(db, anchor, segments, { kindClause, kindParams })) {
@@ -1031,7 +1031,7 @@ export function searchSymbolsDetailed(db, query, options = {}) {
   }
   const ranked = [...candidates.values()]
     .map((entry) => ({ ...entry, specificity: entry.words.reduce((sum, seg) => sum + seg.length * seg.length, 0) }))
-    .sort((a, b) => b.words.length - a.words.length || b.specificity - a.specificity || isSecondaryPath(a.row.path) - isSecondaryPath(b.row.path)
+    .sort((a, b) => b.words.length - a.words.length || b.specificity - a.specificity || pathRank(a.row.path) - pathRank(b.row.path)
       || a.row.name.length - b.row.name.length || (a.row.path < b.row.path ? -1 : a.row.path > b.row.path ? 1 : 0));
   if (ranked.length === 0) return { rows: [], matched: [], dropped: [] };
   const best = ranked[0].words;
@@ -1060,15 +1060,15 @@ export const REF_GROUPS_MAX = 5000;
 // Places that use a name, one row per name, receiver, file and the symbol that contains it
 // (`req.get` and `res.get` inside one function are two rows). The order is decided in SQL,
 // because that is what decides which rows survive the cut: names equal to the query, then
-// source before tests, then by place. Parameters follow their position in the SQL text: the
-// WHERE clause's, the reference cut, the exact-name tier, one per test-file part (the ORDER BY),
-// the group cut.
+// source before tests and generated files, then by place. Parameters follow their position in
+// the SQL text: the WHERE clause's, the reference cut, the exact-name tier, the file tier (the
+// ORDER BY), the group cut.
 const REF_GROUPS_SQL = (where) =>
   "SELECT r.name AS name, CASE WHEN COUNT(DISTINCT r.kind) = 1 THEN MIN(r.kind) ELSE 'use' END AS kind, NULLIF(r.receiver, '') AS receiver, COUNT(*) AS count," +
   ' MIN(r.start_line) AS start_line, r.file_id AS file_id, f.path AS path, s.name AS owner, s.qual AS owner_qual, s.kind AS owner_kind' +
   ` FROM (SELECT * FROM refs WHERE ${where} LIMIT ?) r JOIN files f ON f.id = r.file_id LEFT JOIN symbols s ON s.id = r.symbol_id` +
   " GROUP BY r.name, NULLIF(r.receiver, ''), r.file_id, r.symbol_id" +
-  ` ORDER BY r.name = ? COLLATE NOCASE DESC, CASE WHEN ${SECONDARY_SQL} THEN 1 ELSE 0 END, f.path, MIN(r.start_line), r.name, NULLIF(r.receiver, '') LIMIT ?`;
+  ` ORDER BY r.name = ? COLLATE NOCASE DESC, ${PATH_RANK_SQL}, f.path, MIN(r.start_line), r.name, NULLIF(r.receiver, '') LIMIT ?`;
 
 /**
  * Places that use a name no symbol defines here. What counts as a reference is what the
@@ -1107,7 +1107,7 @@ export function searchRefs(db, query, options = {}) {
   if (segments.length === 0) return { rows: [], uses: 0, files: 0, fileIds: [], names: [], capped: false };
   const exact = query.trim();
   const groupsOf = (where, parameters) =>
-    db.prepare(REF_GROUPS_SQL(where)).all(...parameters, REF_ROWS_MAX + 1, exact, ...SECONDARY_PARAMS, REF_GROUPS_MAX + 1);
+    db.prepare(REF_GROUPS_SQL(where)).all(...parameters, REF_ROWS_MAX + 1, exact, ...PATH_RANK_PARAMS, REF_GROUPS_MAX + 1);
   let groups = exact ? groupsOf('name = ?', [exact]) : [];
   if (groups.length === 0) {
     // AND does not care about the order and SQLite evaluates left to right: a word of three
@@ -1173,9 +1173,10 @@ export function usageCounts(db, ids) {
   if (counted.length === 0) return out;
   // Parameters follow their position in the SQL text: the test-file CASE sits in the select
   // list, so its LIKE patterns come before the ids of the IN list. in_source counts files, not
-  // references: a source file that calls the symbol five times is still one file. exact counts
-  // the references an import resolved; the rest were linked by a unique name and may be
-  // same-named code elsewhere (the renderer marks those counts).
+  // references: a source file that calls the symbol five times is still one file. Only the
+  // SECONDARY list excludes a file here; a generated file counts as source (CONTRACTS.md §7).
+  // exact counts the references an import resolved; the rest were linked by a unique name and
+  // may be same-named code elsewhere (the renderer marks those counts).
   const rows = prepare(db,
     'SELECT r.target_id AS id, COUNT(*) AS refs, COUNT(DISTINCT r.file_id) AS files,' +
     ` COUNT(DISTINCT CASE WHEN ${SECONDARY_SQL} THEN NULL ELSE r.file_id END) AS in_source,` +
@@ -1203,7 +1204,8 @@ const LIKE_POOL_MIN = 40;
 const LIKE_POOL_MAX = 2000;
 const LIKE_POOL_FACTOR = 4;
 // Files that show where a symbol is exercised rather than where it is defined; inside one match
-// tier they sort after source files. One list feeds the SQL ORDER BY, the JS sort and "in source".
+// tier they sort after source files. This list feeds the SQL ORDER BY, the JS sort and "in
+// source" (which excludes these files only: a generated file counts as source, CONTRACTS.md §7).
 // The parts are plain substrings of the lower-cased path, so a prefix rule carries its slash:
 // `/test_` is a file or directory named test_*, whereas `test_` alone would also take `latest_`.
 // A mistyped entry fails silently (it matches nothing), so tests/store/search.test.mjs pairs
@@ -1216,11 +1218,30 @@ export const SECONDARY_PATH_PARTS = Object.freeze([
   // (Contests.cs); that is the cheaper error of the two.
   '_test.go', '/testdata/', '/tests.py', '/test_', '/__snapshots__/', 'tests.cs',
 ]);
+// Generated sources (protobuf stubs, freezed/`build_runner` output, codegen directories) rank
+// after tests: nobody edits them, so a definition or a use there says less about orientation
+// than either of the other tiers. Same shape as SECONDARY: plain lower-case substrings of
+// `'/' + path`, and tests/store/search.test.mjs pairs every entry with a path it must see.
+export const GENERATED_PATH_PARTS = Object.freeze([
+  '/generated/', '/__generated__/', '/codegen/', '.generated.', '.gen.ts', '.gen.js', '.g.dart',
+  '.pb.go', '.pb.ts', '.pb.js', '.pb.cc', '.pb.h', '.min.js',
+]);
 // A directory entry such as `/tests/` must hold at the project root as well (`tests/a.ts`), and
 // stored paths carry no leading slash: both sides test `'/' + path`. Before this, root-level
 // tests/, scripts/ and e2e/ directories sorted as source.
 const SECONDARY_SQL = SECONDARY_PATH_PARTS.map(() => "('/' || f.path) LIKE ? ESCAPE '\\'").join(' OR ');
 const SECONDARY_PARAMS = SECONDARY_PATH_PARTS.map((part) => `%${escapeLike(part)}%`);
+const GENERATED_SQL = GENERATED_PATH_PARTS.map(() => "('/' || f.path) LIKE ? ESCAPE '\\'").join(' OR ');
+const GENERATED_PARAMS = GENERATED_PATH_PARTS.map((part) => `%${escapeLike(part)}%`);
+// The file tier every list sorts by before it cuts rows (CONTRACTS.md §8): source 0, tests and
+// scripts 1, generated 2. A generated file inside a tests/ directory is still generated, so the
+// CASE tests that first; `pathRank` keeps the two in step.
+const PATH_RANK_SQL = `CASE WHEN ${GENERATED_SQL} THEN 2 WHEN ${SECONDARY_SQL} THEN 1 ELSE 0 END`;
+const PATH_RANK_PARAMS = [...GENERATED_PARAMS, ...SECONDARY_PARAMS];
+const matchesPathPart = (path, parts) => {
+  const lower = `/${String(path ?? '').toLowerCase()}`;
+  return parts.some((part) => lower.includes(part));
+};
 /**
  * Is `path` a test, script or third-party file rather than source? `path` is a path as stored
  * in `files`: '/'-separated and relative to the project root. Matching ignores case. Any other
@@ -1229,10 +1250,37 @@ const SECONDARY_PARAMS = SECONDARY_PATH_PARTS.map((part) => `%${escapeLike(part)
  * @param {string|null|undefined} path
  * @returns {boolean}
  */
-export const isSecondaryPath = (path) => {
-  const lower = `/${String(path ?? '').toLowerCase()}`;
-  return SECONDARY_PATH_PARTS.some((part) => lower.includes(part));
-};
+export const isSecondaryPath = (path) => matchesPathPart(path, SECONDARY_PATH_PARTS);
+/**
+ * Is `path` generated code (stubs, codegen output)? Same path spelling as `isSecondaryPath`.
+ *
+ * @param {string|null|undefined} path
+ * @returns {boolean}
+ */
+export const isGeneratedPath = (path) => matchesPathPart(path, GENERATED_PATH_PARTS);
+/**
+ * The tier of a file in a result list: 0 source, 1 test / script / third-party, 2 generated.
+ * Lists sort by this before their own keys, so a cut row is never the source one.
+ *
+ * @param {string|null|undefined} path
+ * @returns {0|1|2}
+ */
+export const pathRank = (path) => (isGeneratedPath(path) ? 2 : isSecondaryPath(path) ? 1 : 0);
+// The subset of SECONDARY that is a test rather than a script, an example or vendored code:
+// `affected` lists these files only (CONTRACTS.md §8). A separate list on purpose (`/scripts/`
+// and `/examples/` are exercises too, but nobody runs them after a change), and each entry is
+// paired with a path in tests/store/search.test.mjs like the other two.
+export const TEST_PATH_PARTS = Object.freeze([
+  '/__tests__/', '/tests/', '/test/', '/spec/', '/specs/', '/e2e/', '/__mocks__/', '/__snapshots__/',
+  '.test.', '.spec.', '_test.go', '/testdata/', '/tests.py', '/test_', 'tests.cs',
+]);
+/**
+ * Is `path` a test file? Same path spelling as `isSecondaryPath`.
+ *
+ * @param {string|null|undefined} path
+ * @returns {boolean}
+ */
+export const isTestPath = (path) => matchesPathPart(path, TEST_PATH_PARTS);
 
 /**
  * How well every query segment lands on a word of `name`; null when a segment is missing.
@@ -1319,7 +1367,7 @@ function relaxationAnchors(segments) {
 // contain, because the pool is cut in SQL. Each LIKE is parenthesised: without them SQLite binds
 // the `+` to ESCAPE's operand and the whole key is 0 (`.tmp/e2e/like-precedence.mjs`).
 // Parameters follow their position in the SQL text: the anchor predicate, kind (it sits in the
-// WHERE clause), one LIKE per other word, LIMIT.
+// WHERE clause), one LIKE per other word, the file tier, LIMIT.
 function anchoredLevel(db, anchor, segments, { kindClause, kindParams }) {
   const others = segments.filter((seg) => seg !== anchor);
   const [predicate, parameter] = poolPredicate(anchor);
@@ -1327,8 +1375,8 @@ function anchoredLevel(db, anchor, segments, { kindClause, kindParams }) {
   return db.prepare(
     'SELECT s.*, f.path AS path FROM symbols s JOIN files f ON f.id = s.file_id' +
     ` WHERE (${predicate})${kindClause}` +
-    ` ORDER BY ${contained} DESC, length(s.name), f.path, s.start_line, s.id LIMIT ?`
-  ).all(parameter, ...kindParams, ...others.map((seg) => `%${escapeLike(seg)}%`), LIKE_POOL_MAX);
+    ` ORDER BY ${contained} DESC, length(s.name), ${PATH_RANK_SQL}, f.path, s.start_line, s.id LIMIT ?`
+  ).all(parameter, ...kindParams, ...others.map((seg) => `%${escapeLike(seg)}%`), ...PATH_RANK_PARAMS, LIKE_POOL_MAX);
 }
 
 // One relaxation level. Returns at most `limit` rows in relevance order.
@@ -1336,10 +1384,10 @@ function searchLevel(db, segments, { limit, kindClause, kindParams, raw }) {
   const joined = segments.join('');
   // The relevance order has to be the SQL ORDER BY, because that is what decides which rows
   // survive the cut (the sort below only orders the survivors): an exact name first, then
-  // source before tests, then a name that starts with the query before looser ones, then bm25.
-  // The CASEs only evaluate over FTS hits, never over the whole table. Parameters follow their
-  // position in the SQL text: the tier CASE (select list comes first), MATCH, kind, the
-  // test-file CASE, LIMIT.
+  // source before tests and generated files, then a name that starts with the query before
+  // looser ones, then bm25. The CASEs only evaluate over FTS hits, never over the whole table.
+  // Parameters follow their position in the SQL text: the tier CASE (select list comes first),
+  // MATCH, kind, the file tier, LIMIT.
   const tier = "CASE WHEN s.name = ? COLLATE NOCASE THEN 0 WHEN s.name LIKE ? ESCAPE '\\' OR s.name LIKE ? ESCAPE '\\' THEN 1 ELSE 2 END";
   // More rows than `limit` are read because the word filter removes some of them; cut in SQL
   // first, a good row could only come back from the LIKE pool, with a worse tier.
@@ -1350,8 +1398,8 @@ function searchLevel(db, segments, { limit, kindClause, kindParams, raw }) {
     ' SELECT s.*, f.path AS path, hit.rank AS rank, hit.tier AS tier FROM hit' +
     ' JOIN symbols s ON s.id = hit.id JOIN files f ON f.id = s.file_id' +
     ` WHERE 1 = 1${kindClause}` +
-    ` ORDER BY hit.tier > 0, CASE WHEN ${SECONDARY_SQL} THEN 1 ELSE 0 END, hit.tier > 1, hit.tier, hit.rank LIMIT ?`
-  ).all(raw, `${escapeLike(raw)}%`, `${escapeLike(joined)}%`, ftsMatchExpression(segments), ...kindParams, ...SECONDARY_PARAMS, fetch);
+    ` ORDER BY hit.tier > 0, ${PATH_RANK_SQL}, hit.tier > 1, hit.tier, hit.rank LIMIT ?`
+  ).all(raw, `${escapeLike(raw)}%`, `${escapeLike(joined)}%`, ftsMatchExpression(segments), ...kindParams, ...PATH_RANK_PARAMS, fetch);
 
   // The tokenizer works on whole names, so "signin*" also reaches signIndex: words decide which
   // FTS rows count, and the rows they remove must not use up the limit.
@@ -1383,12 +1431,13 @@ function searchLevel(db, segments, { limit, kindClause, kindParams, raw }) {
     ranked.push({ row, tier: lower === raw ? 0 : lower.startsWith(raw) || lower.startsWith(joined) ? 1 : 3, ord: i });
   });
   for (const entry of ranked) {
-    entry.secondary = isSecondaryPath(entry.row.path);
+    entry.rank = pathRank(entry.row.path);
     delete entry.row.rank;
     delete entry.row.tier;
   }
-  // Same order as the SQL: exact name, source before tests, starts-with before looser, then bm25.
-  ranked.sort((a, b) => (a.tier > 0) - (b.tier > 0) || a.secondary - b.secondary || a.tier - b.tier || a.ord - b.ord);
+  // Same order as the SQL: exact name, source before tests and generated files, starts-with
+  // before looser, then bm25.
+  ranked.sort((a, b) => (a.tier > 0) - (b.tier > 0) || a.rank - b.rank || a.tier - b.tier || a.ord - b.ord);
   return ranked.slice(0, limit).map((entry) => entry.row);
 }
 
@@ -1514,6 +1563,32 @@ export function dirtyCount(db) {
   requireDb('dirtyCount', db);
   return Number(db.prepare('SELECT COUNT(*) AS count FROM dirty').get().count);
 }
+
+/**
+ * The dirty paths among `paths`, spelled as in `files.path` (the hooks and the tree walk
+ * normalize them before they reach `markDirty`). A result that names one of them may predate
+ * the file it describes, which is what the per-file staleness line reports (CONTRACTS.md §11).
+ * Each path is answered by the primary key: a result that names a few files must not read a
+ * table that can hold every file of the tree.
+ *
+ * @param {DatabaseSync} db
+ * @param {string[]} paths  the paths to check
+ * @returns {Set<string>}
+ */
+export function dirtyPaths(db, paths) {
+  requireDb('dirtyPaths', db);
+  requireArray('dirtyPaths', 'paths', paths);
+  const out = new Set();
+  for (let at = 0; at < paths.length; at += DIRTY_LOOKUP_CHUNK) {
+    const chunk = paths.slice(at, at + DIRTY_LOOKUP_CHUNK);
+    const rows = db.prepare(`SELECT path FROM dirty WHERE path IN (${chunk.map(() => '?').join(', ')})`).all(...chunk);
+    for (const row of rows) out.add(row.path);
+  }
+  return out;
+}
+
+// Ids bound per IN list of dirtyPaths; far under SQLITE_MAX_VARIABLE_NUMBER (see insertSizes).
+const DIRTY_LOOKUP_CHUNK = 500;
 
 /** @returns {string|null} */
 export function metaGet(db, key) {

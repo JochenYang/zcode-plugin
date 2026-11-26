@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { openDatabase, close } from '../../src/store/db.mjs';
 import {
-  beginBulkLoad, beginWriteGroup, clearPendingFiles, clearPurgedSymbols, countFiles, deleteFile, dirtyCount, endBulkLoad,
+  beginBulkLoad, beginWriteGroup, clearPendingFiles, clearPurgedSymbols, countFiles, deleteFile, dirtyCount, dirtyPaths, endBulkLoad,
   findSymbolsByName, getFileByPath, importersOfPath, importsOfFile, inTransaction, listFiles, markDirty, metaGet, metaSet,
   pendingFiles, refsByName, refsInFile, refsTo, replaceAllForFile, replaceFile, searchSymbols, searchSymbolsDetailed, setRefResolution, symbolById,
   symbolsInFile, takeDirty, takePurgedSymbols, unresolvedRefs, upsertFile,
@@ -548,6 +548,17 @@ describe('dirty', () => {
     assert.throws(() => takeDirty(db, 0), /takeDirty: "limit" must be an integer >= 1/);
     assert.throws(() => markDirty(db, 'a.ts'), /markDirty: "paths" must be an array/);
     assert.throws(() => markDirty(db, ['a.ts', 7]), /markDirty: "paths\[1\]" must be a non-empty string/);
+  });
+
+  test('dirtyPaths answers only for the paths asked about', () => {
+    const { db } = tmpDb();
+    assert.deepEqual([...dirtyPaths(db, [])], []);
+    markDirty(db, ['a.ts', 'b.ts', 'c.ts']);
+    assert.deepEqual([...dirtyPaths(db, ['c.ts', 'zz.ts', 'c.ts', 'a.ts'])].sort(), ['a.ts', 'c.ts'], 'only the dirty ones, each once');
+    assert.deepEqual([...dirtyPaths(db, ['zz.ts'])], []);
+    assert.deepEqual([...dirtyPaths(db, ['a.ts', 'b.ts', 'c.ts'])].sort(), ['a.ts', 'b.ts', 'c.ts']);
+    assert.throws(() => dirtyPaths(db), /dirtyPaths: "paths" must be an array/);
+    assert.throws(() => dirtyPaths(db, 'a.ts'), /dirtyPaths: "paths" must be an array/);
   });
 });
 

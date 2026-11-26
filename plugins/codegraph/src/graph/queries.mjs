@@ -3,7 +3,7 @@
 // §8 / §11 (camelCase, `path` relative to the project root) so the renderer
 // needs no knowledge of the schema.
 
-import { findSymbolsByName, importsOfFile, isSecondaryPath, searchRefs, searchSymbolsDetailed, symbolsInFile, usageCounts } from '../store/repo.mjs';
+import { findSymbolsByName, importsOfFile, pathRank, searchRefs, searchSymbolsDetailed, symbolsInFile, usageCounts } from '../store/repo.mjs';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 200;
@@ -78,13 +78,13 @@ const bestResolution = (values) => values.reduce((best, v) => (RESOLUTION_RANK[v
 
 // One list out of the two sources of places that use a name (CONTRACTS.md §8): the rows of the
 // index and the rows a source scan found, in the order either keeps on its own — source files
-// before tests and scripts, then by path and line — with the index's row first where both have
-// the same place. Totals are summed; files are counted over every row of either, cut or not; a
-// cut in either is a cut of the whole. Neither has a row: null, unless one was cut or the scan
-// said why it has nothing (`skipped`), which is passed on so the caller knows the answer is
-// not "nothing" and the header does not claim a look that never happened. `kinds` lists the
-// kinds the rows have, so that a caller can tell a list of property reads from a mixed one;
-// `cut` names a lookup of the scan that was cut while the other has rows.
+// before tests and scripts, generated files last, then by path and line — with the index's row
+// first where both have the same place. Totals are summed; files are counted over every row of
+// either, cut or not; a cut in either is a cut of the whole. Neither has a row: null, unless one
+// was cut or the scan said why it has nothing (`skipped`), which is passed on so the caller knows
+// the answer is not "nothing" and the header does not claim a look that never happened. `kinds`
+// lists the kinds the rows have, so that a caller can tell a list of property reads from a mixed
+// one; `cut` names a lookup of the scan that was cut while the other has rows.
 function mergePlaces(indexed, scan) {
   const a = indexed?.rows.length > 0 ? indexed : null;
   const b = scan?.rows.length > 0 ? scan : null;
@@ -94,7 +94,7 @@ function mergePlaces(indexed, scan) {
   if (!a && !b) return capped || skipped ? { rows: [], uses: 0, files: 0, names: [], kinds: [], cut: null, capped, skipped, fromIndex: 0, fromScan: 0 } : null;
   if (!b) return { ...a, capped, skipped, cut: null, fromIndex: a.rows.length, fromScan: 0, kinds: kindsOf(a.rows) };
   if (!a) return { ...b, capped, skipped, fromIndex: 0, fromScan: b.rows.length, kinds: kindsOf(b.rows) };
-  const place = (row) => [Number(isSecondaryPath(row.path)), row.path, row.start_line];
+  const place = (row) => [pathRank(row.path), row.path, row.start_line];
   const compare = (p, q) => p[0] - q[0] || (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) || p[2] - q[2];
   const rows = [
     ...a.rows.map((row, i) => ({ row, source: 0, i })),
@@ -212,7 +212,9 @@ export function searchIsPartial(db, { query, kind = null, limit = DEFAULT_LIMIT 
 /**
  * Refs that point at `target`, grouped by the symbol that contains them.
  * Module-level refs (import statements) form one group per file, named after
- * the ref. `resolution` is the strongest marker in the group.
+ * the ref. `resolution` is the strongest marker in the group. Groups are
+ * ordered by the tier of their file (source, tests, generated) before the
+ * limit cuts any, so a cut row is never the source one.
  */
 function callerGroups(db, target, limit) {
   const rows = db.prepare(
@@ -240,7 +242,9 @@ function callerGroups(db, target, limit) {
     if (r.start_line < g.startLine) g.startLine = r.start_line;
     g.resolution = bestResolution([g.resolution, r.resolution ?? '?']);
   }
-  return [...groups.values()].slice(0, limit);
+  return [...groups.values()]
+    .sort((a, b) => pathRank(a.path) - pathRank(b.path) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) || a.startLine - b.startLine)
+    .slice(0, limit);
 }
 
 /** Calls made directly inside `target`, grouped by resolved target (or name). */
@@ -261,7 +265,9 @@ function calleeGroups(db, target, limit) {
     g.count++;
     g.resolution = bestResolution([g.resolution, r.resolution ?? '?']);
   }
-  return [...groups.values()].sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).slice(0, limit);
+  return [...groups.values()]
+    .sort((a, b) => pathRank(a.path) - pathRank(b.path) || b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .slice(0, limit);
 }
 
 function fileImports(db, path) {
@@ -364,7 +370,9 @@ export function impact(db, { name, path = null, depth = 2 } = {}) {
     const row = byId.get(f.id);
     return row ? { ...pick(row, ['id', 'kind', 'name', 'qual', 'path', 'startLine', 'endLine', 'signature']), depth: f.depth } : null;
   }).filter(Boolean);
-  nodes.sort((a, b) => a.depth - b.depth || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) || a.startLine - b.startLine);
+  // Source before tests and generated files, then the depth and source order the walk found:
+  // the tool's row limit keeps the leading entries, so a generated file must not displace one.
+  nodes.sort((a, b) => pathRank(a.path) - pathRank(b.path) || a.depth - b.depth || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) || a.startLine - b.startLine);
   const files = [...new Set(nodes.map((n) => n.path))].sort();
   return { nodes, files, truncated, total: nodes.length };
 }
@@ -378,3 +386,8 @@ export function outline(db, { path } = {}) {
   if (typeof path !== 'string' || path.length === 0) throw new TypeError('outline: "path" must be a non-empty string');
   return symbolsInFile(db, path).map(outlineRow);
 }
+
+// The two dependency queries live in their own module (an SCC walk and a bounded reverse
+// closure are more code than the rest here); re-exported so `resolveGraph(context).queries`
+// still hands the tool layer one object (CONTRACTS.md §8).
+export { affectedTests, importCycles } from './dependencies.mjs';

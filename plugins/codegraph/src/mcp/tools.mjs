@@ -12,14 +12,19 @@ import * as graphMap from '../graph/map.mjs';
 import * as graphStorage from '../index/storage.mjs';
 import { DEFAULT_CONFIG, BUDGET_TOKENS_MAX, BUDGET_TOKENS_MIN } from '../config.mjs';
 import { displayPath, isInside, projectKey } from '../paths.mjs';
+import { dirtyPaths } from '../store/repo.mjs';
 import { getContext, resetContext } from './context.mjs';
 import * as render from '../render/text.mjs';
 
-export const OPERATIONS = Object.freeze(['search', 'symbol', 'callers', 'callees', 'impact', 'outline']);
+export const OPERATIONS = Object.freeze(['search', 'symbol', 'callers', 'callees', 'impact', 'outline', 'cycles', 'affected']);
 // What `codegraph_status` may be asked to remove (CONTRACTS.md §10).
 export const CLEAN_TARGETS = Object.freeze(['stale', 'all', 'current', 'project']);
 export const DEPTH_RANGE = Object.freeze({ min: 1, max: 6, default: 2 });
+/** `affected` walks further than `impact` by default: a test usually sits a few imports away. */
+export const AFFECTED_DEPTH_DEFAULT = 3;
 export const LIMIT_RANGE = Object.freeze({ min: 1, max: 200, default: 20 });
+/** Paths `affected` takes in one call: the header lists them all and each one starts a lookup. */
+export const FILES_MAX = 50;
 export const BUDGET_RANGE = Object.freeze({ min: BUDGET_TOKENS_MIN, max: BUDGET_TOKENS_MAX });
 // Bodies larger than this are not read from disk just to be replaced by a Read line.
 const MAX_BODY_READ_BYTES = 8 * 1024 * 1024;
@@ -30,7 +35,8 @@ const PARAMETER = {
     enum: [...OPERATIONS],
     description:
       'search: symbols by name, or the places that use a name no symbol carries; symbol: one symbol with callers/callees/imports; ' +
-      'callers/callees: direct relationships; impact: transitive dependents up to depth; outline: symbols of one file in source order.',
+      'callers/callees: direct relationships; impact: transitive dependents up to depth; outline: symbols of one file in source order; ' +
+      'cycles: import cycles among files; affected: the test files that depend on given files.',
   },
   query: {
     type: 'string',
@@ -43,13 +49,18 @@ const PARAMETER = {
       'graph. Required for search.',
   },
   name: { type: 'string', description: 'symbol/callers/callees/impact only: bare symbol name. Required for those operations.' },
+  files: {
+    type: 'string',
+    description:
+      `affected only: "/"-separated paths relative to the workspace root, comma-separated, at most ${FILES_MAX}. Required for affected.`,
+  },
   file: {
     type: 'string',
     description:
       'Path relative to the workspace root with "/" separators. Required for outline; optional elsewhere to pick one of several same-named symbols.',
   },
-  depth: { type: 'integer', minimum: DEPTH_RANGE.min, maximum: DEPTH_RANGE.max, description: `impact only: relationship hops to follow. Default ${DEPTH_RANGE.default}.` },
-  limit: { type: 'integer', minimum: LIMIT_RANGE.min, maximum: LIMIT_RANGE.max, description: `Maximum rows returned. Default ${LIMIT_RANGE.default}.` },
+  depth: { type: 'integer', minimum: DEPTH_RANGE.min, maximum: DEPTH_RANGE.max, description: `impact and affected only: relationship hops to follow. impact defaults to ${DEPTH_RANGE.default}, affected to ${AFFECTED_DEPTH_DEFAULT}.` },
+  limit: { type: 'integer', minimum: LIMIT_RANGE.min, maximum: LIMIT_RANGE.max, description: `Maximum rows returned; for cycles it is the number of cycles, for affected the test files. Default ${LIMIT_RANGE.default}.` },
   budget: {
     type: 'integer',
     minimum: BUDGET_RANGE.min,
@@ -100,6 +111,7 @@ export const TOOLS = Object.freeze([
       'Locate symbols and relationships in the code graph. Use this INSTEAD of Grep to find where a function/class/variable is defined, ' +
       'who calls or uses it, what it calls, or what a change impacts. One line per symbol with exact file:line ranges; read only those ranges afterwards. ' +
       'operation=search needs query; symbol/callers/callees/impact need name (add file to disambiguate); outline needs file. ' +
+      'cycles lists import cycles; affected lists the test files that depend on given files (files=...). ' +
       'symbol with body=true returns the definition source in the same call. ' +
       'Relations are marked: = import-resolved, ~ unique-name, ? unresolved/dynamic — verify ? with Grep if it matters. ' +
       'Index may lag a few seconds after external edits; codegraph_status reports staleness.',
@@ -159,11 +171,11 @@ function checkBoolean(tool, field, value) {
   return value;
 }
 
-const REQUIRED_BY_OPERATION = Object.freeze({ search: 'query', symbol: 'name', callers: 'name', callees: 'name', impact: 'name', outline: 'file' });
+const REQUIRED_BY_OPERATION = Object.freeze({ search: 'query', symbol: 'name', callers: 'name', callees: 'name', impact: 'name', outline: 'file', affected: 'files' });
 // Only the parameters a tool declares are validated; anything else is ignored.
 const FIELDS_BY_TOOL = Object.freeze({
   codegraph_status: Object.freeze(['refresh', 'storage', 'clean', 'project', 'confirm']),
-  codegraph_lookup: Object.freeze(['operation', 'query', 'name', 'file', 'depth', 'limit', 'budget', 'body']),
+  codegraph_lookup: Object.freeze(['operation', 'query', 'name', 'files', 'file', 'depth', 'limit', 'budget', 'body']),
   codegraph_map: Object.freeze(['path', 'budget']),
 });
 
@@ -184,6 +196,15 @@ function validate(tool, args) {
       case 'path':
         out[field] = checkString(tool, field, value);
         break;
+      case 'files': {
+        // A comma-separated list; each path is normalised against the root in lookupTool.
+        const text = checkString(tool, field, value);
+        const parts = text.split(',').map((part) => part.trim()).filter(Boolean);
+        if (parts.length === 0) throw invalid(tool, field, 'must name at least one path', value);
+        if (parts.length > FILES_MAX) throw invalid(tool, field, `must name at most ${FILES_MAX} paths`, value);
+        out.files = parts;
+        break;
+      }
       case 'depth':
         out.depth = checkInteger(tool, field, value, DEPTH_RANGE);
         break;
@@ -213,7 +234,7 @@ function validate(tool, args) {
   if (tool === 'codegraph_lookup') {
     if (out.operation === undefined) throw invalid(tool, 'operation', 'is required', undefined);
     const needed = REQUIRED_BY_OPERATION[out.operation];
-    if (!out[needed]) throw new TypeError(`${tool}: operation=${out.operation} requires "${needed}"`);
+    if (needed && !out[needed]) throw new TypeError(`${tool}: operation=${out.operation} requires "${needed}"`);
   }
   return out;
 }
@@ -297,6 +318,20 @@ function budgetOf(context, value, kind) {
   const fromConfig = context.config?.defaultBudgetTokens?.[kind];
   const chosen = value ?? (Number.isInteger(fromConfig) ? fromConfig : DEFAULT_CONFIG.defaultBudgetTokens[kind]);
   return Math.min(BUDGET_RANGE.max, Math.max(BUDGET_RANGE.min, chosen));
+}
+
+// The files a result names that are still waiting for a re-index (CONTRACTS.md §11): at most
+// three paths plus the count of the rest. The header already says how many files changed; this
+// is the part the model can act on (Read them). Nothing is read from the dirty table when the
+// status says the index is clean, and no line is drawn without a path in common with the result.
+function staleOf(context, status, paths) {
+  if (!(count(status?.dirty) > 0)) return null;
+  const named = [...new Set(paths.filter((p) => typeof p === 'string' && p.length > 0))];
+  if (named.length === 0) return null;
+  const dirty = dirtyPaths(context.db, named);
+  const hit = named.filter((path) => dirty.has(path));
+  if (hit.length === 0) return null;
+  return { paths: hit.slice(0, 3), more: Math.max(0, hit.length - 3) };
 }
 
 function notice(operation, args, summary, hint, freshness = '') {
@@ -406,7 +441,18 @@ async function lookupTool(p, context) {
   const budget = budgetOf(context, p.budget, 'lookup');
   const { operation } = p;
   const file = normalizePath(context.root, p.file);
-  const args = quote(operation === 'search' ? p.query : operation === 'outline' ? file : [p.name, file].filter(Boolean).join(' '));
+  // `affected` names files, not one symbol, and its list reads better unquoted; a path named
+  // twice is asked about once (the query dedupes too; the header echoes what is asked).
+  const affectedFiles = operation === 'affected'
+    ? [...new Set((p.files ?? []).map((value) => normalizePath(context.root, value)))]
+    : null;
+  const args = operation === 'search'
+    ? quote(p.query)
+    : operation === 'outline'
+      ? quote(file)
+      : operation === 'affected'
+        ? affectedFiles.join(', ')
+        : quote([p.name, file].filter(Boolean).join(' '));
   if (status?.state === 'empty') {
     return notice(operation, args, 'not indexed', 'project is not indexed; use Read/Grep for now. codegraph_status explains why.');
   }
@@ -427,18 +473,24 @@ async function lookupTool(p, context) {
           ? await scanPropertyReads({ root: context.root, db, query: p.query, maxFileBytes: context.config.maxFileBytes })
           : null;
         const rows = queries.search(db, ask, info, scan ? { propertyReads: () => scan } : undefined);
-        return text(render.renderSearch(head(rows, limit), { ...meta, query: p.query, more: rows.length > limit, ...info }));
+        const shown = head(rows, limit);
+        return text(render.renderSearch(shown, {
+          ...meta, query: p.query, more: rows.length > limit, ...info, stale: staleOf(context, status, shown.map((row) => row.path)),
+        }));
       }
       case 'symbol': {
         const result = queries.symbol(db, { name: p.name, path: file, qual: undefined });
         const body = p.body && result?.symbol ? readBody(context.root, result.symbol) : null;
-        return text(render.renderSymbol(result, { ...meta, name: p.name, file, body }));
+        const mentioned = result
+          ? [result.symbol?.path, ...(result.callers ?? []).map((row) => row.path), ...(result.callees ?? []).map((row) => row.path)]
+          : [];
+        return text(render.renderSymbol(result, { ...meta, name: p.name, file, body, stale: staleOf(context, status, mentioned) }));
       }
       case 'callers':
       case 'callees': {
         const rows = queries[operation](db, { name: p.name, path: file, limit: limit + 1 });
         const shown = head(rows, limit);
-        const out = { ...meta, name: p.name, file, more: rows.length > limit };
+        const out = { ...meta, name: p.name, file, more: rows.length > limit, stale: staleOf(context, status, shown.map((row) => row.path)) };
         return text(operation === 'callers' ? render.renderCallers(shown, out) : render.renderCallees(shown, out));
       }
       case 'impact': {
@@ -449,13 +501,30 @@ async function lookupTool(p, context) {
         return text(
           render.renderImpact(
             { ...result, nodes: shown },
-            { ...meta, name: p.name, file, depth, more: nodes.length > limit },
+            { ...meta, name: p.name, file, depth, more: nodes.length > limit, stale: staleOf(context, status, shown.map((node) => node.path)) },
           ),
         );
       }
       case 'outline': {
         const rows = queries.outline(db, { path: file });
-        return text(render.renderOutline(rows, { ...meta, file }));
+        return text(render.renderOutline(rows, { ...meta, file, stale: staleOf(context, status, [file]) }));
+      }
+      case 'cycles': {
+        // `limit` is the number of cycles; the query reports `total`, so the renderer can show
+        // "(N of M shown)" without asking for one more.
+        return text(render.renderCycles(queries.importCycles(db, { limit }), meta));
+      }
+      case 'affected': {
+        const depth = p.depth ?? AFFECTED_DEPTH_DEFAULT;
+        // One more test file than asked for, the same probe the other row lists use.
+        const result = queries.affectedTests(db, { files: affectedFiles, depth, limit: limit + 1 });
+        const shown = head(result.tests, limit);
+        return text(
+          render.renderAffected(
+            { ...result, tests: shown },
+            { ...meta, files: affectedFiles, depth, more: result.tests.length > limit },
+          ),
+        );
       }
       default:
         throw invalid('codegraph_lookup', 'operation', `must be one of ${OPERATIONS.join(', ')}`, p.operation);

@@ -302,6 +302,83 @@ describe('impact', () => {
   });
 });
 
+// The tier of a file (source, tests and scripts, generated) orders every relation list before
+// the limit cuts rows, so a cut row is never the source one (CONTRACTS.md §8).
+describe('file tiers in the relation lists', () => {
+  const meta = (path) => ({ path, lang: 'typescript', hash: path, mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+  const def = (name, line) => ({ kind: 'function', name, qual: name, startLine: line, endLine: line + 2, startCol: 0, parent: null });
+  const call = (name, line, symbol) => ({ name, kind: 'call', startLine: line, startCol: 2, endLine: line, symbol });
+  const linkTo = (db, fileId, targets) => {
+    const rows = refsInFile(db, fileId);
+    setRefResolution(db, rows.map((row) => ({ refId: row.id, targetId: targets[row.name], resolution: '=' })));
+  };
+
+  test('callers: source, then tests, then generated files, before the limit', () => {
+    const db = openDatabase(':memory:');
+    try {
+      const target = replaceFile(db, meta('src/def.ts'), { symbols: [def('target', 1)], refs: [] });
+      const targets = { target: target.symbolIds[0] };
+      for (const path of ['a.generated.ts', 'tests/a.test.ts', 'src/user.ts']) {
+        const caller = replaceFile(db, meta(path), { symbols: [], refs: [call('target', 1, null)] });
+        linkTo(db, caller.fileId, targets);
+      }
+      // "a.generated.ts" sorts first by path and is listed last; the test file outranks it too.
+      assert.deepEqual(callers(db, { name: 'target' }).map((row) => row.path), ['src/user.ts', 'tests/a.test.ts', 'a.generated.ts']);
+      assert.deepEqual(symbol(db, { name: 'target' }).callers.map((row) => row.path), ['src/user.ts', 'tests/a.test.ts', 'a.generated.ts']);
+      // The cut happens after the tier: one row is the source caller.
+      assert.deepEqual(callers(db, { name: 'target', limit: 1 }).map((row) => row.path), ['src/user.ts']);
+    } finally {
+      db.close();
+    }
+  });
+
+  test('callees: the tier of the target file, then the existing count and name order', () => {
+    const db = openDatabase(':memory:');
+    try {
+      const targets = {
+        genTarget: replaceFile(db, meta('a.gen.ts'), { symbols: [def('genTarget', 1)], refs: [] }).symbolIds[0],
+        testTarget: replaceFile(db, meta('tests/t.ts'), { symbols: [def('testTarget', 1)], refs: [] }).symbolIds[0],
+        srcTarget: replaceFile(db, meta('src/lib.ts'), { symbols: [def('srcTarget', 1)], refs: [] }).symbolIds[0],
+      };
+      // Name order would put genTarget first; the tier puts the source target first.
+      const caller = replaceFile(db, meta('src/main.ts'), {
+        symbols: [def('caller', 1)],
+        refs: [call('genTarget', 2, 0), call('testTarget', 3, 0), call('srcTarget', 4, 0)],
+      });
+      linkTo(db, caller.fileId, targets);
+      assert.deepEqual(callees(db, { name: 'caller' }).map((row) => row.path), ['src/lib.ts', 'tests/t.ts', 'a.gen.ts']);
+      assert.deepEqual(callees(db, { name: 'caller', limit: 1 }).map((row) => row.name), ['srcTarget']);
+      assert.deepEqual(symbol(db, { name: 'caller' }).callees.map((row) => row.name), ['srcTarget', 'testTarget', 'genTarget']);
+    } finally {
+      db.close();
+    }
+  });
+
+  test('impact: the tier comes before depth and path; the files list stays alphabetical', () => {
+    const db = openDatabase(':memory:');
+    try {
+      const core = replaceFile(db, meta('src/core.ts'), { symbols: [def('core', 1)], refs: [] });
+      const mid = replaceFile(db, meta('src/mid.ts'), { symbols: [def('mid', 1)], refs: [call('core', 2, 0)] });
+      const deep = replaceFile(db, meta('src/deep.ts'), { symbols: [def('deep', 1)], refs: [call('mid', 2, 0)] });
+      const gen = replaceFile(db, meta('a.gen.ts'), { symbols: [def('genCaller', 1)], refs: [call('core', 2, 0)] });
+      linkTo(db, mid.fileId, { core: core.symbolIds[0] });
+      linkTo(db, deep.fileId, { mid: mid.symbolIds[0] });
+      linkTo(db, gen.fileId, { core: core.symbolIds[0] });
+      const result = impact(db, { name: 'core', depth: 2 });
+      // The generated dependent is at depth 1; the source one at depth 2 still comes first.
+      assert.deepEqual(result.nodes.map((node) => `${node.name}@${node.path}@${node.depth}`), [
+        'mid@src/mid.ts@1',
+        'deep@src/deep.ts@2',
+        'genCaller@a.gen.ts@1',
+      ]);
+      assert.deepEqual(result.files, ['a.gen.ts', 'src/deep.ts', 'src/mid.ts']);
+      assert.equal(result.truncated, false);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe('outline', () => {
   test('symbols of one file in source order with numeric ranges', () => {
     const rows = outline(db, { path: UTIL });

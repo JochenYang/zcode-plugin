@@ -11,6 +11,7 @@
 // format; change the tests together with this file.
 import { capLines, estimateTokens, fitLines } from './budget.mjs';
 import { DEFAULT_CONFIG } from '../config.mjs';
+import { pathRank } from '../store/repo.mjs';
 
 const KIND_WIDTH = 9;
 const SIGNATURE_WIDTH = 80;
@@ -87,6 +88,13 @@ const OUTLINE_EMPTY_HINT =
 const MAP_EMPTY_HINT = 'hint: no symbols in scope; pass a path or check codegraph_status.';
 const MAP_TRUNCATED_HINT = 'hint: raise budget (max 4000) or pass a narrower path to see more.';
 const IMPACT_TRUNCATED_HINT = 'hint: impact was cut; raise depth (max 6) or limit (max 200) to see more.';
+// operation=cycles / operation=affected (CONTRACTS.md §11).
+const CYCLE_HINT = 'hint: cycles follow resolved imports only; dynamic imports and unresolved specifiers are not in the graph.';
+const CYCLE_CAP_HINT = 'hint: the import graph was cut at the size one walk reads; cycles beyond the cut are not listed.';
+const CYCLE_TRUNC_HINT = 'hint: raise limit (max 200) for a longer list, or budget when rows were cut for space.';
+const AFFECTED_HINT = "hint: candidates from imports and resolved references; run the project's own test selection for the final list.";
+const AFFECTED_TRUNC_HINT = 'hint: raise limit (max 200) to see more test files.';
+const affectedCutHint = (depth) => `hint: the walk stopped at depth ${count(depth)} or the file cap; some dependents may not be listed.`;
 const EMPTY_INDEX_HINT =
   'hint: use Read/Grep until the project is indexed; auto-index is skipped when autoIndex is off, the root is unsafe ' +
   '(home or drive root) or the supported-file count is outside minFilesToAutoIndex..maxFiles (codegraph.json).';
@@ -171,6 +179,19 @@ function ageText(ms, now) {
 
 const staleText = (n) => `stale: ${n} files changed since index`;
 
+// The per-file staleness line (CONTRACTS.md §11): the files a result names that changed since
+// the index was written. `meta.stale` is `{ paths, more }`, the paths cut to three by the tool
+// layer; `more` counts the rest. The header already carries the total count, so this line only
+// says which files to read again.
+function staleBanner(meta) {
+  const stale = meta.stale;
+  if (!stale || !Array.isArray(stale.paths)) return null;
+  const paths = stale.paths.map((p) => clip(oneLine(p), 100)).filter(Boolean);
+  if (paths.length === 0) return null;
+  const rest = count(stale.more);
+  return `stale: ${paths.join(', ')}${rest > 0 ? ` (+${rest} more)` : ''} changed since index — Read them for the current content`;
+}
+
 function progressText(status) {
   const total = count(status.filesTotal);
   const done = count(status.filesDone);
@@ -190,7 +211,9 @@ function progressText(status) {
 export function freshnessLabel(status, { now = Date.now() } = {}) {
   if (!status) return 'index status unknown';
   const state = oneLine(status.state) || 'empty';
-  const stale = count(status.stale ?? status.dirty);
+  // The live count first: the stored one is written when a build finishes and stays at 0 while
+  // files are waiting for the next sync, which is exactly when the model needs the number.
+  const stale = count(status.dirty ?? status.stale);
   if (state === 'building') return [stale > 0 ? staleText(stale) : null, progressText(status)].filter(Boolean).join(' · ');
   if (state === 'ready') {
     return [
@@ -251,11 +274,15 @@ function compareText(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+// File tier first (source, tests and scripts, generated) so a list that arrives cut or unsorted
+// still shows source rows first, as the queries order them; then path, line and name.
 function sortRows(rows, fallbackPath = '') {
   const pathOf = (row) => String(row.path ?? fallbackPath);
   return rows
     .map((row, i) => ({ row, i }))
     .sort((a, b) => {
+      const byRank = pathRank(pathOf(a.row)) - pathRank(pathOf(b.row));
+      if (byRank) return byRank;
       const byPath = compareText(pathOf(a.row), pathOf(b.row));
       if (byPath) return byPath;
       const la = count(a.row.startLine ?? a.row.start_line);
@@ -349,11 +376,14 @@ function formatImports(imports) {
  * (the legend only accompanies markers that are visible); the budget is
  * reserved with the full row set, which is the worst case.
  */
-function finish({ header, rows, footer = [], budget, more = false, body = null, truncHint = TRUNCATION_HINT }) {
+function finish({ header, rows, footer = [], budget, more = false, body = null, truncHint = TRUNCATION_HINT, banner = null, total = null }) {
   const maxTokens = budget ?? DEFAULT_CONFIG.defaultBudgetTokens.lookup;
   const entries = rows.map((r) => (typeof r === 'string' ? { line: r, marker: false } : r));
   const rowLines = entries.map((e) => e.line);
   const footerFor = (shown) => (typeof footer === 'function' ? footer(shown) : footer).filter(Boolean);
+  // The staleness line sits between the header and the rows, so its room is taken off the top
+  // once; it is never dropped (the model has to see it to re-read the file).
+  const bannerRoom = banner ? estimateTokens(banner) + 1 : 0;
   // The body's Read line is its smallest representation, so room for it is
   // reserved before rows are fitted; only the inline block competes for the rest.
   const bodyReserve = body && body.fallback ? estimateTokens(body.fallback) + 1 : 0;
@@ -361,7 +391,7 @@ function finish({ header, rows, footer = [], budget, more = false, body = null, 
   // take is dropped, last one first.
   const footersFor = (shown) => {
     const lines = footerFor(shown);
-    const roomLeft = () => maxTokens - estimateTokens(header) - bodyReserve - (lines.length ? estimateTokens(lines.join('\n')) + 1 : 0);
+    const roomLeft = () => maxTokens - estimateTokens(header) - bannerRoom - bodyReserve - (lines.length ? estimateTokens(lines.join('\n')) + 1 : 0);
     while (roomLeft() < FOOTER_MIN_ROOM) {
       const at = lines.findLastIndex(isHintLine);
       if (at < 0) break;
@@ -370,7 +400,7 @@ function finish({ header, rows, footer = [], budget, more = false, body = null, 
     return lines;
   };
   const footerLines = footersFor(entries);
-  const room = maxTokens - estimateTokens(header) - (footerLines.length ? estimateTokens(footerLines.join('\n')) + 1 : 0) - bodyReserve;
+  const room = maxTokens - estimateTokens(header) - bannerRoom - (footerLines.length ? estimateTokens(footerLines.join('\n')) + 1 : 0) - bodyReserve;
   let fit = fitLines(rowLines, { maxTokens: room });
   let trunc = null;
   let hint = null;
@@ -378,10 +408,10 @@ function finish({ header, rows, footer = [], budget, more = false, body = null, 
     // Reserve the widest truncation line the counts can produce plus the hint.
     const reserve = estimateTokens('(9999 of 9999+ shown)') + 1 + estimateTokens(truncHint) + 1;
     fit = fitLines(rowLines, { maxTokens: room - reserve });
-    trunc = more && !fit.truncated ? `(${fit.lines.length} of ${fit.lines.length + 1}+ shown)` : `(${fit.lines.length} of ${entries.length} shown)`;
+    trunc = more && !fit.truncated ? `(${fit.lines.length} of ${total ?? fit.lines.length + 1}${total === null ? '+' : ''} shown)` : `(${fit.lines.length} of ${total ?? entries.length} shown)`;
     hint = truncHint;
   }
-  const lines = [header, ...fit.lines, ...footersFor(entries.slice(0, fit.lines.length))];
+  const lines = [header, ...(banner ? [banner] : []), ...fit.lines, ...footersFor(entries.slice(0, fit.lines.length))];
   // Everything except the body is fixed now; the body only goes inline when
   // the whole result (hint and truncation line included) still fits.
   const prefix = [...lines];
@@ -586,6 +616,7 @@ export function renderSearch(rows, meta = {}) {
     footer: (shown) => [legendIfNeeded(shown), hint],
     budget: meta.budget,
     more: meta.more === true,
+    banner: staleBanner(meta),
   });
 }
 
@@ -631,6 +662,7 @@ export function renderSymbol(result, meta = {}) {
     footer: (shown) => [legendIfNeeded(shown)],
     budget: meta.budget,
     body: meta.body ? bodySection(meta.body, { path: file, start }) : null,
+    banner: staleBanner(meta),
   });
 }
 
@@ -657,6 +689,7 @@ function renderRelations(op, rows, meta) {
     footer: (shown) => [legendIfNeeded(shown), list.length === 0 ? RELATIONS_EMPTY_HINT : null],
     budget: meta.budget,
     more: meta.more === true,
+    banner: staleBanner(meta),
   });
 }
 
@@ -687,6 +720,82 @@ export function renderImpact(result, meta = {}) {
     budget: meta.budget,
     more,
     truncHint: IMPACT_TRUNCATED_HINT,
+    banner: staleBanner(meta),
+  });
+}
+
+/** Paths shown in one cycle row; the rest of a long cycle is counted, so no row outgrows the budget. */
+const CYCLE_SHOWN = 20;
+
+// The files a cycle holds: a walk repeats its first path to close, and a dense component
+// repeats more, so the list length overcounts.
+function cycleFiles(cycle) {
+  return cycle.walked === false ? cycle.paths.length : new Set(cycle.paths).size;
+}
+
+// One cycle row: the walk with its arrows when the component was walked, the sorted files when
+// it was only listed (CONTRACTS.md §11).
+function cycleLine(cycle, index) {
+  const n = cycleFiles(cycle);
+  if (cycle.walked === false) return `cycle ${index} (${n} files, listed not walked): ${listOrClamp(cycle.paths, CYCLE_SHOWN)}`;
+  const paths = cycle.paths;
+  const walk = paths.length <= CYCLE_SHOWN + 1
+    ? paths.join(' → ')
+    : `${paths.slice(0, CYCLE_SHOWN).join(' → ')} … (+${paths.length - 1 - CYCLE_SHOWN} more) → ${paths.at(-1)}`;
+  return `cycle ${index} (${n} files): ${walk}`;
+}
+
+/**
+ * operation=cycles (CONTRACTS.md §11). `result`: `{ cycles, total, truncated }`; each cycle is
+ * `{ paths, walked }`: a closed walk whose last entry repeats the first, or (not walked) the
+ * sorted files of a component too big to walk.
+ */
+export function renderCycles(result, meta = {}) {
+  const cycles = Array.isArray(result?.cycles)
+    ? result.cycles.filter((cycle) => cycle && Array.isArray(cycle.paths) && cycle.paths.length > 0)
+    : [];
+  const total = count(result?.total ?? cycles.length);
+  const files = cycles.reduce((sum, cycle) => sum + cycleFiles(cycle), 0);
+  const summary = cycles.length === 0
+    ? 'no import cycles'
+    : `${cycles.length} import ${plural(cycles.length, 'cycle')} in ${files} ${plural(files, 'file')}`;
+  const rows = cycles.map((cycle, i) => cycleLine(cycle, i + 1));
+  const cut = total > cycles.length;
+  return finish({
+    header: headerLine('cycles', '', summary, meta),
+    rows,
+    footer: [CYCLE_HINT, result?.truncated === true && !cut ? CYCLE_CAP_HINT : null],
+    budget: meta.budget,
+    more: cut,
+    total: cut ? total : null,
+    truncHint: CYCLE_TRUNC_HINT,
+  });
+}
+
+/** Input files the `affected` header names; the model sent the list, so the header only confirms it. */
+const AFFECTED_FILES_SHOWN = 5;
+
+/**
+ * operation=affected (CONTRACTS.md §11). `result`: `{ tests, otherFiles, scanned, truncated,
+ * unknown }`. Rows are one test file per line; `unknown` is a footer line (not a hint), so a
+ * tight budget cuts rows before it. The header names at most `AFFECTED_FILES_SHOWN` of the input
+ * files and cuts each unknown path to 100 characters: it is never dropped, so it must stay small.
+ */
+export function renderAffected(result, meta = {}) {
+  const tests = Array.isArray(result?.tests) ? result.tests : [];
+  const files = Array.isArray(meta.files) ? meta.files : [];
+  const scanned = count(result?.scanned);
+  const unknown = Array.isArray(result?.unknown) ? result.unknown.map((p) => clip(oneLine(p), 100)).filter(Boolean) : [];
+  const n = tests.length;
+  const who = n === 0 ? 'no test files reach them' : `${n} ${plural(n, 'test file')} ${n === 1 ? 'reaches' : 'reach'} them`;
+  const rows = tests.map((path) => oneLine(path));
+  return finish({
+    header: headerLine('affected', listOrClamp(files, AFFECTED_FILES_SHOWN), `${who} (${scanned} ${plural(scanned, 'file')} scanned)`, meta),
+    rows,
+    footer: [unknown.length > 0 ? `not in the index: ${listOrClamp(unknown, 5)}` : null, AFFECTED_HINT, result?.truncated === true ? affectedCutHint(meta.depth) : null],
+    budget: meta.budget,
+    more: meta.more === true,
+    truncHint: AFFECTED_TRUNC_HINT,
   });
 }
 
@@ -701,6 +810,7 @@ export function renderOutline(rows, meta = {}) {
     footer: [list.length === 0 ? OUTLINE_EMPTY_HINT : null],
     budget: meta.budget,
     more: meta.more === true,
+    banner: staleBanner(meta),
   });
 }
 

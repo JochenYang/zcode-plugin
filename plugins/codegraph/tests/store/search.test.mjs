@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDatabase, close } from '../../src/store/db.mjs';
-import { REF_GROUPS_MAX, REF_ROWS_MAX, SECONDARY_PATH_PARTS, identifierSegments, isSecondaryPath, replaceAllForFile, searchRefs, searchSymbols, searchSymbolsDetailed, upsertFile } from '../../src/store/repo.mjs';
+import { GENERATED_PATH_PARTS, REF_GROUPS_MAX, REF_ROWS_MAX, SECONDARY_PATH_PARTS, TEST_PATH_PARTS, identifierSegments, isGeneratedPath, isSecondaryPath, isTestPath, pathRank, replaceAllForFile, searchRefs, searchSymbols, searchSymbolsDetailed, upsertFile } from '../../src/store/repo.mjs';
 
 const open = [];
 
@@ -400,6 +400,75 @@ describe('searchSymbolsDetailed', () => {
     }
   });
 
+  test('every entry of the generated-file list recognises a path, and the list has its own tier', () => {
+    // One path per entry, in the shape each generator writes it. Like SECONDARY, a mistyped
+    // entry matches nothing, so each has to be seen here.
+    const examples = {
+      '/generated/': 'src/generated/api.ts',
+      '/__generated__/': 'src/__generated__/api.ts',
+      '/codegen/': 'src/codegen/api.ts',
+      '.generated.': 'src/api.generated.ts',
+      '.gen.ts': 'src/api.gen.ts',
+      '.gen.js': 'src/api.gen.js',
+      '.g.dart': 'lib/api.g.dart',
+      '.pb.go': 'proto/api.pb.go',
+      '.pb.ts': 'proto/api.pb.ts',
+      '.pb.js': 'proto/api.pb.js',
+      '.pb.cc': 'proto/api.pb.cc',
+      '.pb.h': 'proto/api.pb.h',
+      '.min.js': 'public/app.min.js',
+    };
+    assert.deepEqual(Object.keys(examples).sort(), [...GENERATED_PATH_PARTS].sort(), 'the list and its examples have the same entries');
+    for (const [part, path] of Object.entries(examples)) {
+      assert.equal(isGeneratedPath(path), true, part);
+      assert.equal(pathRank(path), 2, part);
+      if (part.startsWith('/')) assert.equal(isGeneratedPath(`apps/web/${path}`), true, `${part} one level down`);
+    }
+    // Case does not matter; a generated file inside a tests/ directory is still generated.
+    assert.equal(isGeneratedPath('SRC/GENERATED/Api.TS'), true);
+    assert.equal(pathRank('tests/fixtures/api.pb.ts'), 2);
+    // Look-alikes stay where they are: "generated.ts" needs the directory, a dot must precede
+    // the marker, and the source, test and null tiers are unchanged.
+    for (const path of ['src/generated.ts', 'src/mygenerated/a.ts', 'src/agen.ts', 'src/latest.min.css', 'src/a.ts']) {
+      assert.equal(isGeneratedPath(path), false, path);
+    }
+    for (const path of ['src/a.ts', null, '']) assert.equal(pathRank(path), 0, String(path));
+    for (const path of ['tests/a.ts', 'scripts/build.mjs', 'node_modules/pkg/index.js']) assert.equal(pathRank(path), 1, path);
+    assert.equal(isSecondaryPath('src/generated/api.ts'), false, 'the two lists stay separate');
+  });
+
+  test('every entry of the test-file list recognises a path and is part of the secondary list', () => {
+    // `affected` lists tests only, so its list is a subset of SECONDARY: scripts and example
+    // directories sort with tests but nobody runs them after a change. One path per entry.
+    const examples = {
+      '/__tests__/': '__tests__/a.ts',
+      '/tests/': 'tests/a.ts',
+      '/test/': 'test/a.ts',
+      '/spec/': 'spec/a.rb',
+      '/specs/': 'specs/a.rb',
+      '/e2e/': 'e2e/flow.ts',
+      '/__mocks__/': 'src/__mocks__/a.ts',
+      '/__snapshots__/': 'src/__snapshots__/a.ts.snap',
+      '.test.': 'src/a.test.ts',
+      '.spec.': 'src/a.spec.ts',
+      '_test.go': 'pkg/auth_test.go',
+      '/testdata/': 'cmd/testdata/input.json',
+      '/tests.py': 'app/tests.py',
+      '/test_': 'app/test_views.py',
+      'tests.cs': 'src/NodeTests.cs',
+    };
+    assert.deepEqual(Object.keys(examples).sort(), [...TEST_PATH_PARTS].sort(), 'the list and its examples have the same entries');
+    for (const [part, path] of Object.entries(examples)) {
+      assert.equal(isTestPath(path), true, part);
+      assert.equal(SECONDARY_PATH_PARTS.includes(part), true, `${part} is also a test-file convention`);
+      if (part.startsWith('/')) assert.equal(isTestPath(`apps/web/${path}`), true, `${part} one level down`);
+    }
+    // Exercises that are not tests, and look-alikes, are not listed by `affected`.
+    for (const path of ['scripts/build.mjs', 'examples/demo.ts', 'benchmarks/run.ts', 'src/latest_metrics.ts', 'src/units.py', null, '']) {
+      assert.equal(isTestPath(path), false, String(path));
+    }
+  });
+
   test('inside one match tier source files come before test and script files, wherever they sit', () => {
     const db = project();
     // Each pair defines one name twice: in a source file and in a test or script file. The
@@ -441,6 +510,34 @@ describe('searchSymbolsDetailed', () => {
     for (const [i, path] of lookAlikes.entries()) {
       assert.deepEqual(order(searchSymbols(db, `plain${i}`)), [`plain${i}@${path}`, `plain${i}@tests/plain${i}.test.ts`], path);
     }
+  });
+
+  test('generated files come after tests, and the SQL cut keeps source over both', () => {
+    const db = project();
+    // resolveComposer is defined in src/auth.ts (source) and tests/auth.test.ts (test).
+    add(db, 'src/generated/api.ts', [['function', 'resolveComposer']]);
+    add(db, 'a.spec.gen.ts', [['function', 'parseCookie']]);
+    assert.deepEqual(order(searchSymbols(db, 'resolveComposer')), [
+      'resolveComposer@src/auth.ts',
+      'resolveComposer@tests/auth.test.ts',
+      'resolveComposer@src/generated/api.ts',
+    ]);
+    // The path decides nothing before the tier: a generated file whose path sorts first stays last.
+    assert.deepEqual(order(searchSymbols(db, 'parseCookie')), ['parseCookie@src/auth.ts', 'parseCookie@a.spec.gen.ts']);
+    // Behind a crowd of same-named generated rows, a limit of one still returns the source
+    // definition. The source row is written last on purpose: without the tier in the SQL
+    // ORDER BY the rows tie on bm25, SQLite keeps the crowd in rowid order, and the cut drops
+    // the source.
+    const cut = tmpDb().db;
+    for (let i = 0; i < 60; i += 1) add(cut, `src/generated/crowd${i}.ts`, [['function', 'tierTarget']]);
+    for (let i = 0; i < 5; i += 1) add(cut, `tests/crowd${i}.test.ts`, [['function', 'tierTarget']]);
+    add(cut, 'src/tier.ts', [['function', 'tierTarget']]);
+    assert.deepEqual(order(searchSymbols(cut, 'tierTarget', { limit: 1 })), ['tierTarget@src/tier.ts']);
+    // A relaxed search (no name holds every word) applies the same tier after its word score.
+    assert.deepEqual(order(searchSymbols(db, 'resolve composer', { limit: 2 })), [
+      'resolveComposer@src/auth.ts',
+      'resolveComposer@tests/auth.test.ts',
+    ]);
   });
 
   test('an exact name comes first wherever it is defined; the rest: source before tests, starts-with before looser', () => {
@@ -560,6 +657,20 @@ describe('searchRefs', () => {
     const id = upsertFile(db, { path: 'a.spec.ts', lang: 'ts', hash: 'spec', mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
     replaceAllForFile(db, id, { symbols: [], refs: [{ name: 'readFile', kind: 'call', startLine: 1, startCol: 2, endLine: 1, symbol: null }] });
     assert.deepEqual(searchRefs(db, 'readFile').rows.map((row) => row.path), ['src/a.ts', 'a.spec.ts']);
+  });
+
+  test('the tiers of a place: source, then tests, then generated files', () => {
+    const db = project();
+    const add = (path) => {
+      const id = upsertFile(db, { path, lang: 'ts', hash: path, mtimeMs: 1, size: 1, parseOk: true, errorNodes: 0, indexedAt: 1 });
+      replaceAllForFile(db, id, { symbols: [], refs: [{ name: 'readFile', kind: 'call', startLine: 1, startCol: 2, endLine: 1, symbol: null }] });
+    };
+    // The generated path sorts first, the test file second: only the tier decides.
+    add('a.generated.ts');
+    add('z.spec.ts');
+    assert.deepEqual(searchRefs(db, 'readFile').rows.map((row) => row.path), ['src/a.ts', 'z.spec.ts', 'a.generated.ts']);
+    // The order did not change what is counted.
+    assert.deepEqual(totals(searchRefs(db, 'readFile')), { uses: 4, files: 3, names: ['readFile'], capped: false });
   });
 
   test('limit keeps the first rows; the totals still describe every place', () => {
