@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart hook: keep ~/.zcode/agents in sync with the bundled definitions.
 #
-# ZCode only discovers subagents under ~/.zcode/agents and <ws>/.agents/agents —
+# ZCode only discovers subagents under ~/.zcode/agents and <ws>/.zcode/agents —
 # never inside a plugin — so the definitions have to be copied out. This runs at
 # every session start but writes only when something actually differs, and it
 # never clobbers a file the user has edited by hand.

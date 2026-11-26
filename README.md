@@ -20,7 +20,7 @@
 | 插件 | 版本 | 说明 |
 |---|---|---|
 | `plugins/git-conventions` | 0.1.0 | 提交信息规范钩子：`PreToolUse` 在 git 运行前校验 `git commit` 写下的提交信息（标题格式与 50 字符上限、正文 `-` 列表与末尾 `Verified:` 行），不合规直接拒绝 |
-| `plugins/dev-workflow` | 0.7.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 22 个专项子智能体自动安装到 `~/.zcode/agents` |
+| `plugins/dev-workflow` | 0.8.0 | 日常开发流程：7 个 skill + `.devflow` / `docs/plans` 计划落盘 + 多轮审查收敛协议 + `/handoff` 会话契约 + `SessionStart` 仓库快照 + 22 个专项子智能体自动安装到 `~/.zcode/agents`（它们用 codegraph 定位代码，需要同时启用 `codegraph`） |
 | `plugins/guardrails` | 0.2.1 | 确定性安全护栏：`PreToolUse` 硬拦不可逆命令与硬编码密钥，发布/部署/迁移转为确认弹窗（完全访问下不弹，硬拦不变） |
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
@@ -35,7 +35,7 @@
 1. 打开 ZCode **设置 → 插件**，右上角「创建/添加」→ **添加插件市场**，选 **GitHub 源**
 2. 填仓库：`JochenYang/zcode-plugin`（公开仓库，无需额外配置）
 3. 在列表中按需**启用** `git-conventions` / `dev-workflow` / `guardrails`
-4. `dev-workflow` 启用后，下次会话启动时 22 个子智能体会自动安装到 `~/.zcode/agents`
+4. `dev-workflow` 启用后，下次会话启动时 22 个子智能体会自动安装到 `~/.zcode/agents`；它们依赖 `codegraph` 插件，要一起启用
 
 **方式二：本地开发目录**
 
@@ -78,6 +78,7 @@
 - `/handoff [save|show|clear]` — 把**会话级**契约落盘到 `.zcode/handoff.md`，跨压缩与跨会话保留目标和验收标准；任务级验收依据由 `change-plan` 写在项目内 `.devflow/`，两者并存时以任务级计划为准
 - `SessionStart` 钩子（`startup` / `clear` / `compact`）自动注入分支、未提交文件数、最近 3 条提交、`.devflow/` 下活跃计划与 `.zcode/handoff.md` 摘要，省掉每次会话开头的多次 git 调用
 - `startup` 时另一条钩子自动同步 22 个专项子智能体到 `~/.zcode/agents`（ZCode 不加载插件目录内的 agent，必须复制出来；只装缺失、刷新它自己写过的文件、删掉它写过而插件已不再提供的文件，用户手改过的跳过）。子智能体的 `tools:` 是字面白名单——写错工具名等于没有这项能力；列了 `WebFetch` 的 agent 会连带获得宿主附带的只读 `mcp__web_reader__webReader`。子智能体的 `description` 是主模型判断何时派它的依据——列表里除了它只有名字和工具，Kimi 那套单独的触发字段在 ZCode 不生效——按「角色 + 触发语 + 与相近 agent 的分流 + 能力边界」写；内置的 `Explore` 与 `general-purpose` 不重复提供，代码侦察直接用内置 `Explore`
+- 22 个子智能体都带 codegraph 的两个工具（`codegraph_lookup`、`codegraph_map`）来定位代码与调用关系，正文里也写了先 codegraph 再 `grep`。**`tools:` 里出现 MCP 工具名就是硬性要求**：codegraph 没装、被禁用或它的服务没连上时，这 22 个子智能体都派不出去（宿主报 `Required MCP tool is not available in the parent MCP snapshot`），所以 0.8.0 起 dev-workflow 依赖 codegraph。要卸载 codegraph，先把 dev-workflow 回到 0.7.0，或删掉 22 个文件里 `tools:` 下的那两行
 - `/agents-sync [diff|export|install]` — 安装已是自动的，这里只用于：`diff` 对比本地与插件资产、`export` 把本地手改的 agent 推回仓库、`install` 强制覆盖重装
 
 核心机制：`change-plan` 把计划与验收标准落盘为 `.devflow/<slug>.md`（有回归面时加 `docs/plans/<slug>.md`），下游 5 个 skill 与全部子智能体都按它对照；持久计划用 Work items 状态流转与 Phases Gate 管进度，Gate 行只能由 `test-changed` 在跑完验证后写入。5 个下游 skill（`test-changed` / `review` / `commit-review` / `release-check` / `doc-gen`）结案前各做一次自查：命令绿了不等于验收满足、看起来合理不算证据、用户说测过了只是口述——任一条不满足，`commit-review` 不得 READY、`release-check` 不得 GO。

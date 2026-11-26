@@ -7,7 +7,7 @@ Inspect or export the bundled subagent definitions.
 
 **Installation is already automatic.** A `SessionStart` hook (`hooks/sync-agents.sh`) copies `${ZCODE_PLUGIN_ROOT}/assets/agents/*.md` into `~/.zcode/agents/` on every session start — it installs missing files, refreshes files it previously wrote, deletes files it previously wrote that the plugin no longer bundles, and skips any file the user has edited by hand. This command exists for the cases the hook deliberately does not handle.
 
-Why the copy is needed at all: ZCode only discovers subagents under `~/.zcode/agents` and `<workspace>/.agents/agents`. A plugin directory is never a discovery root, and declaring `agents` in `plugin.json` only produces a `plugin_unsupported_component` warning.
+Why the copy is needed at all: ZCode only discovers subagents under `~/.zcode/agents` and `<workspace>/.zcode/agents` (read from the host's bootstrap code on 2026-11-26; `<workspace>/.agents/agents`, the path other agents use, is not read). A plugin directory is never a discovery root, and declaring `agents` in `plugin.json` only produces a `plugin_unsupported_component` warning.
 
 Mode comes from `$1`; default to `diff` when it is absent. Extra arguments name specific agents (without `.md`) and restrict the operation to those.
 
@@ -33,3 +33,5 @@ Force what the hook does, for when it was skipped: same classification as `diff`
 ## Frontmatter rules
 
 ZCode reads only these keys: `name`, `description`, `model`, `thoughtLevel`, `color`, `permissionMode`, `maxTurns`, `memory`, `tools`, `disallowedTools`, `skills`, `background`, `injectAgentsMd`, `mcpServers`. `name` and `description` are required and the body becomes the system prompt. `whenToUse` is **not** recognised — trigger wording belongs in `description`, which is what the model matches against. Keep a description under 200 characters, and use backticks inside it only for the names of agents it hands off to: `scripts/check-consistency.py` verifies that every backticked name is a real agent and that the name matches the file name. Report any file that violates this rather than copying it silently.
+
+An `mcp__…` name in `tools:` is a hard requirement, not a preference: the host refuses to dispatch the agent unless the parent session's MCP snapshot holds that tool (`Required MCP tool is not available in the parent MCP snapshot`), and there is no optional spelling — a server wildcard (`mcp__x__*`) or an `mcpServers` entry is required just the same. All 22 agents list the two codegraph tools, which is why dev-workflow needs the codegraph plugin. To drop that dependency, remove the two `mcp__plugin_codegraph_codegraph__…` lines from every agent and the codegraph bullet from the shared constraints; the tool sections of `reviewer`, `guard`, `detective` and `perf` name codegraph too.
