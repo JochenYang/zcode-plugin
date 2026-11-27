@@ -160,14 +160,15 @@ export async function activate(ctx, { buildingRefreshMs = BUILDING_REFRESH_MS, i
 
   // The project keys of every open session: their indexes are never removed from the view. A
   // workspace that did not answer in time has no key here, so its index is then like any other
-  // and is rebuilt if it is removed.
+  // and is rebuilt if it is removed. A folder that is never indexed (a home or drive root, a
+  // workspace ZCode made itself) has no index to protect.
   async function openKeys() {
     const keys = new Set();
     for (const workspace of state.sessions.values()) {
       if ((await probe(workspace, pathTimeoutMs)) === 'unknown') continue;
       try {
-        const { root, unsafe } = resolveProjectRoot(workspace);
-        if (!unsafe) keys.add(projectKey(root));
+        const { root, unsafe, hostWorkspace } = resolveProjectRoot(workspace);
+        if (!unsafe && !hostWorkspace) keys.add(projectKey(root));
       } catch {
         // a workspace that cannot be resolved has no index to protect
       }
@@ -200,8 +201,8 @@ export async function activate(ctx, { buildingRefreshMs = BUILDING_REFRESH_MS, i
       // just answered; one that did not gets no item this round.
       if (answers[index] !== 'unknown') {
         try {
-          const { root, unsafe } = resolveProjectRoot(workspace);
-          if (!unsafe) {
+          const { root, unsafe, hostWorkspace } = resolveProjectRoot(workspace);
+          if (!unsafe && !hostWorkspace) {
             const key = projectKey(root);
             const status = readStatusFile(path.join(data, 'indexes', key, 'status.json'));
             const off = (!status || status.state === 'empty') && loadProjectConfig(root, { stderr: quiet })?.autoIndex === false;

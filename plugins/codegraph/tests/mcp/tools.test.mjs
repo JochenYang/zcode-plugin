@@ -425,6 +425,122 @@ describe('codegraph_status', () => {
   });
 });
 
+// A folder that is never indexed — a home or drive root, or a workspace ZCode made for a session
+// without a folder — has no index and no entry in the store (src/mcp/context.mjs opens nothing
+// for it). Every tool says so in one line and touches no indexer; the store itself is still
+// listed and cleaned from such a session.
+describe('a folder that is never indexed', () => {
+  const HOST_HINT =
+    'hint: this is a workspace ZCode made for a session without a folder (under a .zcode/workspace directory); ' +
+    'it gets no index and no entry in the index store. Use Grep/Read here.';
+  const ROOT_HINT = 'hint: this folder is a home or drive root and is never indexed; use Grep/Read here.';
+  const refused = (extra) => ({
+    config: { ...DEFAULT_CONFIG },
+    hostWorkspace: false,
+    unsafe: false,
+    indexer: {
+      ensureFresh: () => {
+        throw new Error('the indexer must not be touched');
+      },
+      status: () => {
+        throw new Error('the indexer must not be touched');
+      },
+    },
+    db: null,
+    ...extra,
+  });
+
+  test('a workspace ZCode made itself', async () => {
+    const ctx = refused({ root: 'D:/zcode-cache/.zcode/workspace/draft-1', hostWorkspace: true });
+    for (const [name, args, head] of [
+      ['codegraph_status', {}, '# status'],
+      ['codegraph_status', { refresh: true }, '# status refresh=true'],
+      ['codegraph_lookup', { operation: 'search', query: 'parse' }, '# search parse'],
+      ['codegraph_lookup', { operation: 'outline', file: 'src/a.ts' }, '# outline src/a.ts'],
+      ['codegraph_lookup', { operation: 'affected', files: 'a.ts, ./b.ts, a.ts' }, '# affected a.ts, b.ts'],
+      ['codegraph_map', { path: 'src' }, '# map src'],
+      ['codegraph_map', {}, '# map'],
+    ]) {
+      const out = await call(ctx, name, args);
+      assert.equal(out.isError, undefined, name);
+      assert.equal(text(out), `${head} · not a project folder\n${HOST_HINT}`, `${name} ${JSON.stringify(args)}`);
+    }
+  });
+
+  test('a home or drive root', async () => {
+    const ctx = refused({ root: 'C:/Users/someone', unsafe: true });
+    assert.equal(text(await call(ctx, 'codegraph_status', {})), `# status · not indexed\n${ROOT_HINT}`);
+    assert.equal(text(await call(ctx, 'codegraph_status', { refresh: true })), `# status refresh=true · not indexed\n${ROOT_HINT}`);
+    assert.equal(text(await call(ctx, 'codegraph_lookup', { operation: 'symbol', name: 'x' })), `# symbol x · not indexed\n${ROOT_HINT}`);
+    assert.equal(text(await call(ctx, 'codegraph_map', {})), `# map · not indexed\n${ROOT_HINT}`);
+  });
+
+  test('the store is still managed from such a folder: listed on request, cleaned on request', async () => {
+    const now = Date.now();
+    const entries = [
+      { key: '1111111111111111', dir: 'store/1111111111111111', root: 'D:/gone/old', state: 'ready', files: 40, symbols: 90, bytes: 220 * 1024 * 1024, lastUsedAt: now - 200 * 86400000, inUse: false, orphan: true, notAProject: false },
+      // What an older version left for a workspace ZCode made: due whatever the limits say.
+      { key: '2222222222222222', dir: 'store/2222222222222222', root: 'D:/zcode-cache/.zcode/workspace/draft-9', state: 'empty', files: 0, symbols: 0, bytes: 206 * 1024, lastUsedAt: now - 3600000, inUse: false, orphan: false, notAProject: true },
+    ];
+    const removed = [];
+    const storage = {
+      indexesDir: () => 'store-data/indexes',
+      listIndexes: () => entries,
+      planSweep: (list, options) => planSweep(list, options),
+      removeListed: (entry) => {
+        removed.push(entry.key);
+        return true;
+      },
+    };
+    const ctx = refused({ root: 'D:/zcode-cache/.zcode/workspace/draft-1', hostWorkspace: true, storage });
+    const listed = text(await call(ctx, 'codegraph_status', { storage: true })).split('\n');
+    assert.equal(listed[0], '# status · not a project folder');
+    assert.deepEqual(listed.slice(1, -1), [
+      'indexes: 2 projects · 220 MB in all',
+      'under store-data/indexes',
+      ' D:/gone/old · project folder missing · 220 MB · used 200d ago',
+      ' D:/zcode-cache/.zcode/workspace/draft-9 · empty · 206 KB · used 1h ago',
+      'policy: indexes unused for more than 90 days are removed when a session opens; there is no size limit; an index whose project folder is gone goes by the same age rule',
+    ]);
+    assert.equal(listed.at(-1), HOST_HINT, 'the hint closes the result, as the footer of any other');
+    // A clean request is about the store, not about this folder: it goes through as anywhere else.
+    const due = text(await call(ctx, 'codegraph_status', { clean: 'stale' }));
+    assert.equal(due.split('\n')[0], '# status clean=stale · 2 of 2 indexes would be removed · 220 MB');
+    assert.deepEqual(removed, [], 'nothing without confirm');
+    const done = text(await call(ctx, 'codegraph_status', { clean: 'stale', confirm: true }));
+    assert.equal(done.split('\n')[0], '# status clean=stale · removed 2 of 2 indexes · 220 MB freed');
+    assert.deepEqual(removed, ['2222222222222222', '1111111111111111'], 'the entry that is no project first, then what the age rule takes');
+  });
+
+  test('clean=current asks nothing of an indexer there is none of, and removes the entry an older version left for this very folder', async () => {
+    const folder = 'D:/zcode-cache/.zcode/workspace/draft-1';
+    const leftover = { key: projectKey(folder), dir: 'store/leftover', root: folder, state: 'empty', files: 0, symbols: 0, bytes: 206 * 1024, lastUsedAt: 0, inUse: false, orphan: false, notAProject: true };
+    const removed = [];
+    const storage = {
+      indexesDir: () => 'store-data/indexes',
+      // The store as it is now: empty once the entry is gone.
+      listIndexes: () => (removed.includes(leftover.key) ? [] : [leftover]),
+      planSweep: (list, options) => planSweep(list, options),
+      removeListed: (entry) => {
+        removed.push(entry.key);
+        return true;
+      },
+    };
+    // The context the process really builds for such a folder: no indexer at all.
+    const ctx = refused({ root: folder, hostWorkspace: true, storage, indexer: null });
+    const due = text(await call(ctx, 'codegraph_status', { clean: 'current' }));
+    assert.equal(due.split('\n')[0], '# status clean=current · 1 of 1 index would be removed · 206 KB');
+    assert.deepEqual(removed, []);
+    const done = text(await call(ctx, 'codegraph_status', { clean: 'current', confirm: true }));
+    assert.equal(done.split('\n')[0], '# status clean=current · removed 1 of 1 index · 206 KB freed');
+    assert.deepEqual(removed, [leftover.key]);
+    // A refresh asked for together with the listing is echoed; it starts nothing.
+    const both = text(await call(ctx, 'codegraph_status', { refresh: true, storage: true })).split('\n');
+    assert.equal(both[0], '# status refresh=true · not a project folder');
+    assert.equal(both[1], 'indexes: 0 projects · 0 KB in all');
+  });
+});
+
 describe('codegraph_lookup', () => {
   test('not indexed: readable text, the query layer is never called', async () => {
     const log = [];

@@ -521,7 +521,8 @@ function indexLine(entry, now, reason = null) {
   return parts.join(' · ');
 }
 
-function storageRows(storage, now) {
+/** The store block of `codegraph_status` (CONTRACTS.md §10 `storage`): totals, where, one line per index, the policy. */
+export function storageRows(storage, now) {
   const entries = Array.isArray(storage.entries) ? storage.entries : [];
   const total = entries.reduce((sum, entry) => sum + count(entry.bytes), 0);
   const rows = [`indexes: ${entries.length} ${plural(entries.length, 'project', 'projects')} · ${sizeText(total)} in all`];
@@ -837,11 +838,15 @@ export function renderMap(map, meta = {}) {
   });
 }
 
-/** One-line result for conditions that are not query results (not indexed, query failed). */
-export function renderNotice({ operation, args, summary, hint, freshness }) {
+/**
+ * One-line result for conditions that are not query results (not indexed, query failed). With
+ * `rows` (the store listing asked from a folder that is never indexed) they go between the line
+ * and its hint, under the same byte cap as every other result.
+ */
+export function renderNotice({ operation, args, summary, hint, freshness, rows = [] }) {
   return finish({
     header: headerLine(operation, args, summary, { freshness }),
-    rows: [],
+    rows,
     footer: [hint ? `hint: ${hint}` : null],
     budget: Infinity,
   });

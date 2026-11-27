@@ -28,8 +28,6 @@ const TEXT = {
     inUse: 'in use',
     // The view is app-wide: "open" means some session has this project open.
     current: 'an open session',
-    // A workspace ZCode makes for a session that was never given a folder; it is no project of the user's.
-    transient: 'draft session',
   },
   zh: {
     files: (count) => `${count} 个文件`,
@@ -48,8 +46,6 @@ const TEXT = {
     inUse: '使用中',
     // 面板是应用级的：这里的「打开」指有会话打开着这个项目。
     current: '打开着的会话',
-    // ZCode 给还没指定目录的会话建的工作区，不是用户的项目。
-    transient: '临时会话',
   },
 };
 
@@ -250,10 +246,6 @@ export function ageLabel(ms, now, locale = '') {
 
 const percent = (entry) => (entry.state === 'building' && entry.files > 0 ? Math.min(100, Math.floor((count(entry.filesDone) / entry.files) * 100)) : null);
 
-// The workspace ZCode makes for a session that was never given a folder: under a `.zcode`
-// directory, named `draft-<id>`.
-const TRANSIENT_ROOT = /\/\.zcode\/workspace\/draft-[^/]+\/?$/i;
-
 /**
  * Everything the storage view shows, already in the user's language. One object, so the page
  * holds no copy of its own and nothing is formatted twice.
@@ -276,7 +268,6 @@ export function viewData(entries, config, { current = [], locale = '', now = Dat
     // `hasOwn`: a status file that says "constructor" names no state.
     const state = Object.hasOwn(t.state, entry.state) ? entry.state : 'unknown';
     const blocked = open.has(entry.key) ? 'current' : entry.inUse ? 'in-use' : null;
-    const transient = typeof entry.root === 'string' && TRANSIENT_ROOT.test(entry.root);
     return {
       key: entry.key,
       path: entry.root ?? entry.key,
@@ -286,17 +277,14 @@ export function viewData(entries, config, { current = [], locale = '', now = Dat
       filesText: entry.files > 0 ? t.files(count(entry.files)) : '',
       size: sizeText(entry.bytes),
       used: entry.lastUsedAt > 0 ? ageLabel(entry.lastUsedAt, now, locale) : t.never,
-      notes: [transient ? t.transient : null, entry.orphan ? t.folderMissing : null, entry.inUse ? t.inUse : null, blocked === 'current' ? t.current : null, dueKeys.has(entry.key) ? v.dueNote : null].filter(Boolean),
+      notes: [entry.orphan ? t.folderMissing : null, entry.inUse ? t.inUse : null, blocked === 'current' ? t.current : null, dueKeys.has(entry.key) ? v.dueNote : null].filter(Boolean),
       // `removable` is what the extension will allow: an open session's project and an index in
       // use are refused; `due` only says that "clean what is due" would take it.
       removable: blocked === null,
       due: dueKeys.has(entry.key),
-      // The workspace of a session that was never given a folder: listed as what it is, last.
-      transient,
       blocked,
     };
   });
-  rows.sort((a, b) => Number(a.transient) - Number(b.transient));
   // The host serialises this object for the page, so it holds no function: the lines that
   // depend on the numbers are made here, as strings, and the ones the extension alone uses
   // (the messages of its tools) stay out of it.

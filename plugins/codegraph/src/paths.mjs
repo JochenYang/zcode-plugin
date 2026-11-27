@@ -51,20 +51,46 @@ function isUnsafeRoot(dir) {
   return norm === home || norm === parsed.root.replace(/\\/g, '/') || norm === parsed.root.replace(/\\/g, '').toLowerCase();
 }
 
+// A workspace the host makes itself. ZCode gives a session that was never opened on a folder a
+// workspace under a `.zcode` directory's `workspace` folder (`draft-<id>`, `default`, …), in the
+// profile or wherever its data was moved to. No project of the user's lives there, so nothing is
+// indexed, stored or shown for it. Judged on the path: anything at or below such a folder.
+const HOST_WORKSPACE = /(^|\/)\.zcode\/workspace(\/|$)/i;
+const slashes = (value) => String(value).split(path.sep).join('/');
+
+/**
+ * The rule on a path as it is written, without touching the filesystem: for the index store,
+ * which asks it of every stored root and must not make a synchronous call on a project folder it
+ * has not probed (`status.json` keeps `root` normalized, with `/`).
+ */
+export function isHostWorkspacePath(root) {
+  return HOST_WORKSPACE.test(slashes(root));
+}
+
+/** Whether `root` is a workspace ZCode made itself (see `HOST_WORKSPACE`). */
+export function isHostWorkspace(root) {
+  // The spelling and the real path are both asked: a data folder reached through a junction
+  // spells `.zcode/workspace` where its real path does not.
+  return isHostWorkspacePath(path.resolve(root)) || HOST_WORKSPACE.test(normalizeRoot(root));
+}
+
 // Project root = nearest ancestor containing .git (dir or file); otherwise the start dir.
+// `hostWorkspace` says the session's folder is one ZCode made itself (see `HOST_WORKSPACE`), and
+// like `unsafe` it means the folder is never indexed and gets no entry in the store.
 export function resolveProjectRoot(start = process.cwd()) {
   let dir = path.resolve(start);
+  const hostWorkspace = isHostWorkspace(dir);
   const { root } = path.parse(dir);
   for (;;) {
     if (fs.existsSync(path.join(dir, '.git'))) {
-      return { root: dir, reason: 'git', unsafe: isUnsafeRoot(dir) };
+      return { root: dir, reason: 'git', unsafe: isUnsafeRoot(dir), hostWorkspace };
     }
     if (dir === root) break;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return { root: path.resolve(start), reason: 'cwd', unsafe: isUnsafeRoot(start) };
+  return { root: path.resolve(start), reason: 'cwd', unsafe: isUnsafeRoot(start), hostWorkspace };
 }
 
 export function indexDir(root) {

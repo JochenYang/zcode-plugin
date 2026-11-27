@@ -863,6 +863,23 @@ describe('renderNotice', () => {
     assert.equal(renderNotice({ operation: 'search', args: 'x', summary: 'not indexed', hint: 'use Read/Grep' }), '# search x · not indexed\nhint: use Read/Grep');
     assert.equal(renderNotice({ operation: 'map', args: '', summary: 'query failed', freshness: FRESH }), '# map · query failed · indexed 2m ago');
   });
+
+  test('rows under the line go before the hint, and the whole result stays under the byte cap', () => {
+    // The store listing asked from a folder that is never indexed (src/mcp/tools.mjs refusalFor).
+    const notice = { operation: 'status', args: '', summary: 'not a project folder', hint: 'use Grep/Read' };
+    assert.deepEqual(lines(renderNotice({ ...notice, rows: ['indexes: 1 project · 2.0 MB in all', ' D:/codes/p · 10 files · 2.0 MB · used 2h ago'] })), [
+      '# status · not a project folder',
+      'indexes: 1 project · 2.0 MB in all',
+      ' D:/codes/p · 10 files · 2.0 MB · used 2h ago',
+      'hint: use Grep/Read',
+    ]);
+    // A store of thousands of indexes is cut by whole lines with a note, never silently by the host.
+    const capped = renderNotice({ ...notice, rows: Array.from({ length: 2000 }, (_, i) => ` D:/codes/project-${i} · 10 files · 2.0 MB · used 2h ago`) });
+    assert.ok(bytes(capped) <= MAX_OUTPUT_BYTES, `${bytes(capped)} bytes`);
+    const kept = lines(capped);
+    assert.equal(kept[0], '# status · not a project folder');
+    assert.match(kept.at(-1), /^\(output truncated at 45 KB: \d+ of 2002 lines shown\)$/);
+  });
 });
 
 describe('output limits', () => {

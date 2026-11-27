@@ -108,7 +108,7 @@
     },
     {
       "name": "codegraph",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Local code graph for ZCode as a zero-dependency MCP server: tree-sitter index of 35 languages kept in SQLite under the plugin data folder, exposed through codegraph_status, codegraph_lookup (symbol search, callers, callees, impact, outline, import cycles, affected tests) and codegraph_map, so the model reads exact line ranges instead of grepping and reading whole files. The index is built or refreshed silently when a session opens; SessionStart, UserPromptSubmit and PostToolUse hooks tell the model when the graph is ready and when to use it. No network, no telemetry.",
       "author": {
         "name": "JochenYang"

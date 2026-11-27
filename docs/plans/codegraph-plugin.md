@@ -83,6 +83,7 @@
 | W35 | P1 | `codegraph_lookup` 新增 `cycles`（文件间 import 环，Tarjan SCC）与 `affected`（给定文件，沿 import 与已解析引用反向找依赖它的测试文件）两个纯图查询；工具 schema、CONTRACTS §8 / §10 / §11、README 同步。主 Agent 复核后把 `affected` 的引用边收紧为 `resolution = '='`（`~` 边在本仓库把 8 个真实依赖放大成 68 个） | builder（甲） | [x] |
 | W36 | P2 | 逐文件过期横幅：结果引用了仍在 `dirty` 表里的文件时，在首行之后点名（至多 3 个），提示直接 Read 取当前内容 | builder（甲） | [x] |
 | W37 | P1 | 增量等价测试：小仓库上随机编辑（可复现种子），每步断言增量索引的规范化图等于全量重建 | builder（乙） | [x] |
+| W38 | P1 | 「永不索引的目录」不进插件：ZCode 给没指定目录的会话建的工作区（`<数据目录>/.zcode/workspace/draft-*`、`default`）与家目录 / 盘根——不建索引目录、不写存储、面板无行；钩子对前者静默；工具一行作答（`storage` / `clean` 照常）；清理规则 `not-a-project` 删掉旧版本留下的空条目。用户 11-27：「这种非真实项目的不要弄进来啊」 | 主 Agent（调试后自己修） | [x] |
 
 类目：P0 不做就走不通 · P1 静默失败或数据风险 · P2 清理与一致性 · OPT 可选（不做要写明理由）。
 
@@ -167,6 +168,7 @@
 | 37 (W35) | cycles / affected | 单元测试（环、无环、自环不计、多环排序与截断；affected 的反向闭包、只列测试、未知路径、截断）；工具层（affected 必须给 files）；渲染快照 | 环与依赖它的测试文件列得对；超限如实说截断 | `node --test plugins/codegraph/tests/graph/ plugins/codegraph/tests/mcp/ plugins/codegraph/tests/render/ plugins/codegraph/tests/contract.test.mjs` | PASS（2026-11-26：304 项 303 过 1 跳过 0 失败，退出码 0；真实协议下 51 个路径被拒、50 个通过） |
 | 38 (W36) | 过期横幅 | 工具层测试（结果引用脏文件时点名；没有交集时只有计数；就绪且无脏文件时没有横幅） | 模型能知道哪几个文件可能过期 | `node --test plugins/codegraph/tests/mcp/ plugins/codegraph/tests/render/` | PASS（2026-11-26：157 项 156 过 1 跳过 0 失败，退出码 0；SQL 守卫钉住「只按点名路径查 `dirty`」） |
 | 39 (W37) | 增量 == 全量 | 端到端：2 个种子 × 10 步随机编辑（注释、追加函数、改名、加 import、新建与删除文件），每步比较增量索引与全量重建的规范化图；`CODEGRAPH_PARITY_STEPS` 放大 | 每一步都相等 | `node --test plugins/codegraph/tests/e2e/incremental-parity.test.mjs` | PASS（2026-11-26：默认 3/3，`CODEGRAPH_PARITY_STEPS=30` 3/3，退出码都是 0，两种规模下每一步都相等；比较器在改一行 / 少一行 / 多一行 / `symbols_fts` 多一项四种人为差异下都报出） |
+| 40 (W38) | 永不索引的目录 | 端到端（真实 server + 真实钩子 + 临时数据目录：草稿工作区里存储零条目、三个工具各两行、`storage` 照常列出、钩子无输出；`default` 与子目录同样）；单元（路径判定含目录联接、纯字符串判定不碰文件系统、`resolveProjectRoot`、上下文不开库、存储标记与清理规则、建出过文件的条目不删、面板不保护草稿会话、`storage` / `clean` 照常且存储清单走同一道 45 KB 上限）；变异 18 处 | 这类目录不留下任何东西；旧的空条目被清掉；真实项目与存储管理不受影响 | `node --test plugins/codegraph/tests/e2e/host-workspace.test.mjs plugins/codegraph/tests/paths.test.mjs plugins/codegraph/tests/mcp/ plugins/codegraph/tests/hooks/ plugins/codegraph/tests/index/storage.test.mjs plugins/codegraph/tests/extension/ plugins/codegraph/tests/render/` | PASS（2026-11-27：257 项 256 过 1 跳过 0 失败，退出码 0；修复前新用例 13 条失败） |
 
 ## Verification commands
 
@@ -195,6 +197,7 @@
 | Python 同级模块 `from util import add` 不解析 | 解析器既有的召回缺口，不是 W35 引入；`cycles` 与 `affected` 只看已解析的边，页脚提示已说明「未解析的 specifier 不在图里」 | 做 Python 相对导入解析时一并处理 |
 | `TEST_PATH_PARTS` 的 `tests.cs` 会把 `Contests.cs` 一类源码当成测试 | 清单是既有的（`usageCounts` 的 `inSource` 也用它），W35 只是多了一个消费方 `affected` | 改清单时连同 `usageCounts` 的口径一起核对 |
 | `limit = 200` 时 `limit + 1` 探针被上限夹掉，没有 `(200 of 201+ shown)` | 既有的探针写法，`affected` / `callers` / `callees` 一致 | 需要精确回答「还有没有」时改成单独的计数查询 |
+| ZCode 自建工作区的识别只靠路径（`.zcode/workspace`） | 宿主只在扩展拿到的会话列表里给 `isDraft`，钩子与 MCP 进程没有任何显式标记；2026-11-27 实测 `draft-<uuid>`、`default`、`<时间戳>-<uuid>` 三种都在这个目录下，按路径拼写的纯字符串版供索引存储用。只开草稿会话时不会触发自动清理，旧条目要等某个真实项目的会话启动或在面板里点清理 | ZCode 改了这个目录名（症状：草稿工作区重新出现在面板里），或宿主给钩子 / MCP 传入显式标记时 |
 
 ## Rollback
 
@@ -204,6 +207,7 @@
 
 | 阶段 | 日期 | 证据 | 结论 |
 |------|------|------|------|
+| 4 续（W38） | 2026-11-27 | 用户：「如果是 zcode运行的workspace它也会被带进来显示未索引，这种非真实项目的不要弄进来啊」。复现（临时数据目录）：草稿工作区里钩子注入「Not indexed: no index for this project yet…」、`codegraph_status` 报 `below-min-files`、存储多一条 210 KB 的 `empty` 记录、面板一行「未索引 · 临时会话」。新用例先红（13 条）；修复后计划第 40 条命令 257 项 256 过 0 失败 1 跳过、全套 715 项 709 过 0 失败 6 跳过、一致性脚本通过、变异 18 处全部被抓住（`.tmp/t40/mutate.mjs`）。独立审查第一轮 `APPROVE_WITH_COMMENTS`：两条 P2（`storage` / `clean` 被一并拒掉；索引存储对每个条目做同步 `realpath`）与两条 P3（建出过文件的索引也被删；数据目录经目录联接访问时漏判）都已修，第二轮逐条执行复核成立；第二轮增量只剩一条 P3（拒绝路径里的存储清单绕过 45 KB 上限）与一处用例缺口（`clean=current`、`refresh + storage`），已修并跑了自动检查，没有再过第三轮。check-level: test | W38 [x]，T40 PASS，0.2.1；提交 / 推送 / 安装等授权 |
 | 4 借鉴 CodeGraph-Rust（W34–W37） | 2026-11-26 | 全套 693 项 687 过 0 失败 6 跳过；一致性脚本通过；计划 36–39 四条命令退出码都是 0；17 个变异全部被对应测试抓住（`.tmp/t39/mutate-round2.mjs`，文件逐字节恢复）；本机 9 个索引只读实测：`cycles` 最大 27 ms（8384 个文件、70 个环），`affected` 深度 6 最大 401 ms；两轮独立审查都是 `APPROVE_WITH_COMMENTS`、无 P0–P2 | W34–W37 已发布：`9175145`（W37 的测试）与 `3c08fd1`（其余功能 + 0.2.0）快进推到 `origin/main`，已安装，新会话起生效；已安装副本上协议探针、四个探针、`.gitignore` 的三个泄漏场景与 selftest 都通过。第一轮之后：`affected` 的引用边收紧为仅 `=`（`~` 边把 8 个真实依赖放大成 68 个），超过 60 个文件的环只按路径列出；第二轮的三条 P3（`affected` 首行只列 5 个输入路径、未知路径截 100 字符、两条渲染测试改成相对断言）已修并跑了自动检查，没有再过第三轮审查 |
 | 3 收尾（续二） | 2026-11-25 | 用户：「对象字面量的键、变量读取进搜索这个是能做吗」→「值得做就做」；「样式表可以分发因为开源的啊」。**W33（对象键、解构、JSX 属性名、类型的属性与方法进搜索）**：worker 为每个文件多记「单独出现的名字」（`bareName`），读取与键两种查找各截各的热点（键侧上限 200，因为按「单独出现」计是个很松的超集），行多了 `key` / `field`，一侧被截时回 `cut`、合计带 `+`、页脚说缺的是哪一侧。实现中自己发现并修掉：键热点成立时只作为键的文件仍被解析；加键后第一次读一遍变贵（列出单独出现的名字，cindy 193 MB 要 2.5 秒），冷盘上超过三轮的时限 → prime 改成分轮读到完。审查 `review-12-property-reads.md` 第六轮（1 条 P2 + 5 条 P3：方法签名、JSX 在 javascript 语法上、被截的一半说出口、键侧上限、候选重读的时限、`NOTICE.md` §4(d)）与第七轮（批准，无阻塞）。**样式表声明**：核实公开仓库 `zai-org/ZCode` 是 Apache-2.0、已安装应用里的文件与仓库里的逐字节相同，补了 `ui/licenses/LICENSE.zcode.txt` 与 THIRD-PARTY-NOTICES §7。`node --test plugins/codegraph/tests/` → 647 项 641 过 0 失败 6 跳过；`check-consistency.py` ALL CHECKS PASSED；selftest 三项通过；变异 145 处全部被抓住；四个真实索引上只读计时；已安装副本经真实协议的探针全过。check-level: test | W33 [x]，T34 PASS；已安装；**未提交、未推送**（W31 / W32 / W33 与声明一起，等授权）。遗留：真实会话里模型是否用得上、macOS / Linux 实机 |
 | 3 收尾（续） | 2026-11-25 | W29（增量同步不认 `.gitignore`，真实会话里发现的）与 W30（属性读取改为查询时扫描：专用 worker、五种上限、与索引的使用位置合成一份）。W30 第一版是主线程同步扫描，按审查意见重做；三轮审查里又改掉：热点差一、解析预算过大（打包产物形状的文件解析约 1 MB/s）、被截断时页脚说「找过、没有」、worker 在扫描中途崩溃时主线程再抛一次、读索引给的路径没有越界核对、`isInside` 对根的写法敏感、预筛在几种形状下二次方 / 指数级。`node --test plugins/codegraph/tests/` → 626 项 620 过 0 失败 6 跳过；`check-consistency.py` ALL CHECKS PASSED；selftest 三项通过；变异 72 处全部被抓住；两个真实索引上只读计时；已安装副本经真实协议的探针。check-level: test | W29 [x]，提交 `04b7a7d`（用户授权）；W30 [x]，提交 `48a0418`（用户授权），T30–T31 PASS；已安装。之后用户说「把没做的按照最佳方向做」「搜不到的仍使用 Grep 是正确做法」：做了 W31（链接一律不进索引）与 W32（属性读取的扫描在大仓库上工作——回放 T20 的名字时发现首版在 cindy 上整体不工作），T32–T33 PASS，审查 `review-12` 第四、五轮批准，已安装，**未提交**（等授权）；「对象字面量的键、变量读取进搜索」不做。codegraph 的提交都未推送（等用户确认样式表能否分发）。遗留：真实会话里模型是否用得上、macOS / Linux 实机 |

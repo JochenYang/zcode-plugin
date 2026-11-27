@@ -230,6 +230,18 @@ test('session-start: home or drive-root workspaces say they are never auto-index
   assert.match(context, /Not indexed: this folder is a home or drive root and is never auto-indexed; use Grep\/Read/);
 });
 
+test('session-start: a workspace ZCode made itself gets no context at all', async () => {
+  // The layout ZCode uses for a session that was never opened on a folder: under a `.zcode`
+  // directory's `workspace` folder. There is no project to index and nothing to tell the model.
+  const host = path.join(TMP, 'zcode-cache', '.zcode', 'workspace', 'draft-62d72d80-6066-4336-88f9-db64d15fef8b');
+  fs.mkdirSync(host, { recursive: true });
+  for (const cwd of [host, path.join(TMP, 'zcode-cache', '.zcode', 'workspace', 'default')]) {
+    const result = await run('session-start', { ...START, cwd }, { env: { ZCODE_PROJECT_DIR: cwd } });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, '', cwd);
+  }
+});
+
 test('session-start: cwd is read from cwd, workingDirectory and working_directory alike', async () => {
   writeStatus({ filesTotal: 7, symbols: 7, languages: { python: 7 } });
   for (const payload of [

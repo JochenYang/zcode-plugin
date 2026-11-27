@@ -221,7 +221,9 @@ function userPrompt(payload) {
 function sessionStart(payload) {
   const event = payload.hook_event_name ?? payload.hookEventName;
   if (event !== undefined && event !== 'SessionStart') return;
-  const { root, unsafe } = resolveProjectRoot(workspaceOf(payload));
+  const { root, unsafe, hostWorkspace } = resolveProjectRoot(workspaceOf(payload));
+  // A workspace ZCode made itself is no project: there is nothing to index and nothing to say.
+  if (hostWorkspace) return;
   const status = readStatus(root);
   const context = contextWithinBudget(status, unsafe, indexingOffByProject(root));
   if (!context) return;

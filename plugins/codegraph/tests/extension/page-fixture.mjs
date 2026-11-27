@@ -42,11 +42,13 @@ const ENTRIES = [
   entry(KEYS.gone, { orphan: true, lastUsedAt: NOW - 300 * DAY }),
   entry(KEYS.keyOnly, { root: null, lastUsedAt: 0 }),
   entry(KEYS.long, { root: `D:/codes/${'a-repository-with-a-long-name/'.repeat(6)}` }),
-  // The workspace ZCode makes for a session that was never given a folder: listed last, as what it is.
-  entry(KEYS.draft, { root: 'D:/zcode-cache/.zcode/workspace/draft-62d72d80-6066-4336-88f9-db64d15fef8b', state: 'empty', files: 0, bytes: 206 * 1024, lastUsedAt: NOW - 52 * MINUTE }),
+  // An entry an older version left for a folder that is never indexed (a workspace ZCode made
+  // itself): due whatever the policy says, and the clean takes it.
+  entry(KEYS.draft, { root: 'D:/zcode-cache/.zcode/workspace/draft-62d72d80-6066-4336-88f9-db64d15fef8b', state: 'empty', files: 0, bytes: 206 * 1024, lastUsedAt: NOW - 52 * MINUTE, notAProject: true }),
 ];
 const POLICY = { maxIdleDays: 90, maxTotalMB: 2048, fixedByFile: { maxIdleDays: false, maxTotalMB: false } };
-const DUE = [ENTRIES[2], ENTRIES[5]];
+const DUE = [ENTRIES[2], ENTRIES[5], ENTRIES[8]];
+const DUE_KEYS = [KEYS.due, KEYS.gone, KEYS.draft];
 const without = (keys) => ENTRIES.filter((item) => !keys.includes(item.key));
 const view = (locale, entries = ENTRIES, config = POLICY, due = DUE) =>
   viewData(entries, config, { current: [KEYS.current], locale, now: NOW, storeDir: 'C:/Users/me/.zcode/indexes', due });
@@ -101,7 +103,7 @@ function answers(locale) {
   const full = view(locale);
   const pathOf = (key) => full.rows.find((item) => item.key === key).path;
   const sizeOf = (keys) => viewData(ENTRIES.filter((item) => keys.includes(item.key)), {}, { locale }).totals.size;
-  const cleaned = without([KEYS.due, KEYS.gone]);
+  const cleaned = without(DUE_KEYS);
   const listed = (data) => ({ ok: true, data });
   const fileFixed = { ...POLICY, fixedByFile: { maxIdleDays: true, maxTotalMB: false } };
   return {
@@ -114,7 +116,7 @@ function answers(locale) {
       // Removed, but the store could not be read again: no `data` comes along.
       { ok: true, message: t.removed(pathOf(KEYS.victim), sizeOf([KEYS.victim])) },
     ],
-    clean: [{ ok: true, message: t.removedN(DUE.length, sizeOf([KEYS.due, KEYS.gone])), data: view(locale, cleaned, POLICY, []) }],
+    clean: [{ ok: true, message: t.removedN(DUE.length, sizeOf(DUE_KEYS)), data: view(locale, cleaned, POLICY, []) }],
     policy: [{ ok: true, message: t.saved, data: view(locale, cleaned, { ...POLICY, maxIdleDays: 30 }, []) }],
     // Opening the store changes nothing here, so the answer carries no store.
     open: [{ ok: true, message: t.opened }],

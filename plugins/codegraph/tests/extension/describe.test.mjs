@@ -105,10 +105,10 @@ describe('viewData', () => {
     assert.deepEqual(data.totals, { projects: 4, files: 730, size: '8.0 MB', due: 1, dueSize: '2.0 MB' });
     assert.deepEqual(data.policy, { maxIdleDays: 90, maxTotalMB: 2048, fixedByFile: { maxIdleDays: false, maxTotalMB: false } });
     assert.deepEqual(data.rows, [
-      { key: 'aaaaaaaaaaaaaaaa', path: 'D:/codes/aaaaaaaaaaaaaaaa', state: 'building', stateLabel: '构建中 42%', files: 700, filesText: '700 个文件', size: '2.0 MB', used: '2 小时前', notes: ['打开着的会话'], removable: false, due: false, transient: false, blocked: 'current' },
-      { key: 'bbbbbbbbbbbbbbbb', path: 'D:/codes/bbbbbbbbbbbbbbbb', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: ['项目目录不存在', '使用中'], removable: false, due: false, transient: false, blocked: 'in-use' },
-      { key: 'cccccccccccccccc', path: 'D:/codes/cccccccccccccccc', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '从未使用', notes: ['已到期，清理时会删除'], removable: true, due: true, transient: false, blocked: null },
-      { key: 'dddddddddddddddd', path: 'D:/codes/dddddddddddddddd', state: 'unknown', stateLabel: '未知', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: [], removable: true, due: false, transient: false, blocked: null },
+      { key: 'aaaaaaaaaaaaaaaa', path: 'D:/codes/aaaaaaaaaaaaaaaa', state: 'building', stateLabel: '构建中 42%', files: 700, filesText: '700 个文件', size: '2.0 MB', used: '2 小时前', notes: ['打开着的会话'], removable: false, due: false, blocked: 'current' },
+      { key: 'bbbbbbbbbbbbbbbb', path: 'D:/codes/bbbbbbbbbbbbbbbb', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: ['项目目录不存在', '使用中'], removable: false, due: false, blocked: 'in-use' },
+      { key: 'cccccccccccccccc', path: 'D:/codes/cccccccccccccccc', state: 'ready', stateLabel: '就绪', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '从未使用', notes: ['已到期，清理时会删除'], removable: true, due: true, blocked: null },
+      { key: 'dddddddddddddddd', path: 'D:/codes/dddddddddddddddd', state: 'unknown', stateLabel: '未知', files: 10, filesText: '10 个文件', size: '2.0 MB', used: '2 小时前', notes: [], removable: true, due: false, blocked: null },
     ]);
     assert.equal(data.text.title, '代码图谱索引');
     assert.equal(data.text.due, '1 个索引到期（2.0 MB）');
@@ -143,15 +143,18 @@ describe('viewData', () => {
     assert.match(empty.text.empty, /No index on this machine yet/);
   });
 
-  test('the workspace of a draft session is named for what it is and listed after real projects', () => {
-    const draft = entry('1111111111111111', { root: 'D:/zcode-cache/.zcode/workspace/draft-62d72d80-6066-4336-88f9-db64d15fef8b', files: 0, lastUsedAt: 0 });
+  test('an entry left for a folder that is never indexed has no label of its own: it is due, and the clean takes it', () => {
+    // Such folders (a workspace ZCode made, a home or drive root) get no entry any more; one that
+    // an older version left behind is only waiting for the next clean.
+    const leftover = entry('1111111111111111', { root: 'D:/zcode-cache/.zcode/workspace/draft-62d72d80-6066-4336-88f9-db64d15fef8b', state: 'empty', files: 0, lastUsedAt: 0 });
     const real = entry('2222222222222222', { root: 'D:/codes/zcode-plugin' });
-    // A project that merely sits under a folder called `workspace` is a project all the same.
-    const nested = entry('3333333333333333', { root: 'D:/codes/draft-editor/.zcode/workspace/src' });
-    const data = viewData([draft, real, nested], {}, { locale: 'zh-CN', now: NOW });
-    assert.deepEqual(data.rows.map((row) => [row.key.slice(0, 4), row.transient]), [['2222', false], ['3333', false], ['1111', true]]);
-    assert.deepEqual(data.rows[2].notes, ['临时会话']);
-    assert.equal(data.totals.files, 20, 'a draft session with no index adds no files');
+    const data = viewData([real, leftover], {}, { locale: 'zh-CN', now: NOW, due: [leftover] });
+    assert.deepEqual(data.rows.map((row) => [row.stateLabel, row.notes]), [
+      ['就绪', []],
+      ['未索引', ['已到期，清理时会删除']],
+    ]);
+    assert.equal('transient' in data.rows[1], false, 'not a kind of row of its own');
+    assert.equal(data.totals.files, 10, 'an entry that holds nothing adds no files');
   });
 
   test('the line for a refused clipboard names the shortcut of the system', () => {

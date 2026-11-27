@@ -31,6 +31,9 @@ tool list, use the tool whose name ends in `__codegraph_status`.
 
 3. When the project is not indexed, explain the reason the tool gives and the matching fix:
    - the workspace is a home or drive root: never auto-indexed; open a project folder;
+   - `not a project folder`: the workspace is one ZCode made for a session that was never
+     given a folder (under a `.zcode/workspace` directory); nothing is indexed or stored there;
+     open a project folder;
    - too few supported files (default 30): lower `minFilesToAutoIndex`;
    - too many files (default 30000): raise `maxFiles`;
    - `autoIndex` is off in the user's configuration: set it to `true`;

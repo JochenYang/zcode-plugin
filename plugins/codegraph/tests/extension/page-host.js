@@ -279,8 +279,10 @@
       const shownLines = (chip.getBoundingClientRect().height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / parseFloat(style.lineHeight);
       check('a path shows at most two lines, inside its cell', Math.round(shownLines) <= 2 && chip.getBoundingClientRect().width <= tr.children[0].getBoundingClientRect().width + 0.5, `${shownLines.toFixed(1)} lines`);
     }
-    const last = first.rows.at(-1);
-    check('the workspace of a draft session is named for what it is and comes last', last.transient === true && row(keys.draft) === $('storage-rows').lastElementChild && row(keys.draft).textContent.includes(last.notes[0]));
+    // An entry an older version left for a folder that is never indexed (a workspace ZCode made
+    // itself) is no row of a kind of its own: it says that it is due, and the clean takes it.
+    const leftover = first.rows.find((item) => item.key === keys.draft);
+    check('an entry left for a folder that is never indexed is only due', leftover.due === true && leftover.removable === true && row(keys.draft).textContent.includes(leftover.notes.at(-1)), JSON.stringify(leftover.notes));
     // Not only is each label marked with its state: states that differ are told apart by colour.
     const inkOf = (key) => getComputedStyle(row(key).querySelector('.storage-state')).color;
     check('ready, building and error are three different colours', new Set([keys.victim, keys.busy, keys.broken].map(inkOf)).size === 3, [keys.victim, keys.busy, keys.broken].map(inkOf).join(' | '));

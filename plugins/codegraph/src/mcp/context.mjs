@@ -6,6 +6,10 @@
 // creation clears the cache so the next call retries instead of caching the
 // failure. `queries` / `map` are injection points for tests and default to the
 // real graph modules.
+//
+// A folder that is never indexed — a home or drive root (`unsafe`), or a workspace ZCode made
+// itself (`hostWorkspace`) — gets no indexer and no database: opening either is what used to put
+// the folder into the index store as "not indexed". The tools answer from the flags alone.
 import { dbPath, resolveProjectRoot } from '../paths.mjs';
 import { loadConfig, loadProjectConfig } from '../config.mjs';
 import { openDatabase } from '../store/db.mjs';
@@ -14,7 +18,11 @@ const INDEXER_MODULE = '../index/indexer.mjs';
 
 let pending = null;
 
-/** @returns {Promise<{ root: string, unsafe: boolean, config: object, indexer: object, db: object, queries: object|null, map: object|null }>} */
+/**
+ * @returns {Promise<{ root: string, unsafe: boolean, hostWorkspace: boolean, config: object, indexer: object|null, db: object|null, ownDb: object|null, queries: object|null, map: object|null }>}
+ *   `indexer` and `db` are null for a folder that is never indexed; its `config` is the user's
+ *   without a project file
+ */
 export function getContext() {
   if (!pending) {
     pending = createContext().catch((err) => {
@@ -46,7 +54,14 @@ async function createContext() {
   // The host sets ZCODE_PROJECT_DIR to the session workspace and also starts the
   // server there (zcode-facts.md §1.2); cwd is the fallback for manual runs.
   const start = (process.env.ZCODE_PROJECT_DIR ?? '').trim() || process.cwd();
-  const { root, unsafe } = resolveProjectRoot(start);
+  const { root, unsafe, hostWorkspace } = resolveProjectRoot(start);
+  // Nothing is done for a folder that is never indexed: no database is opened (opening one is
+  // what created the index directory, and with it the entry) and the project's file is not read.
+  // The user's own settings still apply: the store is managed from such a session like from any
+  // other (its policy line, a clean request).
+  if (unsafe || hostWorkspace) {
+    return { root, unsafe, hostWorkspace, config: loadConfig(), indexer: null, db: null, ownDb: null, queries: null, map: null };
+  }
   // The project's own file (<root>/.zcode/codegraph.json) can only tighten the user's settings.
   const config = loadConfig({ project: loadProjectConfig(root) });
   const indexer = await createIndexer({ root, config });
@@ -54,7 +69,7 @@ async function createContext() {
   // a second connection would only add lock traffic within one process.
   const db = indexer.db ?? openDatabase(dbPath(root));
   const ownDb = indexer.db ? null : db;
-  return { root, unsafe, config, indexer, db, ownDb, queries: null, map: null };
+  return { root, unsafe, hostWorkspace, config, indexer, db, ownDb, queries: null, map: null };
 }
 
 async function createIndexer({ root, config }) {

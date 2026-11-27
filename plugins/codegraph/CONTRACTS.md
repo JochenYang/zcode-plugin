@@ -27,7 +27,7 @@
 
 - `PLUGIN_ROOT`、`GRAMMARS_DIR`、`LANGUAGES_DIR`
 - `dataDir()`：`ZCODE_PLUGIN_DATA`，缺省 `~/.zcode/cli/plugins/data/codegraph@zcode-plugin`
-- `resolveProjectRoot(start?)` → `{ root, reason: 'git'|'cwd', unsafe }`：向上找最近的 `.git`；`unsafe` 表示家目录或盘根（索引器必须拒绝自动索引）
+- `resolveProjectRoot(start?)` → `{ root, reason: 'git'|'cwd', unsafe, hostWorkspace }`：向上找最近的 `.git`；`unsafe` 表示家目录或盘根（索引器必须拒绝自动索引）；`hostWorkspace` 表示这是 ZCode 自己建的工作区（`isHostWorkspace(root)`：按路径拼写（`path.resolve` 后）与真实路径（`realpath`）各判一次，任一命中即真——数据目录经目录联接访问时两种写法不一致；规则是规范化后的路径落在某个 `.zcode/workspace` 目录里或其下，如 `<ZCode 数据目录>/.zcode/workspace/draft-<id>`、`…/workspace/default`，数据目录在用户目录下还是被移到别处都算）。`isHostWorkspacePath(path)` 是同一条规则的纯字符串版（不碰文件系统），索引存储对每个已存条目的根路径用它（§3.4），自动清理与面板刷新因此不会等在不可达的项目路径上。两者都是「永不索引的目录」：`silentIndexStart` 直接返回，`getContext()` 不读项目文件、不开数据库（开数据库就会建索引目录），工具只回两行提示（§11；`storage` / `clean` 照常），`SessionStart` 钩子对 ZCode 自建的工作区不注入任何内容，存储里不会有它的条目（2026-11-27 之前，没指定目录的会话会在索引管理面板里留下一条「未索引」）
 - `projectKey(root)`、`indexDir(root)`、`dbPath(root)`、`statusPath(root)`、`dirtyLogPath(root)`、`dirtyOffsetPath(root)`、`lockPath(root)`、`configPath()`
 - `announcedPath(root, sessionId)`：`<indexDir>/announced/<sessionId>`，空文件，标记「这个会话已经被告知索引就绪」（`UserPromptSubmit` 钩子写与读）
 - `projectConfigPath(root)`（`src/config.mjs`）：`<项目根>/.zcode/codegraph.json`，项目自己的设置，见 §12
@@ -69,6 +69,7 @@ UTF-8 追加行：`<mtimeMs>\t<相对路径，/ 分隔>\n`。索引器记录已�
 
 | 原因 | 条件 |
 |---|---|
+| `not-a-project` | 不是任何项目的索引：旧版本给「永不索引的目录」（ZCode 自建的工作区、家目录或盘根）留下的、不含任何文件的条目（`listIndexes` 的 `notAProject`：`filesTotal` 为 0，且根路径是 ZCode 自建的工作区，或 `state` 为 `empty` 且原因是 `unsafe-root`）。不看天数与总量，排在最前。在那个路径下建出过文件的索引不因为路径被删：没有会话再用它，最后由闲置规则带走 |
 | `idle` | `maxIdleDays > 0` 且最近使用早于 `maxIdleDays` 天 |
 | `orphan` | 同上，并且清单知道项目目录已不存在（只是 `idle` 的另一种说法，不是独立的规则） |
 | `over-quota` | `maxTotalMB > 0`，按最近使用从旧到新删，直到总量不超过上限 |
@@ -294,11 +295,11 @@ export class Indexer {
 - dirty 条目是外部输入：`normalizeDirtyPath` 先归一化 `.`/`..` 段再拒绝任何越界或绝对路径；`sync()` 用 `lstat` 校验，不跟随符号链接（与 walker 一致）。
 - 解析在 `worker_threads`（每 worker `initEngine()` 一次；单任务 60 s 超时则终止该 worker 并把该文件记为解析失败），主线程按文件事务写库；增量 `sync()` 对每个重写过的文件调用 `resolveFile`，全量 `buildAll()` 在末尾调用一次 `resolveAll`（实测比逐文件快 3×，结果更一致）。查询时读源码的只有属性读取的扫描（§8），它有自己单独的常驻 worker（`src/graph/propertyReadsWorker.mjs`），不在这个池里；主线程在那条路上同样不解析，只等答案。
 - 全量构建走 bulk load（见 §7）：清表、删索引、FK 关到结束，每 100 个文件一次 WAL 提交；构建期间 `wal_autocheckpoint=0`，结束做一次 `wal_checkpoint(TRUNCATE)` 并恢复自动检查点。bulk 构建的 `resolveAll` 必须在 `endBulkLoad` **之后**（解析器需要索引）；增量 sync 的 `resolveFile` 在每个文件的写组 savepoint 内执行。`buildAll` 与后台构建失败都写 `status.json` 的 `error` 态与 `reasonDetail`。
-- 自动索引条件：`config.autoIndex` 且 `!unsafe` 且支持语言的文件数 ≥ `config.minFilesToAutoIndex` 且总数 ≤ `config.maxFiles`；否则 `state: 'empty'`，`status.json` 的 `reason` 给机器可读原因（`auto-index-disabled` / `unsafe-root` / `below-min-files` / `too-many-files` / `no-supported-files` / `build-failed`）；只读进程（拿不到锁）不写 status.json，只在 `status()` 返回里给出 `lock-held-read-only`。`total` 指枚举到的全部文件数（任意语言，已应用 ignore/exclude），`supportedCount` 为语言包命中的文件数，`maxFiles` 截断只作用于后者。
+- 自动索引条件：`config.autoIndex` 且 `!unsafe` 且支持语言的文件数 ≥ `config.minFilesToAutoIndex` 且总数 ≤ `config.maxFiles`；否则 `state: 'empty'`，`status.json` 的 `reason` 给机器可读原因（`auto-index-disabled` / `unsafe-root` / `below-min-files` / `too-many-files` / `no-supported-files` / `build-failed`）；只读进程（拿不到锁）不写 status.json，只在 `status()` 返回里给出 `lock-held-read-only`。`total` 指枚举到的全部文件数（任意语言，已应用 ignore/exclude），`supportedCount` 为语言包命中的文件数，`maxFiles` 截断只作用于后者。家目录 / 盘根与 ZCode 自建的工作区到不了这一步：工具层不为它们构造 `Indexer`（§2 `resolveProjectRoot`），所以 `unsafe-root` 的 `status.json` 只在直接构造 `Indexer` 时（测试）才会写出。
 - 语言包装载是容错的：任一包语法/引用错误时打一行 stderr 并跳过（`registry.loadErrors` 记录），索引照常；契约测试用 `initEngine({ strict: true })` 让坏包直接失败。
 - 多进程写：`lockPath` 的 pid 锁；拿不到锁走只读（查询照常，不同步）。
-- **会话开始即刷新**（`src/mcp/server.mjs` 的 `silentIndexStart`）：每会话一个服务进程，`initialize` 请求一到就在后台调 `ensureFresh({ maxWaitMs: 1 })`，不等它完成、失败只写 stderr。于是新项目在会话打开时就开始建第一次索引（而不是等模型第一次调用工具——`SessionStart` 钩子让未索引项目的模型「就绪前用 Grep/Read」，照做的模型永远不会触发构建），已索引项目则在会话打开时做一次增量检查。钩子进程短命，进程内的构建会随它退出，所以构建只能由服务进程发起。2026-11-24 实测：握手后不发任何工具调用，99 个文件的项目 1.6 s 就绪、2 个文件的项目 0.5 s 就绪；低于自动索引门槛的项目只写 `state: 'empty'` 的记录，不索引。
-- **会话开始即整理存储**（同一个函数，刷新派出之后）：给当前项目的索引盖 `used.at`，再按 §3.4 的策略清理；删了什么、什么因为在用而保留，各写一行 stderr。`autoIndex` 关闭（用户的设置或项目的 `.zcode/codegraph.json`）、或项目根不安全时，这一步整个不做。
+- **会话开始即刷新**（`src/mcp/server.mjs` 的 `silentIndexStart`）：每会话一个服务进程，`initialize` 请求一到就在后台调 `ensureFresh({ maxWaitMs: 1 })`，不等它完成、失败只写 stderr。于是新项目在会话打开时就开始建第一次索引（而不是等模型第一次调用工具——`SessionStart` 钩子让未索引项目的模型「就绪前用 Grep/Read」，照做的模型永远不会触发构建），已索引项目则在会话打开时做一次增量检查。钩子进程短命，进程内的构建会随它退出，所以构建只能由服务进程发起。2026-11-24 实测：握手后不发任何工具调用，99 个文件的项目 1.6 s 就绪、2 个文件的项目 0.5 s 就绪；低于自动索引门槛的项目只写 `state: 'empty'` 的记录，不索引。永不索引的目录（家目录 / 盘根、ZCode 自建的工作区）在这里直接返回：不碰这个目录，存储里不会有它的条目。
+- **会话开始即整理存储**（同一个函数，刷新派出之后）：给当前项目的索引盖 `used.at`，再按 §3.4 的策略清理；删了什么、什么因为在用而保留，各写一行 stderr。`autoIndex` 关闭（用户的设置或项目的 `.zcode/codegraph.json`）、项目根不安全、或这是 ZCode 自建的工作区时，这一步整个不做（最后一种情况见上一条：它根本到不了这里）。
 - **自动索引关闭时工具不同步**：`autoIndex` 为 false（无论来自用户还是项目）时，工具调用不再先调 `ensureFresh`，只有带 `refresh: true` 的 `codegraph_status` 才动索引；其余调用按库里现有的内容回答，首行注明 `not synced: auto-indexing is off, refresh=true syncs`。
 - **`status.json` 丢失不影响已有索引**：库里有文件而状态文件缺失或损坏时，`status()` 直接从库里的计数给出 `ready` 状态（`indexedAt` 取 `graph.db` 的 mtime）；持有锁的进程在下一次刷新开头把状态文件按库里的内容写回。只读进程照样能回答，但不写文件。
 
@@ -354,8 +355,9 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 - 页脚提示（`hint:` / `next:`）排在图例行之后。`search` 有结果时固定给一行 `next: symbol <name> returns the definition with its callers and imports (body=true reads it in one call); impact <name> shows what a change breaks.`。**行优先于提示**：预算装不下「首行 + 页脚 + 几行结果」时先丢页脚提示（从最后一个起，页脚剩给行的空间少于 48 token 即丢），再丢截断提示；行与首行始终保留。
 - `map`：按目录分组，`dir/` 行后缩进 `<file>  <kind> <name>:<line> ...`，每文件最多 6 个符号。
 - `status` 的存储清单（`storage: true` 时接在其它行之后）：`indexes: 4 projects · 1.2 GB in all`、`under <数据目录>/indexes`、每个索引一行 ` <项目根> · <N files | building | empty> · <大小> · used <多久前>[ · in use]`（项目目录不存在的写 `project folder missing`），最后一行 `policy: <闲置策略>; <总量策略>; an index whose project folder is gone goes by the same age rule`。大小写作 `7.6 MB` / `471 MB` / `1.2 GB`（不足 1 MB 写 KB）。
-- `status` 的 `clean` 输出：首行 `# status clean=<目标> · <N of M indexes would be removed · 大小>`（未带 `confirm`）或 `# status clean=<目标> · removed N of M indexes · 大小 freed`；随后每个索引一行，行尾是原因（`orphan` / `idle` / `over-quota` / `requested`），因在用而保留的写 `kept: in use`；页脚未执行时是 `hint: nothing was removed. Call again with confirm=true, and only when the user asked for it.`，执行后是重建与查看剩余的提示。`clean: "project"` 找不到、或指向当前项目时，各返回一行说明（后者提示改用 `clean="current"`）。
+- `status` 的 `clean` 输出：首行 `# status clean=<目标> · <N of M indexes would be removed · 大小>`（未带 `confirm`）或 `# status clean=<目标> · removed N of M indexes · 大小 freed`；随后每个索引一行，行尾是原因（`not-a-project` / `orphan` / `idle` / `over-quota` / `requested`），因在用而保留的写 `kept: in use`；页脚未执行时是 `hint: nothing was removed. Call again with confirm=true, and only when the user asked for it.`，执行后是重建与查看剩余的提示。`clean: "project"` 找不到、或指向当前项目时，各返回一行说明（后者提示改用 `clean="current"`）。
 - `status` 在自动索引关闭且已有索引时多一行 `note: auto-indexing is off <(codegraph.json) | for this project (.zcode/codegraph.json)>; the index is only refreshed by codegraph_status (refresh=true)`；`empty` 且是项目文件关掉的，提示改为 `hint: auto-indexing is off in .zcode/codegraph.json of this project; delete "autoIndex": false there to index it. Until then use Read/Grep.`。
+- 永不索引的目录（§2 `resolveProjectRoot` 的 `hostWorkspace` / `unsafe`）：三个工具都只回两行，不碰索引器。ZCode 自建的工作区是 `# <operation>[ <args>] · not a project folder` 加 `hint: this is a workspace ZCode made for a session without a folder (under a .zcode/workspace directory); it gets no index and no entry in the index store. Use Grep/Read here.`；家目录或盘根是 `# <operation>[ <args>] · not indexed` 加 `hint: this folder is a home or drive root and is never indexed; use Grep/Read here.`。`<operation>` 是 `status`、`map` 或所请求的 lookup 操作，`<args>` 与正常结果的首行相同（`refresh=true` 也照常回显）。存储是整台机器的：`storage: true` 时这两行之后照常列出存储清单（`storageRows`），`clean` 请求不被拒、照常执行；这类上下文的 `config` 是用户级配置（不读项目文件），所以策略行与清理限额也照常。
 - 截断：末行 `(N of M shown)`；陈旧：首行末尾 ` · stale: N files changed since index`（N 是实时的 `status.dirty`，没有时才用落盘的 `status.stale`：后者在一次构建或同步结束时写入，文件等着重建的那段时间里还是 0）；构建中：` · indexing 43% (results partial)`。结果点名的文件仍在 `dirty` 表里时，**首行之后**另起一行 `stale: <p1>, <p2> changed since index — Read them for the current content`：至多 3 个路径（行内用 `, ` 连接，每个至多 100 个字符，超出截断加 `…`），其余只计数，写成 `<p3> (+N more)`；`search` 行的 `path`、`symbol` 的 `symbol.path` 与其 `callers` / `callees` 行、`callers` / `callees` 的行、`impact` 的 `nodes[].path`、`outline` 的 `file` 与脏路径求交集，没有交集时没有这一行；`status.dirty` 为 0 时不查 `dirty` 表，大于 0 时只按点名的路径查（主键），不列整张表。首行末尾的计数保留，这一行只点名。
 - token 估算：`Math.ceil(Buffer.byteLength(text) / 4)`，超出预算先截行数再补截断行。
 - 所有文本纯文本，不输出 JSON；`tool_result` 的 `content[0].text` 即全文。
@@ -406,7 +408,7 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 | `building` | 百分比（已建 / 总数，封顶 100） | `正在索引 100 / 700 个文件，建完之前结果是部分的` |
 | `error` | `出错` | `索引出错：<error 或 reason，压成一行>` |
 | 没有索引或 `empty`，且项目文件关了 `autoIndex` | `未开启` | `这个项目关闭了索引（.zcode/codegraph.json）` |
-| 其它（没有索引、`empty`、家目录或盘根） | 不显示 | — |
+| 其它（没有索引、`empty`、家目录或盘根、ZCode 自建的工作区） | 不显示 | — |
 
 悬停共四行：标题、项目根（`/` 分隔）、状态行、「点击管理本机上的索引」；超出 200 字符时截断并以 `…` 结尾。语言随宿主的 `locale`（`zh*` 为中文）。刷新间隔：有会话的索引在构建时 5 s，否则 60 s。
 
@@ -426,7 +428,7 @@ ZCode 宿主事实（2026-11-23 读 `zcode.cjs` 实证，详见 `.devflow/codegr
 
 改动成功但快照恰好读不到时，应答是 `{ ok: true, message }`、不带 `data`；页面据此再读一次 `list`，读不到才报错。
 
-`data` 来自 `viewData(entries, policy, { current, locale, now, storeDir, due })`：`{ locale, storeDir, totals: { projects, files, size, due, dueSize }, policy: { maxIdleDays, maxTotalMB, fixedByFile: { maxIdleDays, maxTotalMB } }, rows: [{ key, path, state, stateLabel, files, filesText, size, used, notes, removable, due, transient, blocked }], text }`。`files` 是各索引文件数之和；`transient` 标出 ZCode 给还没指定目录的会话建的工作区（根路径匹配 `/.zcode/workspace/draft-<id>`），它带「临时会话」备注并排在最后，其余顺序不变。`removable` 是扩展允许不允许：打开着的会话的项目与在用的索引为 `false`，`blocked` 为 `current` 或 `in-use`；`due` 只说明「清理到期索引」会带走它。策略的来源同 §12：`codegraph.json` 里写了的项 `fixedByFile` 为 `true`，页面把那一项置灰。`text` 是页面用到的全部文案，值都是字符串（`cleanLabel` 已按到期数量算好；工具自己的消息不进去）。
+`data` 来自 `viewData(entries, policy, { current, locale, now, storeDir, due })`：`{ locale, storeDir, totals: { projects, files, size, due, dueSize }, policy: { maxIdleDays, maxTotalMB, fixedByFile: { maxIdleDays, maxTotalMB } }, rows: [{ key, path, state, stateLabel, files, filesText, size, used, notes, removable, due, blocked }], text }`。`files` 是各索引文件数之和。ZCode 自建的工作区不再有条目（§2 `resolveProjectRoot`）；旧版本留下的那一类条目只是「到期」，清理时带走，没有单独的标注，`openKeys` 也不把它算作「打开着的会话的项目」。`removable` 是扩展允许不允许：打开着的会话的项目与在用的索引为 `false`，`blocked` 为 `current` 或 `in-use`；`due` 只说明「清理到期索引」会带走它。策略的来源同 §12：`codegraph.json` 里写了的项 `fixedByFile` 为 `true`，页面把那一项置灰。`text` 是页面用到的全部文案，值都是字符串（`cleanLabel` 已按到期数量算好；工具自己的消息不进去）。
 
 **页面**（`ui/index.html`）有三个 `<style>`。`#zcode-contract` 是 ZCode 沙箱样式表（`out/plugin-sandbox/visualize.css`，与公开仓库 `zai-org/ZCode` 里的同名文件相同，Apache-2.0，许可见 `ui/licenses/LICENSE.zcode.txt` 与 THIRD-PARTY-NOTICES §7）的逐条原文，去掉本视图用不到的规则：留下的不改，应用升级后整块重抄。`#codegraph-layout` 只有版式属性和档位内的间距。`#codegraph-decorations` 是面板自有的装饰——图标底下的色块、分区标题前的竖条、路径的底色、按状态着色的标签、说明文字的次要文字色（`--muted-foreground` 与 `--foreground` 按 80 / 20 混合：官方的次要文字色在应用的浅色主题下只有 4.26:1，混合后 4.99:1；改比例前用 `.tmp/w27-muted.mjs` 的做法重量）——**颜色只能是契约令牌或它的混合（`var(--…)`、`color-mix(…)`、`currentColor`、`transparent`），字号字重只能取契约的 `--font-*`，间距只能在档位上，选择器只能落在自己的 `storage-*` 上**。状态色先与前景色混合再用：契约的状态色偏亮，在应用的浅色主题下直接当文字不到 WCAG AA，混合比例（绿 50%、蓝 45%、红 65%、强调色 50%）是用 ZCode 4.0.10870 量出来的上限，改动前要重新量（`.tmp/w27-contrast.mjs` 的做法）。页面用到的类名只能是契约里的工具类，或自己的 `storage-*`；动态文本一律 `textContent`，拼进选择器的 `key` 先过 `CSS.escape`。路径是 `<span class="storage-path-code">`：在分隔符处放 `<wbr>`，至多两行（`-webkit-line-clamp: 2`），完整路径在 `title` 里。主题：宿主只通过 `zcode.hostContext.styles.variables` 交出变量，页面自己写到根元素上，并监听 `zcode:globals` 跟随明暗切换。交出来的只有 `--color-*`、`--font-*`、圆角这类变量（宿主的 schema 会剥掉 `--gen-ui-*`），所以契约里的卡片色、主按钮色、悬停色、输入框边框色用的是契约内置的回退值——ZCode 自带的可视化也是这样。
 

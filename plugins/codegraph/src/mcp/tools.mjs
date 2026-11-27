@@ -260,6 +260,8 @@ export async function callTool(name, args, ctx) {
   // An injected context belongs to the caller; only the process context may be rebuilt by a tool.
   const owned = ctx === undefined || ctx === null;
   const context = await (ctx ?? getContext());
+  const refusal = refusalFor(name, params, context);
+  if (refusal) return refusal;
   switch (name) {
     case 'codegraph_status':
       return statusTool(params, context, owned);
@@ -275,6 +277,34 @@ const message = (err) => String(err?.message ?? err).replace(/\s+/g, ' ').trim()
 const count = (value) => (Number.isFinite(value) ? Math.trunc(value) : 0);
 const head = (rows, n) => (Array.isArray(rows) ? rows.slice(0, n) : []);
 const quote = (s) => (/\s/.test(s) ? JSON.stringify(s) : s);
+
+// A folder that is never indexed — a home or drive root, or a workspace ZCode made for a session
+// without a folder — has no index and no entry in the store (src/mcp/context.mjs opens nothing
+// for it). Every tool says so in one line and goes no further: `refusalFor` below is then the
+// whole result of the call, and null for any other context. The store is the whole machine's:
+// it is listed and cleaned from such a session like from any other (the listing under the same
+// byte cap as every result).
+const HOST_WORKSPACE_HINT =
+  'this is a workspace ZCode made for a session without a folder (under a .zcode/workspace directory); ' +
+  'it gets no index and no entry in the index store. Use Grep/Read here.';
+const UNSAFE_ROOT_HINT = 'this folder is a home or drive root and is never indexed; use Grep/Read here.';
+
+function refusalFor(name, params, context) {
+  const host = context.hostWorkspace === true;
+  if (!host && context.unsafe !== true) return null;
+  // A clean request is about the store, not about this folder: it goes through as usual.
+  if (name === 'codegraph_status' && params.clean !== undefined) return null;
+  const lookup = name === 'codegraph_lookup';
+  const file = normalizePath(context.root, params.file);
+  const args = name === 'codegraph_status'
+    ? (params.refresh === true ? 'refresh=true' : '')
+    : name === 'codegraph_map'
+      ? quote(normalizePath(context.root, params.path) ?? '')
+      : lookupArgs(params.operation, params, file, params.operation === 'affected' ? affectedOf(params, context.root) : null);
+  const operation = lookup ? params.operation : name === 'codegraph_status' ? 'status' : 'map';
+  const storage = name === 'codegraph_status' && params.storage === true ? render.storageRows(storageOf(context), Date.now()) : [];
+  return notice(operation, args, host ? 'not a project folder' : 'not indexed', host ? HOST_WORKSPACE_HINT : UNSAFE_ROOT_HINT, '', storage);
+}
 
 // Every tool syncs first (CONTRACTS.md §9: the server is the source of
 // freshness) and then reads the status for the header. A sync failure does not
@@ -334,8 +364,8 @@ function staleOf(context, status, paths) {
   return { paths: hit.slice(0, 3), more: Math.max(0, hit.length - 3) };
 }
 
-function notice(operation, args, summary, hint, freshness = '') {
-  return text(render.renderNotice({ operation, args, summary, hint, freshness }));
+function notice(operation, args, summary, hint, freshness = '', rows = []) {
+  return text(render.renderNotice({ operation, args, summary, hint, freshness, rows }));
 }
 
 // Paths reach the index as '/'-separated and relative to the root; accept the
@@ -345,6 +375,20 @@ function normalizePath(root, value) {
   let p = path.isAbsolute(value) ? displayPath(root, value) : value;
   if (process.platform === 'win32') p = p.split('\\').join('/');
   return p.replace(/^\.\//, '').replace(/^\/+/, '');
+}
+
+// `affected` names files, not one symbol, and its list reads better unquoted; a path named twice
+// is asked about once (the query dedupes too; the header echoes what is asked).
+function affectedOf(p, root) {
+  return [...new Set((p.files ?? []).map((value) => normalizePath(root, value)))];
+}
+
+// The `<args>` of a lookup's first line.
+function lookupArgs(operation, p, file, affectedFiles) {
+  if (operation === 'search') return quote(p.query);
+  if (operation === 'outline') return quote(file);
+  if (operation === 'affected') return affectedFiles.join(', ');
+  return quote([p.name, file].filter(Boolean).join(' '));
 }
 
 const storageOf = (context) => {
@@ -441,18 +485,8 @@ async function lookupTool(p, context) {
   const budget = budgetOf(context, p.budget, 'lookup');
   const { operation } = p;
   const file = normalizePath(context.root, p.file);
-  // `affected` names files, not one symbol, and its list reads better unquoted; a path named
-  // twice is asked about once (the query dedupes too; the header echoes what is asked).
-  const affectedFiles = operation === 'affected'
-    ? [...new Set((p.files ?? []).map((value) => normalizePath(context.root, value)))]
-    : null;
-  const args = operation === 'search'
-    ? quote(p.query)
-    : operation === 'outline'
-      ? quote(file)
-      : operation === 'affected'
-        ? affectedFiles.join(', ')
-        : quote([p.name, file].filter(Boolean).join(' '));
+  const affectedFiles = operation === 'affected' ? affectedOf(p, context.root) : null;
+  const args = lookupArgs(operation, p, file, affectedFiles);
   if (status?.state === 'empty') {
     return notice(operation, args, 'not indexed', 'project is not indexed; use Read/Grep for now. codegraph_status explains why.');
   }

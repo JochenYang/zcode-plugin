@@ -72,6 +72,38 @@ describe('getContext', () => {
     });
   });
 
+  test('a folder that is never indexed gets no indexer and nothing in the store', async () => {
+    // A workspace ZCode made itself, in a data folder of ZCode's that was moved elsewhere.
+    const base = tmpDir('codegraph-ctx-host-');
+    const data = path.join(base, 'data');
+    const workspace = path.join(base, 'zcode-cache', '.zcode', 'workspace', 'draft-abc');
+    fs.mkdirSync(data, { recursive: true });
+    fs.mkdirSync(workspace, { recursive: true });
+    await withEnv({ ZCODE_PROJECT_DIR: workspace, ZCODE_PLUGIN_DATA: data }, async () => {
+      const ctx = await getContext();
+      assert.equal(ctx.hostWorkspace, true);
+      assert.equal(ctx.unsafe, false);
+      assert.equal(ctx.indexer, null, 'nothing is opened there');
+      assert.equal(ctx.db, null);
+      assert.equal(ctx.config.autoIndex, true, "the user's settings are still loaded: the store is managed from such a session");
+      assert.equal(await getContext(), ctx, 'cached like any context');
+      await resetContext();
+      assert.equal(fs.existsSync(path.join(data, 'indexes')), false, 'the store is not even created');
+    });
+    // A home directory: the same refusal. "Home" points at a scratch folder for this process.
+    const home = path.join(base, 'home');
+    fs.mkdirSync(home);
+    await withEnv({ ZCODE_PROJECT_DIR: home, ZCODE_PLUGIN_DATA: data, USERPROFILE: home, HOME: home }, async () => {
+      const ctx = await getContext();
+      assert.equal(ctx.unsafe, true);
+      assert.equal(ctx.hostWorkspace, false);
+      assert.equal(ctx.indexer, null);
+      assert.equal(ctx.db, null);
+      await resetContext();
+      assert.equal(fs.existsSync(path.join(data, 'indexes')), false);
+    });
+  });
+
   test('rejects with an explanatory error when the indexer module is missing, and does not cache the failure', async (t) => {
     if (hasIndexer) {
       t.skip('indexer module present; the missing-module path is covered by the branch above');

@@ -128,11 +128,76 @@ describe('listIndexes', () => {
     const unreadable = listIndexes().find((e) => e.dir === goneDir);
     assert.deepEqual([unreadable.root, unreadable.state, unreadable.orphan], [null, 'unknown', false]);
   });
+
+  test('an entry left for a folder that is never indexed is marked as no project: a workspace ZCode made, or a home or drive root', () => {
+    const real = project();
+    fakeIndex({ root: real, state: 'empty' });
+    // Written by versions before such folders were refused; their folders need not exist any more.
+    const host = path.join(data, 'zcode-cache', '.zcode', 'workspace', 'draft-abc');
+    writeStatus(host, { state: 'empty', reason: 'below-min-files' });
+    const home = path.join(data, 'home');
+    writeStatus(home, { state: 'empty', reason: 'unsafe-root' });
+    const listed = new Map(listIndexes({ probe: false }).map((entry) => [entry.root, entry]));
+    assert.equal(listed.get(real.split(path.sep).join('/')).notAProject, false);
+    assert.equal(listed.get(host.split(path.sep).join('/')).notAProject, true);
+    assert.equal(listed.get(home.split(path.sep).join('/')).notAProject, true);
+  });
+
+  test('an entry under such a folder that holds files is no "no project": nothing built is deleted for where it lies', () => {
+    const built = path.join(data, 'zcode-cache', '.zcode', 'workspace', 'pkg');
+    writeStatus(built, { state: 'ready', filesTotal: 12, filesDone: 12, symbols: 3, languages: { typescript: 3 } });
+    const listed = listIndexes({ probe: false }).find((entry) => entry.root === built.split(path.sep).join('/'));
+    assert.equal(listed.notAProject, false);
+    assert.deepEqual(planSweep([listed], { keep: [], now: Date.now() }).remove, [], 'the age rule takes it in the end, nothing sooner');
+  });
+
+  test('telling such an entry asks nothing of the project folders: the automatic sweep and the view must not wait on a share', () => {
+    const real = project();
+    fakeIndex({ root: real, state: 'empty' });
+    const host = path.join(data, 'zcode-cache', '.zcode', 'workspace', 'draft-abc');
+    writeStatus(host, { state: 'empty', reason: 'below-min-files' });
+    let asked = 0;
+    const native = fs.realpathSync.native;
+    fs.realpathSync.native = () => {
+      asked += 1;
+      throw Object.assign(new Error('EIO'), { code: 'EIO' });
+    };
+    let listed;
+    try {
+      listed = listIndexes({ probe: false });
+    } finally {
+      fs.realpathSync.native = native;
+    }
+    assert.equal(asked, 0, 'no stored root was resolved');
+    assert.equal(listed.length, 2);
+    assert.equal(listed.find((entry) => entry.root === host.split(path.sep).join('/')).notAProject, true);
+    assert.equal(listed.find((entry) => entry.root === real.split(path.sep).join('/')).notAProject, false);
+  });
 });
 
 describe('planSweep', () => {
   const now = 100 * DAY;
   const keys = (plan, field) => plan[field].map((e) => e.key);
+
+  test('a folder that is never indexed goes whatever the limits say; an index in use still waits', () => {
+    const host = entry('aaaaaaaaaaaaaaaa', { root: 'D:/zcode-cache/.zcode/workspace/draft-1', state: 'empty', files: 0, notAProject: true, lastUsedAt: now, bytes: 200 * 1024 });
+    const home = entry('bbbbbbbbbbbbbbbb', { root: 'C:/Users/someone', state: 'empty', files: 0, notAProject: true, lastUsedAt: now, bytes: 200 * 1024 });
+    // A small real folder is not indexed either, but it is nobody's to remove without a rule.
+    const small = entry('cccccccccccccccc', { root: 'D:/codes/small', state: 'empty', files: 0, lastUsedAt: now });
+    const plan = planSweep([host, home, small], { now });
+    assert.deepEqual(plan.remove.map((e) => [e.key, e.reason]), [
+      ['aaaaaaaaaaaaaaaa', 'not-a-project'],
+      ['bbbbbbbbbbbbbbbb', 'not-a-project'],
+    ]);
+    assert.deepEqual(keys(plan, 'kept'), ['cccccccccccccccc']);
+    // It goes before what the age rule takes, and its bytes do not count against the quota.
+    const aged = planSweep(
+      [host, entry('dddddddddddddddd', { lastUsedAt: now - 200 * DAY }), { ...small, lastUsedAt: now - 100 * DAY }],
+      { keep: ['cccccccccccccccc'], maxIdleDays: 90, maxTotalBytes: 500, now },
+    );
+    assert.deepEqual(aged.remove.map((e) => e.reason), ['not-a-project', 'idle']);
+    assert.deepEqual(planSweep([{ ...home, inUse: true }], { now }).remove, [], 'a live process holds it: the next sweep');
+  });
 
   test('without limits nothing goes, not even an index whose project folder is gone', () => {
     const entries = [entry('aaaaaaaaaaaaaaaa', { orphan: true }), entry('bbbbbbbbbbbbbbbb', { lastUsedAt: 0 }), entry('cccccccccccccccc')];
@@ -200,6 +265,19 @@ describe('planSweep', () => {
 });
 
 describe('sweepIndexes', () => {
+  test('the sweep takes an entry left for a folder that is never indexed, and nothing else', () => {
+    const real = project();
+    const realDir = fakeIndex({ root: real });
+    // Left by a version that still opened an index for such folders.
+    const host = path.join(data, 'zcode-cache', '.zcode', 'workspace', 'draft-abc');
+    writeStatus(host, { state: 'empty', reason: 'below-min-files' });
+    const result = sweepIndexes({ keep: [projectKey(real)], maxIdleDays: 0 });
+    assert.deepEqual(result.removed.map((e) => [e.root, e.reason]), [[host.split(path.sep).join('/'), 'not-a-project']]);
+    assert.deepEqual(result.busy, []);
+    assert.equal(fs.existsSync(indexDir(host)), false);
+    assert.equal(fs.existsSync(realDir), true);
+  });
+
   test('deletes what the policy allows and reports it; the rest of the store stays', () => {
     const current = project();
     const old = project();

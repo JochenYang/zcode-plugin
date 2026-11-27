@@ -3,6 +3,8 @@
 // index of a project that was deleted or abandoned stayed forever.
 //
 // An index may go when
+//   - it is no index of any project: an entry an older version left for a folder that is never
+//     indexed (a workspace ZCode made itself, a home or drive root) ('not-a-project');
 //   - it last served a session more than `maxIdleDays` ago ('idle'; reported 'orphan' when its
 //     project folder is also gone), when a limit is set;
 //   - the store is over `maxTotalBytes` and it is among the least recently used ('over-quota');
@@ -16,7 +18,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { dataDir, indexDir } from '../paths.mjs';
+import { dataDir, indexDir, isHostWorkspacePath } from '../paths.mjs';
 import { readStatusFile, atomicWriteFile } from './status.mjs';
 import { lockHeld } from './lock.mjs';
 
@@ -125,7 +127,9 @@ export function touchUsage(root, { now = Date.now() } = {}) {
  *   automatic sweep does without it: the age rule does not need the answer. `data` is the
  *   plugin data directory to read (the extension names the one the host told it).
  * @returns {{ key: string, dir: string, root: string|null, state: string, files: number, filesDone: number, symbols: number,
- *   bytes: number, lastUsedAt: number, inUse: boolean, orphan: boolean }[]}
+ *   bytes: number, lastUsedAt: number, inUse: boolean, orphan: boolean, notAProject: boolean }[]}
+ *   `notAProject`: an entry that holds nothing and was left for a folder that is never indexed
+ *   (see `noProject`); the sweep takes it whatever the limits say
  */
 export function listIndexes({ probe = true, data = dataDir() } = {}) {
   const base = indexesDir(data);
@@ -155,9 +159,22 @@ export function listIndexes({ probe = true, data = dataDir() } = {}) {
       lastUsedAt: lastUsedAt(dir, status),
       inUse: lockHeld(path.join(dir, 'lock')),
       orphan: probe && root !== null && !fs.existsSync(root),
+      notAProject: noProject(root, status),
     });
   }
   return out.sort((a, b) => a.lastUsedAt - b.lastUsedAt || a.key.localeCompare(b.key));
+}
+
+// Whether an entry is one an older version left for a folder that is never indexed: a workspace
+// ZCode made itself, or a home or drive root (which was recorded as an empty index with that
+// reason). Such folders get no entry any more, so the entry is no index of anything. Judged on
+// the stored path alone: the store must not touch a project folder it has not probed. An entry
+// that holds files is left alone whatever its path: nothing that was built is deleted for where
+// it lies (the age rule takes it in the end, since no session uses it any more).
+function noProject(root, status) {
+  if (Number(status?.filesTotal) > 0) return false;
+  if (root && isHostWorkspacePath(root)) return true;
+  return status?.state === 'empty' && status.reason === 'unsafe-root';
 }
 
 function readStatusSafely(file) {
@@ -176,7 +193,7 @@ function readStatusSafely(file) {
  * @param {{ keep?: string[], maxIdleDays?: number, maxTotalBytes?: number, all?: boolean, now?: number }} [options]
  *   `keep` lists project keys that stay whatever their age (the project of this session);
  *   `all` marks every other index, for an explicit request to empty the store
- * @returns {{ remove: Array<object & { reason: 'orphan'|'idle'|'over-quota'|'requested' }>, kept: object[] }}
+ * @returns {{ remove: Array<object & { reason: 'not-a-project'|'orphan'|'idle'|'over-quota'|'requested' }>, kept: object[] }}
  */
 export function planSweep(entries, { keep = [], maxIdleDays = 0, maxTotalBytes = 0, all = false, now = Date.now() } = {}) {
   const keptKeys = new Set(keep);
@@ -186,7 +203,8 @@ export function planSweep(entries, { keep = [], maxIdleDays = 0, maxTotalBytes =
   const verdict = new Map();
   const idleMs = maxIdleDays > 0 ? maxIdleDays * DAY_MS : 0;
   for (const entry of removable) {
-    if (all) verdict.set(entry.key, 'requested');
+    if (entry.notAProject === true) verdict.set(entry.key, 'not-a-project');
+    else if (all) verdict.set(entry.key, 'requested');
     else if (idleMs > 0 && now - entry.lastUsedAt > idleMs) verdict.set(entry.key, entry.orphan ? 'orphan' : 'idle');
   }
   if (maxTotalBytes > 0) {
@@ -198,8 +216,9 @@ export function planSweep(entries, { keep = [], maxIdleDays = 0, maxTotalBytes =
       total -= entry.bytes;
     }
   }
-  // Reported in the order they would have gone: the certain garbage first, then the oldest.
-  const rank = { orphan: 0, idle: 1, 'over-quota': 2, requested: 3 };
+  // Reported in the order they would have gone: what is no index at all first, then the certain
+  // garbage, then the oldest.
+  const rank = { 'not-a-project': 0, orphan: 1, idle: 2, 'over-quota': 3, requested: 4 };
   const remove = entries
     .filter((entry) => verdict.has(entry.key))
     .map((entry) => ({ ...entry, reason: verdict.get(entry.key) }))

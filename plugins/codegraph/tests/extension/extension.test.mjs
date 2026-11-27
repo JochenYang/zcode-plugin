@@ -387,6 +387,25 @@ describe('storage view tools', () => {
     assert.equal(out.data.text.title, '代码图谱索引');
   });
 
+  test("list: a session in a workspace ZCode made itself protects nothing: the entry an older version left for it is due like any other", async () => {
+    const data = mk('codegraph-ext-data-');
+    const real = project();
+    seed(data, real, { ageMs: 60_000 });
+    // The folder layout of a session that was never given a folder, and the entry an older
+    // version of the plugin stored for it.
+    const draft = path.join(mk('codegraph-ext-host-'), 'zcode-cache', '.zcode', 'workspace', 'draft-abc');
+    fs.mkdirSync(draft, { recursive: true });
+    seed(data, draft, { ageMs: 60_000, state: 'empty', files: 0 });
+    const host = fakeHost({ data, sessions: [session('s1', draft), session('s2', real)] });
+    await activate(host.ctx, NO_TICK);
+    const out = await tools(host).list.run({}, { view: { scope: { kind: 'app' } } });
+    const draftRow = out.data.rows.find((row) => row.path === draft.split(path.sep).join('/'));
+    assert.deepEqual([draftRow.blocked, draftRow.due, draftRow.removable], [null, true, true], "not \"an open session's project\": nothing of it is an index");
+    assert.equal(out.data.totals.due, 1, 'only that entry is due');
+    // And that session gets no status item.
+    assert.deepEqual(lastPatch(host, 's1'), { visible: false });
+  });
+
   test('remove: refuses the project of an open session and an index in use, removes another and returns a fresh snapshot', async () => {
     const data = mk('codegraph-ext-data-');
     const current = project();

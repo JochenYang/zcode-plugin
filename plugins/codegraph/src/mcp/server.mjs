@@ -101,11 +101,12 @@ export function createServer({ tools = TOOLS, onCall = callTool, instructions = 
 // of projects not opened for `maxIdleDays`, and the least recently used ones while the store
 // is over `maxTotalMB`.
 async function silentIndexStart() {
-  // A home or drive root is never indexed: decide that before anything opens a database there.
+  // A home or drive root, and a workspace ZCode made itself, are never indexed: decided before
+  // anything opens a database there.
   const [{ resolveProjectRoot, projectKey }, { loadConfig, loadProjectConfig }] = await Promise.all([import('../paths.mjs'), import('../config.mjs')]);
   const start = (process.env.ZCODE_PROJECT_DIR ?? '').trim() || process.cwd();
-  const { root, unsafe } = resolveProjectRoot(start);
-  if (unsafe) return;
+  const { root, unsafe, hostWorkspace } = resolveProjectRoot(start);
+  if (unsafe || hostWorkspace) return;
   // Read silently: the context below reads the same files again and reports what is wrong with them once.
   const quiet = { write() {} };
   const config = loadConfig({ project: loadProjectConfig(root, { stderr: quiet }), stderr: quiet });
