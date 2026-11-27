@@ -1,11 +1,15 @@
-// A headless Chromium with its debugging port open, plus two pages served behind the ZCode
-// shell's CSP: /shell mounts the app in #root the way the real entry page does, /other does not.
+// A headless Chromium with its debugging port open, plus the pages the launcher is pointed at:
+// `shell.html` mounts the app in #root the way the real entry page does, `other.html` does not.
+// Both are files loaded from a file:// URL, as the real entry page is, behind the same CSP
+// (carried in a meta tag instead of a response header). One page is served from the web with the
+// app's root in it all the same: the launcher has to leave it alone, and a test says so.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { waitForEndpoint } from '../../src/cdp.mjs';
+import { pathToFileURL } from 'node:url';
+import { fetchJson, waitForEndpoint } from '../../src/cdp.mjs';
 
 // Deliberately stricter than the real shell, which is loaded from a file:// URL inside app.asar
 // and carries no CSP at all: this is the policy the app's custom protocol sends (inline styles
@@ -47,21 +51,24 @@ export async function until(read, accept, { timeoutMs = 5000, intervalMs = 50 } 
 
 export async function startTestBrowser(browserPath) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'appearance-test-'));
+  const page = (body) => `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="content-security-policy" content="${CSP}"><style>
+    :root { --color-background: #fafafa; --color-surface: #ffffff; --color-background-win-alt: #e4e4e7; --color-sidebar: #f4f4f5; }
+    .theme-zai-dark { --color-background: #0a0a0a; }
+    body { margin: 0; } .bg-background { background-color: var(--color-background); }
+    .bg-background-win-alt { background-color: var(--color-background-win-alt); min-height: 100vh; } .bg-sidebar { background-color: var(--color-sidebar); }
+  </style></head><body>${body}</body></html>`;
+  const SHELL = page('<div id="root"><div class="bg-background-win-alt">'
+    + '<aside class="bg-sidebar" style="width: 40px; height: 30px">side</aside>'
+    + '<section class="bg-background" style="margin: 4px; border-radius: 6px; overflow: hidden"><div data-testid="conversation" style="height: 50px; background-color: var(--color-surface)">chat</div></section>'
+    + '</div></div>');
+  // The app's own pages, loaded the way the real entry page is: from a file.
+  fs.writeFileSync(path.join(profile, 'shell.html'), SHELL);
+  fs.writeFileSync(path.join(profile, 'other.html'), page('<h1>not the shell</h1>'));
   const server = http.createServer((request, response) => {
-    if (request.url === '/shell') {
+    // A page from the web that mounts the app's root all the same.
+    if (request.url === '/remote') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP });
-      response.end(`<!doctype html><html><head><meta charset="utf-8"><style>
-        :root { --color-background: #fafafa; --color-surface: #ffffff; --color-background-win-alt: #e4e4e7; --color-sidebar: #f4f4f5; }
-        .theme-zai-dark { --color-background: #0a0a0a; }
-        body { margin: 0; } .bg-background { background-color: var(--color-background); }
-        .bg-background-win-alt { background-color: var(--color-background-win-alt); min-height: 100vh; } .bg-sidebar { background-color: var(--color-sidebar); }
-      </style></head><body><div id="root"><div class="bg-background-win-alt">
-        <aside class="bg-sidebar" style="width: 40px; height: 30px">side</aside>
-        <section class="bg-background" style="margin: 4px; border-radius: 6px; overflow: hidden"><div data-testid="conversation" style="height: 50px; background-color: var(--color-surface)">chat</div></section>
-      </div></div></body></html>`);
-    } else if (request.url === '/other') {
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': CSP });
-      response.end('<!doctype html><html><head><meta charset="utf-8"></head><body><h1>not the shell</h1></body></html>');
+      response.end(SHELL);
     } else {
       response.writeHead(404).end();
     }
@@ -101,7 +108,20 @@ export async function startTestBrowser(browserPath) {
       const response = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
       return response.json();
     };
-    return { port, base, openPage, stop };
+    // What the browser lists, before the launcher's own filter: to wait for a page the launcher
+    // is meant to ignore.
+    const rawTargets = async () => fetchJson(`http://127.0.0.1:${port}/json/list`);
+    return {
+      port,
+      pages: {
+        shell: pathToFileURL(path.join(profile, 'shell.html')).href,
+        other: pathToFileURL(path.join(profile, 'other.html')).href,
+        remote: `${base}/remote`,
+      },
+      openPage,
+      rawTargets,
+      stop,
+    };
   } catch (err) {
     await stop();
     throw err;

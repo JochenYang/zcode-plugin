@@ -23,10 +23,15 @@ export async function fetchJson(url, { timeoutMs = 2000, fetchImpl = fetch } = {
   return response.json();
 }
 
-// Every window of the running app that has a debugging WebSocket. DevTools pages are left out.
+// Not one of the app's own pages: DevTools, and anything loaded from the web. The app's pages
+// come from its own files and its own protocols; a page from the web (a sign-in window, an
+// OAuth page) must never be handed the stylesheet, which carries the user's pictures.
+const NOT_APP_PAGE = /^(https?|devtools):/i;
+
+// Every window of the running app that has a debugging WebSocket.
 export async function listTargets(port, { timeoutMs, fetchImpl } = {}) {
   const targets = await fetchJson(`http://127.0.0.1:${port}/json/list`, { timeoutMs, fetchImpl });
-  return targets.filter((target) => target && target.type === 'page' && typeof target.webSocketDebuggerUrl === 'string' && !/^devtools:/i.test(target.url ?? ''));
+  return targets.filter((target) => target && target.type === 'page' && typeof target.webSocketDebuggerUrl === 'string' && !NOT_APP_PAGE.test(target.url ?? ''));
 }
 
 // The port answers a moment after the process starts; on a cold start that can take seconds.
@@ -69,15 +74,24 @@ export class CdpSession {
     }
     return new Promise((resolve, reject) => {
       const socket = new WebSocketImpl(url);
+      // Whichever of the three ways this ends comes first settles it; a socket that opens after
+      // the timeout is closed, not adopted.
+      let settled = false;
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         socket.close();
         reject(new CdpError(`connecting timed out: ${url}`));
       }, timeoutMs);
       socket.addEventListener('open', () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         resolve(new CdpSession(socket));
       }, { once: true });
       socket.addEventListener('error', () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         reject(new CdpError(`cannot connect to ${url}`));
       }, { once: true });

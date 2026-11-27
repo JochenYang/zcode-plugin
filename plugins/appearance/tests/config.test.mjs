@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
   MEDIA_EXTENSIONS,
+  ROTATE_MAX_MINUTES,
   applyPatch,
   ConfigError,
   defaultConfig,
@@ -81,6 +82,9 @@ describe('appearance config', () => {
     assert.match(message({ background: { blur: 41 } }), /background\.blur must be an integer from 0 to 40/);
     assert.match(message({ background: { blur: 2.5 } }), /background\.blur/);
     assert.match(message({ background: { rotateMinutes: -1 } }), /background\.rotateMinutes must be an integer/);
+    // A longer interval than the timer can hold would fire at once, over and over.
+    assert.match(message({ background: { rotateMinutes: ROTATE_MAX_MINUTES + 1 } }), /background\.rotateMinutes must be an integer from 0 to 525600/);
+    assert.equal(message({ background: { rotateMinutes: ROTATE_MAX_MINUTES } }), '', 'the year itself is fine');
     assert.match(message({ background: { scope: 'window' } }), /background\.scope must be one of page, chat/);
     assert.match(message({ background: { enabled: 'yes' } }), /background\.enabled/);
     assert.match(message({ background: { media: 'a.png' } }), /background\.media must be a list/);
@@ -90,6 +94,9 @@ describe('appearance config', () => {
     assert.match(message({ skin: { custom: { night: {} } } }), /skin\.custom: unknown mode night/);
     assert.match(message({ skin: { custom: {} } }), /skin\.custom needs a light or a dark set/);
     assert.match(message({ launcher: { port: 70000 } }), /launcher\.port/);
+    // Port 0 means "any port" to the system and nothing useful to this launcher.
+    assert.match(message({ launcher: { port: 0 } }), /launcher\.port must be an integer from 1 to 65535/);
+    assert.equal(message({ launcher: { port: 1 } }), '');
     assert.match(message([]), /must be a JSON object/);
   });
 
@@ -101,6 +108,25 @@ describe('appearance config', () => {
     assert.throws(() => normalizeMediaPath('notes.txt', { cwd: dir }), /not a picture or a video/);
     assert.throws(() => normalizeMediaPath('   ', { cwd: dir }), /non-empty string/);
     assert.equal(normalizeMediaPath('~/x.webm', { cwd: dir }), path.join(os.homedir(), 'x.webm'));
+  }));
+
+  it('refuses a network path, whichever way it is spelled, from the file and from the tools', () => inTempDir((dir) => {
+    for (const spelled of ['\\\\server\\share\\a.png', '//server/share/a.png', '  \\\\127.0.0.1\\c$\\a.png  ']) {
+      assert.throws(() => normalizeMediaPath(spelled, { cwd: dir }), /network path is not accepted/, spelled);
+      assert.throws(() => applyPatch(defaultConfig(), { setMedia: [spelled] }, { cwd: dir }), /network path is not accepted/, spelled);
+      assert.throws(() => applyPatch(defaultConfig(), { addMedia: [spelled] }, { cwd: dir }), /network path is not accepted/, spelled);
+      const file = path.join(dir, 'appearance.json');
+      fs.writeFileSync(file, JSON.stringify({ background: { media: [spelled] } }));
+      assert.throws(() => loadConfig({ file }), /network path is not accepted/, spelled);
+    }
+    // A share mapped to a drive letter is a local path.
+    assert.equal(normalizeMediaPath('Z:\\photos\\a.png', { cwd: dir }), path.win32.resolve('Z:\\photos\\a.png'));
+    if (process.platform === 'win32') {
+      // A workspace that is itself on a share: every path resolves onto the network, however it
+      // is spelled. (This is what the check after resolving is for; the one before it is what
+      // holds on macOS and Linux, where such a path resolves to a local one.)
+      assert.throws(() => normalizeMediaPath('a.png', { cwd: '\\\\server\\share\\pics' }), /network path is not accepted/);
+    }
   }));
 
   it('tells a picture from a video by its extension', () => {
@@ -126,12 +152,14 @@ describe('appearance config', () => {
 
   describe('partial updates', () => {
     it('changes only what was passed', () => {
-      const config = defaultConfig();
+      // Started from values that are not the defaults, so that "kept" cannot be mistaken for "reset".
+      const config = applyPatch(defaultConfig(), { blur: 7, skin: 'sepia', rotateMinutes: 30 }, { cwd: '/nowhere' });
       const next = applyPatch(config, { mask: 0.3, scope: 'chat' }, { cwd: '/nowhere' });
       assert.equal(next.background.mask, 0.3);
       assert.equal(next.background.scope, 'chat');
-      assert.equal(next.background.blur, 0);
-      assert.equal(next.skin.preset, 'default');
+      assert.equal(next.background.blur, 7, 'untouched');
+      assert.equal(next.background.rotateMinutes, 30, 'untouched');
+      assert.equal(next.skin.preset, 'sepia', 'untouched');
       assert.equal(config.background.mask, 0.72, 'the input is not changed');
     });
 

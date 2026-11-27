@@ -7,7 +7,7 @@
 // is running (the settings are saved either way; they show the next time ZCode is started from
 // the launcher).
 import { createInterface } from 'node:readline';
-import { applyPatch, BLUR_MAX, loadConfig, MASK_MAX, MASK_MIN, saveConfig, SCOPES } from './config.mjs';
+import { applyPatch, BLUR_MAX, loadConfig, MASK_MAX, MASK_MIN, ROTATE_MAX_MINUTES, saveConfig, SCOPES } from './config.mjs';
 import { paths } from './paths.mjs';
 import { SKIN_NAMES } from './skins.mjs';
 import { launcherState } from './status.mjs';
@@ -48,9 +48,9 @@ export const TOOLS = [
         setMedia: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Replace the list of background files with these. Paths may be absolute, start with ~, or be relative to the workspace. Pictures: png, jpg, jpeg, webp, gif, bmp, avif. Videos (whole page only): mp4, webm.',
+          description: 'Replace the list of background files with these. Paths may be absolute, start with ~, or be relative to the workspace. Local files only: a network path (\\\\server\\share) is not accepted. Pictures: png, jpg, jpeg, webp, gif, bmp, avif. Videos (whole page only): mp4, webm.',
         },
-        addMedia: { type: 'array', items: { type: 'string' }, description: 'Add these files to the end of the list (duplicates are skipped).' },
+        addMedia: { type: 'array', items: { type: 'string' }, description: 'Add these local files to the end of the list (duplicates are skipped). Same rules as setMedia; a network path is not accepted.' },
         removeMedia: {
           type: 'array',
           items: { type: ['string', 'integer'] },
@@ -64,7 +64,7 @@ export const TOOLS = [
           description: 'How much of the theme background colour is laid over the background, 0 to 1. Higher is easier to read: about 0.7 for a busy picture, 0.3 for a calm one.',
         },
         blur: { type: 'integer', minimum: 0, maximum: BLUR_MAX, description: 'Blur of the background in pixels (page scope only). 0 = sharp.' },
-        rotateMinutes: { type: 'integer', minimum: 0, description: 'Move to the next file every N minutes; 0 = never.' },
+        rotateMinutes: { type: 'integer', minimum: 0, maximum: ROTATE_MAX_MINUTES, description: 'Move to the next file every N minutes; 0 = never.' },
         skin: {
           type: 'string',
           enum: SKIN_NAMES,

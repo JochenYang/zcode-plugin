@@ -148,14 +148,17 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
           const text = viewStrings(await locale());
           const { config } = loadConfig({ file });
           const next = applyPatch(config, { removeMedia: [target] });
+          const name = String(target).split(/[\\/]/).pop();
+          // A path that is not in the list changes nothing; that is said, not reported as a removal.
+          if (next.background.media.length === config.background.media.length) return { ok: false, message: text.notInList(name) };
           saveConfig(next, { file });
-          return { ok: true, message: text.removed(String(target).split(/[\\/]/).pop()), data: await data() };
+          return { ok: true, message: text.removed(name), data: await data() };
         }),
         pick: tool('Open the system file dialog. The chosen files are added when it closes; poll `get` for them.', { type: 'object', properties: {} }, async () => {
           const text = viewStrings(await locale());
           if (picking) return { ok: false, message: text.alreadyPicking };
           picking = true;
-          picked = null;
+          // The answer of the dialog before, if the view has not taken it yet, stays until it does.
           // Not awaited: a dialog can stay open for as long as the user likes.
           Promise.resolve()
             .then(() => pick({ title: text.pick.replace(/…$/, '') }))

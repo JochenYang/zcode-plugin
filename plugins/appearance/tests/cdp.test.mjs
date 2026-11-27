@@ -5,15 +5,17 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { after, before, describe, it } from 'node:test';
-import { findFreePort, listTargets } from '../src/cdp.mjs';
+import { CdpSession, findFreePort, listTargets } from '../src/cdp.mjs';
 import { closeAll, syncTarget } from '../src/apply.mjs';
 import { CHAT_ROOT, IMAGE_LAYER_ID, STYLE_ID, TINT_LAYER_ID, buildPlan } from '../src/css.mjs';
 import { defaultConfig } from '../src/config.mjs';
+import { supervise } from '../src/launcher.mjs';
 import { PIXEL, findBrowser, startTestBrowser, until } from './helpers/browser.mjs';
 
 const BROWSER = findBrowser();
+const quiet = { info() {}, warn() {} };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const shellTarget = async (port) => (await listTargets(port)).find((target) => target.url.endsWith('/shell'));
+const shellTarget = async (port) => (await listTargets(port)).find((target) => target.url.endsWith('/shell.html'));
 const pageWith = (extra) => ({ ...defaultConfig(), background: { ...defaultConfig().background, ...extra } });
 
 describe('debugging channel against a real browser', { skip: BROWSER ? false : 'no Chrome or Edge found' }, () => {
@@ -51,7 +53,7 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
 
   it('injects the stylesheet under the shell CSP, and a reload gets it again', async () => {
     const plan = buildPlan(pageWith({ media: ['pixel.png'] }), { imageDataUrl: PIXEL });
-    const opened = await world.openPage(`${world.base}/shell`);
+    const opened = await world.openPage(world.pages.shell);
     const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
     // Registering before the document exists is what the launcher does on a cold start; which
     // of the two paths applied the stylesheet is not the point, the page state is.
@@ -117,15 +119,37 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     assert.equal(await syncTarget(target, sessions, plan), 'missing-root');
   });
 
-  it('leaves a window without the app root alone', async () => {
+  it('leaves a window without the app root alone, and does not keep asking', async () => {
     const plan = buildPlan(defaultConfig(), { imageDataUrl: PIXEL });
-    const opened = await world.openPage(`${world.base}/other`);
+    const opened = await world.openPage(world.pages.other);
     const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
-    await syncTarget(target, sessions, plan);
+    assert.equal(await syncTarget(target, sessions, plan), 'waiting');
     const { session } = sessions.get(target.id);
     await until(() => session.evaluate(`document.readyState === 'complete' && !!document.querySelector('h1')`), Boolean);
     await sleep(300);
     assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(STYLE_ID)}) === null`), true);
     assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
+    // Once the wait for the app to mount has run out, the stylesheet is not sent again on every
+    // poll (it used to be, every ten seconds, picture and all), and the window stays untouched.
+    await sleep(10400);
+    assert.equal(await syncTarget(target, sessions, plan), null, 'not sent again');
+    assert.equal(await session.evaluate(plan.check), 'ok');
+    assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(STYLE_ID)}) === null`), true);
+  });
+
+  it('leaves a page from the web alone, even one that mounts the app root', async () => {
+    const plan = buildPlan(pageWith({ media: ['pixel.png'] }), { imageDataUrl: PIXEL });
+    const opened = await world.openPage(world.pages.remote);
+    // It loads like any page; the launcher's own list of windows just never names it.
+    await until(() => world.rawTargets(), (list) => list.some((entry) => entry.id === opened.id));
+    const remote = await CdpSession.connect(opened.webSocketDebuggerUrl);
+    try {
+      await until(() => remote.evaluate(`document.readyState === 'complete' && !!document.getElementById('root')`), Boolean);
+      assert.equal((await listTargets(world.port)).some((entry) => entry.id === opened.id), false, 'not a window the launcher talks to');
+      await supervise({ port: world.port, getPlan: async () => plan, shouldStop: () => false, logger: quiet, once: true, sessions: new Map() });
+      assert.equal(await remote.evaluate(`document.getElementById(${JSON.stringify(STYLE_ID)}) === null && typeof window.__zcodeAppearance === 'undefined'`), true, 'nothing of the launcher reached it');
+    } finally {
+      remote.close();
+    }
   });
 });

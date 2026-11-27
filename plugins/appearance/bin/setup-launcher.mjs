@@ -29,6 +29,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveZcode } from '../src/launcher.mjs';
+import { powershellExe } from '../src/system.mjs';
 
 export const DEFAULT_NAME = 'ZCode Appearance';
 export const DEFAULT_DESCRIPTION = 'Start ZCode with a custom background';
@@ -102,9 +103,9 @@ export function parseArgs(argv, { env = process.env, platform = process.platform
 export function helpText({ platform = process.platform, home = os.homedir() } = {}) {
   const join = joiner(platform);
   const made = {
-    win32: ['做一个带 ZCode 图标、名称自定义的启动器程序，放进自己的目录，并在开始菜单建快捷方式。', '--dir <目录>       放启动器的目录（默认 LocalAppData 下以名称命名的目录）。'],
+    win32: ['做一个带 ZCode 图标、名称自定义的启动器程序，放进自己的目录，并在开始菜单建快捷方式。', '--dir <目录>       放启动器的专用目录，新的、空的，或者上次放过它的（默认 LocalAppData 下以名称命名的目录）。'],
     darwin: ['做一个带 ZCode 图标、名称自定义的启动器（.app），放进指定的文件夹，可以拖到程序坞。', `--dir <目录>       放 .app 的文件夹（默认 ${join(home, 'Applications')}）。`],
-    linux: ['做一个带 ZCode 图标、名称自定义的启动脚本，放进自己的目录，并在应用列表里加一个条目。', `--dir <目录>       放启动脚本的目录（默认 ${join(home, '.local', 'opt', '<名称>')}）。`],
+    linux: ['做一个带 ZCode 图标、名称自定义的启动脚本，放进自己的目录，并在应用列表里加一个条目。', `--dir <目录>       放启动脚本的专用目录，新的、空的，或者上次放过它的（默认 ${join(home, '.local', 'opt', '<名称>')}）。`],
   }[platform];
   if (!made) return `这个系统（${platform}）上做不了启动器：只有 Windows、macOS 和 Linux 有配套的做法。\n`;
   const pin = {
@@ -137,7 +138,7 @@ function powershell(script, { encoded = true } = {}) {
   const command = encoded
     ? ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
     : ['-NoProfile', '-NonInteractive', '-Command', script];
-  const out = spawnSync('powershell', command, { encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+  const out = spawnSync(powershellExe(), command, { encoding: 'utf8', windowsHide: true, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
   if (out.error) throw new SetupError(`PowerShell 没能启动：${out.error.message}`);
   return { code: out.status, out: String(out.stdout ?? '').trim(), err: String(out.stderr ?? '').trim() };
 }
@@ -200,6 +201,11 @@ const LAUNCHER_FILES = ['bin/launch.mjs', ...fs.readdirSync(path.join(PLUGIN, 's
 function launcherScriptFor(home, mode) {
   if (mode !== 'copy') return LAUNCH_SCRIPT;
   const app = path.join(home, 'app');
+  // An `app/` that is not this command's earlier copy is someone else's (projects of all kinds
+  // have one); it is not emptied.
+  if (fs.existsSync(app) && !fs.existsSync(path.join(app, 'bin', 'launch.mjs'))) {
+    throw new SetupError(`${app} 已经有了，而且不是这个命令做出来的；--copy 要用它放启动器的文件。换一个 --dir，或者去掉 --copy。`);
+  }
   fs.rmSync(app, { recursive: true, force: true });
   for (const relative of LAUNCHER_FILES) {
     const target = path.join(app, relative);
@@ -207,6 +213,38 @@ function launcherScriptFor(home, mode) {
     fs.copyFileSync(path.join(PLUGIN, relative), target);
   }
   return path.join(app, 'bin', 'launch.mjs');
+}
+
+const entriesOf = (folder) => {
+  try {
+    return fs.readdirSync(folder);
+  } catch {
+    return [];
+  }
+};
+
+// The folder the launcher is made in has to be this command's own: new, empty, or one it wrote
+// the path file into before. Anything else in there belongs to someone else. Refused, because
+// --uninstall takes the folder away and --copy replaces its app/ folder: pointed at a tools
+// folder once, this command would have emptied it.
+function claimFolder(outDir) {
+  if (entriesOf(outDir).length === 0 || fs.existsSync(path.join(outDir, 'launch-path.txt'))) return;
+  throw new SetupError(`${outDir} 里已经有别的东西，这个命令不往别人的目录里写（卸载时会把目录一起删掉）。给它一个专用目录，比如 ${path.join(outDir, 'ZCode Appearance')}。`);
+}
+
+// Takes this command's own files out of the folder, then the folder itself when nothing else is
+// in it. What someone else keeps there stays, and the folder with it.
+function takeOwn(outDir, names, removed = []) {
+  for (const name of names) {
+    const target = path.join(outDir, name);
+    if (!fs.existsSync(target)) continue;
+    fs.rmSync(target, { recursive: true, force: true });
+    removed.push(target);
+  }
+  if (entriesOf(outDir).length > 0) return { removed, left: outDir };
+  fs.rmdirSync(outDir);
+  removed.push(outDir);
+  return { removed, left: null };
 }
 
 const fill = (text, values) => Object.entries(values).reduce((out, [key, value]) => out.replaceAll(key, value), text);
@@ -235,7 +273,8 @@ export function buildLauncher({ outDir, name, description = DEFAULT_DESCRIPTION,
 
   fs.mkdirSync(outDir, { recursive: true });
   const source = path.join(outDir, 'Launcher.cs');
-  const escape = (text) => String(text).replace(/(["\\])/g, '\\$1');
+  // A line break cannot go into a C# string literal; the name is one line wherever it came from.
+  const escape = (text) => String(text).replace(/[\r\n]+/g, ' ').replace(/(["\\])/g, '\\$1');
   fs.writeFileSync(source, fill(fs.readFileSync(TEMPLATE, 'utf8'), { __TITLE__: escape(name), __DESCRIPTION__: escape(description) }));
 
   let icon = null;
@@ -268,6 +307,7 @@ export function buildLauncher({ outDir, name, description = DEFAULT_DESCRIPTION,
 function setupWindows({ file, name, description, outDir, icon, mode, shortcut }) {
   // The launcher is told by its own location where the config lives; nothing else is written
   // into the folder, so it is this command's to replace.
+  claimFolder(outDir);
   const script = launcherScriptFor(outDir, mode);
   const built = buildLauncher({ outDir, name, description, script, png: icon.png });
   fs.writeFileSync(path.join(outDir, 'launch-path.txt'), `${script}\n`);
@@ -287,10 +327,17 @@ function setupWindows({ file, name, description, outDir, icon, mode, shortcut })
   return { exe: built.exe, file, script, hasIcon: built.hasIcon, shortcut: link, compiler: built.compiler };
 }
 
+// What this command wrote into the launcher's folder, on each system; `app/` only with --copy,
+// the icon only when one was found. The folder goes last, and only when it is empty by then.
+const OWN_FILES = {
+  win32: (file) => [`${file}.exe`, 'Launcher.cs', 'app.ico', 'launch-path.txt', 'app'],
+  linux: (id) => [id, 'launch-path.txt', 'icon.png', 'app'],
+};
+
 function uninstallWindows({ file, outDir }) {
   const exe = path.join(outDir, `${file}.exe`);
+  if (!fs.existsSync(exe) || !fs.existsSync(path.join(outDir, 'launch-path.txt'))) return { removed: [], kept: outDir, left: null };
   const removed = [];
-  if (!fs.existsSync(exe) || !fs.existsSync(path.join(outDir, 'launch-path.txt'))) return { removed, kept: outDir };
   const link = path.join(startMenuPrograms(), `${file}.lnk`);
   if (fs.existsSync(link)) {
     // Only a shortcut that points at this program; one of another program with the same name stays.
@@ -300,9 +347,7 @@ function uninstallWindows({ file, outDir }) {
       removed.push(link);
     }
   }
-  fs.rmSync(outDir, { recursive: true, force: true });
-  removed.push(outDir);
-  return { removed, kept: null };
+  return { ...takeOwn(outDir, OWN_FILES.win32(file), removed), kept: null };
 }
 
 // ---------------------------------------------------------------- macOS
@@ -354,11 +399,11 @@ function uninstallMac({ file, outDir }) {
   const removed = [];
   // Only a bundle this command made: its program of that name and the path file in Resources.
   if (!fs.existsSync(path.join(bundle, 'Contents', 'MacOS', file)) || !fs.existsSync(path.join(bundle, 'Contents', 'Resources', 'launch-path.txt'))) {
-    return { removed, kept: bundle };
+    return { removed, kept: bundle, left: null };
   }
   fs.rmSync(bundle, { recursive: true, force: true });
   removed.push(bundle);
-  return { removed, kept: null };
+  return { removed, kept: null, left: null };
 }
 
 // ---------------------------------------------------------------- Linux
@@ -370,6 +415,7 @@ function desktopEntryPath(name, { env = process.env, home = os.homedir() } = {})
 }
 
 function setupLinux({ name, description, outDir, icon, mode, shortcut, env }) {
+  claimFolder(outDir);
   const script = launcherScriptFor(outDir, mode);
   fs.mkdirSync(outDir, { recursive: true });
   const wrapper = path.join(outDir, idOf(name));
@@ -387,7 +433,7 @@ function setupLinux({ name, description, outDir, icon, mode, shortcut, env }) {
     entry = desktopEntryPath(name, { env });
     fs.mkdirSync(path.dirname(entry), { recursive: true });
     fs.writeFileSync(entry, fill(fs.readFileSync(DESKTOP_ENTRY, 'utf8'), {
-      __TITLE__: entryValue(name), __DESCRIPTION__: entryValue(description), __EXECUTABLE__: execValue(wrapper), __ICON__: picture ?? 'applications-development',
+      __TITLE__: entryValue(name), __DESCRIPTION__: entryValue(description), __EXECUTABLE__: execValue(wrapper), __ICON__: entryValue(picture ?? 'applications-development'),
     }));
   }
   return {
@@ -396,27 +442,27 @@ function setupLinux({ name, description, outDir, icon, mode, shortcut, env }) {
   };
 }
 
-// Whether the entry starts this wrapper and nothing else.
+// Whether the entry starts this wrapper and nothing else. The value is read back the way it was
+// written: what `execValue` escaped with a backslash is unescaped here.
 function entryPointsAt(entry, wrapper) {
   const line = fs.readFileSync(entry, 'utf8').split(/\r?\n/).find((text) => text.startsWith('Exec='));
   if (!line) return false;
   const match = /^Exec=("([^"]*)"|\S+)/.exec(line);
-  return Boolean(match) && path.resolve(match[2] ?? match[1]) === path.resolve(wrapper);
+  const value = match ? (match[2] ?? match[1]).replace(/\\([\\"`$])/g, '$1') : '';
+  return value !== '' && path.resolve(value) === path.resolve(wrapper);
 }
 
 function uninstallLinux({ name, outDir, env }) {
-  const removed = [];
-  const wrapper = path.join(outDir, idOf(name));
+  const id = idOf(name);
   // Only a folder this command made: the script of that name and the path file.
-  if (!fs.existsSync(wrapper) || !fs.existsSync(path.join(outDir, 'launch-path.txt'))) return { removed, kept: outDir };
+  if (!fs.existsSync(path.join(outDir, id)) || !fs.existsSync(path.join(outDir, 'launch-path.txt'))) return { removed: [], kept: outDir, left: null };
+  const removed = [];
   const entry = desktopEntryPath(name, { env });
-  if (fs.existsSync(entry) && entryPointsAt(entry, wrapper)) {
+  if (fs.existsSync(entry) && entryPointsAt(entry, path.join(outDir, id))) {
     fs.rmSync(entry);
     removed.push(entry);
   }
-  fs.rmSync(outDir, { recursive: true, force: true });
-  removed.push(outDir);
-  return { removed, kept: null };
+  return { ...takeOwn(outDir, OWN_FILES.linux(id), removed), kept: null };
 }
 
 // ---------------------------------------------------------------- the two commands
@@ -489,7 +535,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.stdout.write(helpText({ platform }));
     } else if (args.uninstall) {
       const result = uninstall({ ...args, platform });
-      process.stdout.write(result.kept ? `没有找到这个启动器（${result.kept} 里没有它做出来的东西），什么都没删。\n` : `已删除：\n${result.removed.join('\n')}\n`);
+      process.stdout.write(result.kept
+        ? `没有找到这个启动器（${result.kept} 里没有它做出来的东西），什么都没删。\n`
+        : `已删除：\n${result.removed.join('\n')}\n${result.left ? `${result.left} 里还有别的东西，目录保留。\n` : ''}`);
     } else {
       process.stdout.write(`${report(await setup({ ...args, platform }), { platform })}\n`);
     }

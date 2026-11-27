@@ -45,7 +45,7 @@ function makeHome() {
 }
 
 const readIn = async (port, expression) => {
-  const target = (await listTargets(port)).find((entry) => entry.url.endsWith('/shell'));
+  const target = (await listTargets(port)).find((entry) => entry.url.endsWith('/shell.html'));
   const session = await CdpSession.connect(target.webSocketDebuggerUrl);
   try {
     await session.send('Page.enable');
@@ -65,7 +65,7 @@ describe('launcher loop against a real browser', { skip: BROWSER ? false : 'no C
   before(async () => {
     world = await startTestBrowser(BROWSER);
     home = makeHome();
-    await world.openPage(`${world.base}/shell`);
+    await world.openPage(world.pages.shell);
   });
 
   after(async () => {
@@ -120,7 +120,7 @@ describe('launcher loop against a real browser', { skip: BROWSER ? false : 'no C
 
   it('plays a video as an element in the picture layer, and swaps back to a picture', async () => {
     const config = { background: { enabled: true, media: [], scope: 'page', rotateMinutes: 0, mask: 0.72, blur: 0 }, skin: { preset: 'default', custom: null }, launcher: { zcodePath: null, port: 9337 } };
-    const target = (await listTargets(world.port)).find((entry) => entry.url.endsWith('/shell'));
+    const target = (await listTargets(world.port)).find((entry) => entry.url.endsWith('/shell.html'));
     const video = buildPlan(config, { videoUrl: VIDEO });
     assert.equal(await syncTarget(target, sessions, video, { log: quiet.info }), 'applied');
     const facts = JSON.parse(await readIn(world.port, `(() => { const v = document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}); return JSON.stringify([v.tagName, v.muted, v.loop, v.getAttribute('src').slice(0, 22), document.body.firstChild === v, document.body.children[1].id]); })()`));

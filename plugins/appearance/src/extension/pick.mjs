@@ -3,6 +3,7 @@
 // empty list means the dialog was cancelled.
 import { spawn } from 'node:child_process';
 import { PICTURE_EXTENSIONS, VIDEO_EXTENSIONS } from '../config.mjs';
+import { powershellExe } from '../system.mjs';
 
 // `-STA` is what lets Windows Forms show a dialog; the script travels base64-encoded so a
 // title in any language and the filter's semicolons need no quoting.
@@ -57,7 +58,7 @@ export async function pickFiles({ platform = process.platform, title = 'Choose p
     const videos = VIDEO_EXTENSIONS.map((extension) => `*${extension}`).join(';');
     const filter = `Pictures and videos|${pictures};${videos}|Pictures|${pictures}|Videos|${videos}|All files|*.*`;
     const script = WINDOWS_SCRIPT.replace('__TITLE__', Buffer.from(title, 'utf8').toString('base64')).replace('__FILTER__', filter);
-    const out = await run('powershell', ['-NoProfile', '-STA', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]);
+    const out = await run(powershellExe(), ['-NoProfile', '-STA', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]);
     try {
       const parsed = JSON.parse(out.trim() || '[]');
       return Array.isArray(parsed) ? parsed : [];

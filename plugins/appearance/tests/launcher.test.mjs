@@ -5,9 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it } from 'node:test';
-import { defaultConfig, saveConfig } from '../src/config.mjs';
-import { createLogger, createPlanSource, findZcode, LauncherError, parseArgs, resolveZcode, supervise, zcodeCandidates } from '../src/launcher.mjs';
+import { defaultConfig, ROTATE_MAX_MINUTES, saveConfig } from '../src/config.mjs';
+import { createLogger, createPlanSource, findZcode, LauncherError, locateZcode, parseArgs, resolveZcode, supervise, zcodeCandidates } from '../src/launcher.mjs';
 import { isAlive, launcherState, readStatus } from '../src/status.mjs';
+import { commandPrompt, powershellExe } from '../src/system.mjs';
 
 const quiet = { info() {}, warn() {} };
 
@@ -153,6 +154,28 @@ describe('finding ZCode', () => {
 
   it('keeps saying when a configured path is missing', async () => {
     await assert.rejects(resolveZcode({ configured: path.join('nowhere', 'ZCode.exe'), env: {}, platform: 'win32', run: fakeSystem({}).run }), (err) => err instanceof LauncherError && /launcher\.zcodePath/.test(err.message));
+  });
+
+  it('says where the answer came from, for the log', () => inTempDir(async (dir) => {
+    const live = path.join(dir, 'ZCode.exe');
+    fs.writeFileSync(live, '');
+    const system = fakeSystem({ processes: `1\r\n${live}\r\n`, registry: `${live}\r\n` });
+    assert.equal((await locateZcode({ env: {}, platform: 'win32', run: system.run })).source, '正在运行的 ZCode 进程');
+    assert.equal((await locateZcode({ env: {}, platform: 'win32', run: system.run, running: { count: 0, path: null } })).source, '系统的安装记录');
+    assert.equal((await locateZcode({ env: { ZCODE_APPEARANCE_EXE: live }, platform: 'win32', run: system.run })).source, '环境变量 ZCODE_APPEARANCE_EXE');
+    assert.equal((await locateZcode({ configured: live, env: {}, platform: 'win32', run: system.run })).source, '配置里的 launcher.zcodePath');
+    assert.deepEqual(await locateZcode({ env: { PATH: '' }, platform: 'linux', run: system.run, exists: () => false }), { exe: null, source: null });
+  }));
+});
+
+describe('system tools', () => {
+  // A program started by its bare name is looked for in the current folder first on Windows.
+  it('are started by their full path where this Windows keeps them, and by name only when it does not', { skip: process.platform === 'win32' ? false : 'Windows only' }, () => {
+    assert.ok(path.isAbsolute(powershellExe()) && fs.existsSync(powershellExe()), powershellExe());
+    assert.equal(powershellExe({ SystemRoot: 'C:\\not-a-windows' }), 'powershell');
+    assert.ok(path.isAbsolute(commandPrompt()) && fs.existsSync(commandPrompt()), commandPrompt());
+    assert.equal(commandPrompt({ SystemRoot: 'C:\\not-a-windows' }), 'cmd');
+    assert.equal(commandPrompt({ ComSpec: 'Z:\\not-there\\cmd.exe' }), 'cmd', 'a ComSpec that is not there is not used');
   });
 });
 
@@ -307,6 +330,17 @@ describe('settings are read when they change, not on a timer', () => {
     }
   });
 
+  it('does not turn a very long interval into a timer that fires at once', () => inTempDir(async (dir) => {
+    const home = makeHome(dir);
+    home.write({ rotateMinutes: ROTATE_MAX_MINUTES });
+    const source = createPlanSource({ file: home.file, logger: quiet, watch: watchStub() });
+    await source.getPlan();
+    // A timer cannot hold a year in milliseconds; uncapped, it would fire every millisecond.
+    const outcome = await Promise.race([source.change().then(() => 'changed'), sleep(300).then(() => 'quiet')]);
+    source.stop();
+    assert.equal(outcome, 'quiet');
+  }));
+
   it('plays a video from its file and never reads it into the stylesheet', () => inTempDir(async (dir) => {
     const home = makeHome(dir);
     home.write({ media: [path.join(dir, 'clip.webm')] });
@@ -410,6 +444,25 @@ describe('the loop', () => {
     const logger = { info() {}, warn: (message) => warnings.push(message) };
     await supervise({ port: await silentPort(), getPlan: () => ({ key: 'k', css: '', script: '', check: '' }), shouldStop: () => false, logger, pollMs: 5, giveUpAfterMs: 60 });
     assert.ok(warnings.some((message) => message.includes('一直没有应答')), warnings.join('\n'));
+  });
+
+  it('counts the wait by the clock, so a port that never answers is not waited out poll by poll', async () => {
+    const warnings = [];
+    const logger = { info() {}, warn: (message) => warnings.push(message) };
+    let attempts = 0;
+    // A port that accepts the connection and says nothing: every poll costs a timeout on top
+    // of the interval, so counting polls would take twice as long as the wait asked for.
+    const slow = async () => {
+      attempts += 1;
+      await sleep(300);
+      throw new Error('fetch failed');
+    };
+    const started = Date.now();
+    await supervise({ port: 1, getPlan: () => ({ key: 'k', css: '', script: '', check: '' }), shouldStop: () => false, logger, pollMs: 50, giveUpAfterMs: 1000, listTargetsImpl: slow });
+    const elapsed = Date.now() - started;
+    assert.ok(warnings.some((message) => message.includes('一直没有应答')), warnings.join('\n'));
+    assert.ok(elapsed < 2000, `gave up after ${elapsed} ms`);
+    assert.ok(attempts >= 3 && attempts <= 6, `${attempts} attempts`);
   });
 
   it('returns at once when the stop signal is already set', async () => {

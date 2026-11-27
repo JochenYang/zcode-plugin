@@ -121,19 +121,28 @@ export function cssKey(css) {
 }
 
 // A picture file as a data: URL, with the checks that keep a mistake from turning into a broken
-// or enormous stylesheet. Null when there is nothing to show.
+// or enormous stylesheet. Null when there is nothing to show. The size is looked at before the
+// file is read, so that a mistaken multi-gigabyte file is refused, not loaded.
 export function imageDataUrl(file) {
   if (!file) return null;
   if (mediaKind(file) !== 'picture') throw new Error(`${file} is not a picture; a video is played from its file`);
+  const tooBig = () => new Error(`${file} is above the ${MAX_IMAGE_BYTES / 1024 / 1024} MB limit`);
+  let size;
+  try {
+    // Looked at before it is read: a mistaken multi-gigabyte file is refused, not loaded.
+    size = fs.statSync(file).size;
+  } catch (err) {
+    throw new Error(`cannot read ${file}: ${err.message}`);
+  }
+  if (size > MAX_IMAGE_BYTES) throw tooBig();
   let bytes;
   try {
     bytes = fs.readFileSync(file);
   } catch (err) {
     throw new Error(`cannot read ${file}: ${err.message}`);
   }
-  if (bytes.length > MAX_IMAGE_BYTES) {
-    throw new Error(`${file} is ${Math.round(bytes.length / 1024 / 1024)} MB, above the ${MAX_IMAGE_BYTES / 1024 / 1024} MB limit`);
-  }
+  // Grown between the look and the read.
+  if (bytes.length > MAX_IMAGE_BYTES) throw tooBig();
   const extension = file.slice(file.lastIndexOf('.')).toLowerCase();
   return `data:${MIME[extension] ?? 'application/octet-stream'};base64,${bytes.toString('base64')}`;
 }
@@ -276,7 +285,7 @@ function install(payload) {
   if (document.body && document.querySelector(payload.shellRoot)) return start();
 
   if (!payload.shellRoot) return 'skipped';
-  // A document that is still loading: wait briefly for the app to mount. Claim the key meanwhile
+  // A document that is still loading: wait for the app to mount. Claim the key meanwhile
   // so the launcher does not keep re-sending this stylesheet while it waits.
   state.key = payload.key;
   state.pending = true;
@@ -289,10 +298,20 @@ function install(payload) {
       clearInterval(poll);
       start();
     } else if (Date.now() > deadline) {
-      // Pages without the app root (sandboxes, utility windows) are left alone.
       clearInterval(poll);
-      state.key = null;
-      state.pending = false;
+      // Ten seconds and still no app root: this is not one of the app's pages (a sandbox, a
+      // utility window). It stays claimed, so the launcher is not sent back here to re-send
+      // the stylesheet every poll, and a slow look every second still catches a window that
+      // mounts late. The claim ends when the launcher sends another stylesheet.
+      const slow = setInterval(() => {
+        if (state.key !== payload.key) {
+          clearInterval(slow);
+          state.pending = false;
+        } else if (document.body && document.querySelector(payload.shellRoot)) {
+          clearInterval(slow);
+          start();
+        }
+      }, 1000);
     }
   }, 40);
   return 'waiting';

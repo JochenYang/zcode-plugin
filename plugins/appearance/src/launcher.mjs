@@ -16,6 +16,7 @@ import { defaultConfig, loadConfig, mediaAt, saveConfig } from './config.mjs';
 import { openWithDefaultApp } from './open.mjs';
 import { paths } from './paths.mjs';
 import { isAlive, readStatus } from './status.mjs';
+import { powershellExe } from './system.mjs';
 
 export class LauncherError extends Error {
   constructor(message) {
@@ -159,7 +160,7 @@ function execFileText(file, args, { env }) {
 export async function runningZcode({ env = process.env, platform = process.platform, run = execFileText } = {}) {
   if (platform === 'win32') {
     const script = "$p = @(Get-Process -Name ZCode -ErrorAction SilentlyContinue); $p.Count; ($p | Where-Object { $_.Path } | Select-Object -First 1 -ExpandProperty Path)";
-    const lines = (await run('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env })).split(/\r?\n/);
+    const lines = (await run(powershellExe(env), ['-NoProfile', '-NonInteractive', '-Command', script], { env })).split(/\r?\n/);
     return { count: Number(lines[0]) || 0, path: lines[1] || null };
   }
   const ids = (await run('pgrep', ['-x', 'ZCode'], { env })).split(/\r?\n/).filter(Boolean);
@@ -186,22 +187,30 @@ const REGISTERED_WIN32 = [
 ].join('; ');
 export async function registeredZcode({ platform = process.platform, env = process.env, run = execFileText } = {}) {
   if (platform !== 'win32') return null;
-  const found = (await run('powershell', ['-NoProfile', '-NonInteractive', '-Command', `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${REGISTERED_WIN32}`], { env })).trim();
+  const found = (await run(powershellExe(env), ['-NoProfile', '-NonInteractive', '-Command', `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${REGISTERED_WIN32}`], { env })).trim();
   return found || null;
 }
 
-// Where ZCode is, asked in the order most likely to be right: what was configured, a running
-// copy, what the installer told the system, the usual folders. The first that exists wins.
-// Nothing found is null; a configured path that does not exist is an error. `running` is the
-// answer of a runningZcode() the caller already has, to not ask twice.
-export async function resolveZcode({ configured = null, env = process.env, platform = process.platform, run = execFileText, exists = fs.existsSync, running = null } = {}) {
+// Where ZCode is and how that was found, asked in the order most likely to be right: what was
+// configured, a running copy, what the installer told the system, the usual folders. The first
+// that exists wins. Nothing found is a null executable; a configured path that does not exist is
+// an error. `running` is the answer of a runningZcode() the caller already has, to not ask twice.
+// The source is for the log: the installer's record lives in a part of the registry the user can
+// write, so which answer was taken should be on record.
+const SOURCES = Object.freeze({ env: '环境变量 ZCODE_APPEARANCE_EXE', config: '配置里的 launcher.zcodePath', running: '正在运行的 ZCode 进程', registered: '系统的安装记录', usual: '常见目录' });
+export async function locateZcode({ configured = null, env = process.env, platform = process.platform, run = execFileText, exists = fs.existsSync, running = null } = {}) {
   const explicit = explicitZcode({ configured, env });
-  if (explicit) return explicit;
+  if (explicit) return { exe: explicit, source: env.ZCODE_APPEARANCE_EXE ? SOURCES.env : SOURCES.config };
   const live = running ?? (await runningZcode({ env, platform, run }));
-  if (live.path && exists(live.path)) return live.path;
+  if (live.path && exists(live.path)) return { exe: live.path, source: SOURCES.running };
   const registered = await registeredZcode({ platform, env, run });
-  if (registered && exists(registered)) return registered;
-  return zcodeCandidates({ env, platform }).find((candidate) => exists(candidate)) ?? null;
+  if (registered && exists(registered)) return { exe: registered, source: SOURCES.registered };
+  const usual = zcodeCandidates({ env, platform }).find((candidate) => exists(candidate));
+  return { exe: usual ?? null, source: usual ? SOURCES.usual : null };
+}
+
+export async function resolveZcode(options = {}) {
+  return (await locateZcode(options)).exe;
 }
 
 function writeStatus(file, status) {
@@ -269,12 +278,14 @@ export function createPlanSource({ file, logger, cssModule = new URL('./css.mjs'
     if (rotateTimer) clearTimeout(rotateTimer);
     rotateMinutes = wanted;
     if (!wanted) return;
+    // A timer cannot wait past 2^31-1 ms; beyond that it fires at once, over and over.
+    const delay = Math.min(wanted * 60000, 2 ** 31 - 1);
     const tick = () => {
       index += 1;
       notify();
-      rotateTimer = setTimeout(tick, wanted * 60000);
+      rotateTimer = setTimeout(tick, delay);
     };
-    rotateTimer = setTimeout(tick, wanted * 60000);
+    rotateTimer = setTimeout(tick, delay);
   }
 
   async function refreshCss() {
@@ -401,11 +412,13 @@ function mtimeOf(target) {
 // it attached to may simply be gone, so the loop also gives up after a minute of silence.
 export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 2000, once = false, giveUpAfterMs = 60000, wake = null, sessions = new Map(), listTargetsImpl = listTargets }) {
   let failures = 0;
+  let failingSince = null;
   for (;;) {
     try {
       const plan = await getPlan();
       const targets = await listTargetsImpl(port);
       failures = 0;
+      failingSince = null;
       const seen = new Set();
       let clean = targets.length > 0;
       for (const target of targets) {
@@ -427,8 +440,11 @@ export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 20
       if (once && clean) return;
     } catch (err) {
       failures += 1;
+      // Counted by the clock, not by the polls: a port that accepts the connection and never
+      // answers costs a fetch timeout on top of every poll, and twice the polls is not a minute.
+      failingSince ??= Date.now();
       if (failures === 1 || failures % 15 === 0) logger.warn(`端口 ${port} 上的调试通道：${err.message}`);
-      if (failures * pollMs >= giveUpAfterMs) {
+      if (Date.now() - failingSince >= giveUpAfterMs) {
         logger.warn(`端口 ${port} 上的调试通道一直没有应答，启动器退出`);
         return;
       }
@@ -469,7 +485,7 @@ export function notify(message) {
   const onItsOwn = { detached: true, stdio: 'ignore' };
   if (process.platform === 'win32') {
     const script = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($env:ZCODE_APPEARANCE_MESSAGE, 'ZCode appearance') | Out-Null";
-    spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { ...onItsOwn, env: { ...process.env, ZCODE_APPEARANCE_MESSAGE: text }, windowsHide: true }).unref();
+    spawn(powershellExe(), ['-NoProfile', '-NonInteractive', '-Command', script], { ...onItsOwn, env: { ...process.env, ZCODE_APPEARANCE_MESSAGE: text }, windowsHide: true }).unref();
   } else if (process.platform === 'darwin') {
     // The message is passed as an argument to the script, which AppleScript reads by position.
     spawn('osascript', ['-e', 'on run argv', '-e', 'display alert (item 1 of argv) message (item 2 of argv) as critical', '-e', 'end run', title, text], { ...onItsOwn, env: process.env }).unref();
@@ -502,10 +518,13 @@ async function start({ args, file, files, logger }) {
     if (running.count > 0) {
       throw new LauncherError(`ZCode 已经在运行（${running.count} 个进程）。请先完全退出它（托盘图标里也要退出），再从这个启动器启动：调试通道只在启动时打开，而且已有一个实例在运行时，新启动的那个会直接把控制权交出去然后退出。`);
     }
-    const exe = await resolveZcode({ configured: config.launcher.zcodePath, running });
+    const { exe, source } = await locateZcode({ configured: config.launcher.zcodePath, running });
     if (!exe) {
       throw new LauncherError(`没有找到 ZCode 的可执行文件：配置和环境变量没有指定，ZCode 没有在运行，系统的安装记录和常见目录里也没有。请在 ${file} 里把 launcher.zcodePath 写成 ZCode 可执行文件的完整路径，或者设置环境变量 ZCODE_APPEARANCE_EXE。`);
     }
+    // On record which answer was taken: the installer's record is in a part of the registry the
+    // user can write.
+    logger.info(`找到 ZCode：${exe}（来自${source}）`);
     port = await findFreePort(config.launcher.port);
     child = spawn(exe, [`--remote-debugging-port=${port}`], { stdio: 'ignore' });
     child.once('exit', () => {

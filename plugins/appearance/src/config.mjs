@@ -18,6 +18,11 @@ export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MASK_MIN = 0;
 export const MASK_MAX = 1;
 export const BLUR_MAX = 40;
+// A year of minutes. A longer interval would overflow the timer (2^31-1 ms, about 24 days),
+// which turns it into a timer that fires at once, over and over.
+export const ROTATE_MAX_MINUTES = 525600;
+export const PORT_MIN = 1;
+export const PORT_MAX = 65535;
 export const DEFAULT_PORT = 9337;
 
 export const DEFAULT_CONFIG = Object.freeze({
@@ -47,21 +52,26 @@ export function mediaKind(file) {
 
 // A path as the user typed it becomes absolute here, so the config keeps meaning the same file
 // whichever workspace the tool was called from. `~` is expanded; type and extension are checked.
+// A network path is not accepted: reading one makes Windows identify itself to that machine
+// (with the user's own credentials), and the tools would repeat it on every rendering of the
+// view. A share that is mapped to a drive letter is a local path like any other.
 export function normalizeMediaPath(raw, { cwd = process.cwd() } = {}) {
   if (typeof raw !== 'string' || !raw.trim()) throw new ConfigError('a picture or video path must be a non-empty string');
   let text = raw.trim();
+  if (/^[\\/]{2}/.test(text)) throw new ConfigError(`${text}: a network path is not accepted (map the share to a drive letter first)`);
   if (text === '~' || text.startsWith('~/') || text.startsWith('~\\')) text = path.join(os.homedir(), text.slice(1));
   const resolved = path.resolve(cwd, text);
+  if (/^\\\\/.test(resolved)) throw new ConfigError(`${text}: a network path is not accepted (map the share to a drive letter first)`);
   if (!mediaKind(resolved)) throw new ConfigError(`${resolved}: not a picture or a video (${MEDIA_EXTENSIONS.join(' ')})`);
   return resolved;
 }
 
 function checkBackground(raw, problems) {
-  for (const key of ['rotateMinutes', 'blur']) {
-    if (raw[key] === undefined) continue;
-    if (!Number.isInteger(raw[key]) || raw[key] < 0 || (key === 'blur' && raw[key] > BLUR_MAX)) {
-      problems.push(`background.${key} must be an integer${key === 'blur' ? ` from 0 to ${BLUR_MAX}` : ' of 0 or more'}`);
-    }
+  if (raw.rotateMinutes !== undefined && !(Number.isInteger(raw.rotateMinutes) && raw.rotateMinutes >= 0 && raw.rotateMinutes <= ROTATE_MAX_MINUTES)) {
+    problems.push(`background.rotateMinutes must be an integer from 0 to ${ROTATE_MAX_MINUTES}`);
+  }
+  if (raw.blur !== undefined && !(Number.isInteger(raw.blur) && raw.blur >= 0 && raw.blur <= BLUR_MAX)) {
+    problems.push(`background.blur must be an integer from 0 to ${BLUR_MAX}`);
   }
   if (raw.mask !== undefined && !(typeof raw.mask === 'number' && raw.mask >= MASK_MIN && raw.mask <= MASK_MAX)) {
     problems.push(`background.mask must be a number from ${MASK_MIN} to ${MASK_MAX}`);
@@ -119,8 +129,8 @@ export function validateConfig(raw, { file = null, cwd = process.cwd() } = {}) {
 
   if (skinRaw.preset !== undefined && !SKIN_NAMES.includes(skinRaw.preset)) problems.push(`skin.preset must be one of ${SKIN_NAMES.join(', ')}`);
   if (skinRaw.custom !== undefined && skinRaw.custom !== null) checkSkinCustom(skinRaw.custom, problems);
-  if (launcherRaw.port !== undefined && !(Number.isInteger(launcherRaw.port) && launcherRaw.port >= 0 && launcherRaw.port <= 65535)) {
-    problems.push('launcher.port must be an integer from 0 to 65535');
+  if (launcherRaw.port !== undefined && !(Number.isInteger(launcherRaw.port) && launcherRaw.port >= PORT_MIN && launcherRaw.port <= PORT_MAX)) {
+    problems.push(`launcher.port must be an integer from ${PORT_MIN} to ${PORT_MAX}`);
   }
   if (launcherRaw.zcodePath !== undefined && launcherRaw.zcodePath !== null && typeof launcherRaw.zcodePath !== 'string') {
     problems.push('launcher.zcodePath must be a file path or null');

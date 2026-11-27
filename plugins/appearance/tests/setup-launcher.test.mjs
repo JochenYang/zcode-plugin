@@ -8,10 +8,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 import { DEFAULT_NAME, SetupError, buildLauncher, defaultDir, fileNameOf, findIcon, helpText, idOf, parseArgs, setup, uninstall } from '../bin/setup-launcher.mjs';
+import { commandPrompt } from '../src/system.mjs';
 
-const PLUGIN = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const PLUGIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STUB = path.join(PLUGIN, 'launcher', 'launcher.sh');
 const skip = process.platform === 'win32' ? false : 'the launcher program is Windows only';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -147,6 +149,25 @@ describe('the launcher program', { skip }, () => {
   it('never asks for the two placeholders to be left alone', () => {
     const source = fs.readFileSync(path.join(dir, 'Launcher.cs'), 'utf8');
     assert.ok(!source.includes('__TITLE__') && !source.includes('__DESCRIPTION__'));
+  });
+
+  it('the .cmd wrapper starts the launcher script from a folder whose name has what cmd trips over', async () => {
+    // A stand-in for the launcher where the wrapper looks for it: bin/launch.mjs next to itself.
+    const home = path.join(tempDir('appearance-cmd-'), "it's & fine (x)");
+    const script = path.join(home, 'bin', 'launch.mjs');
+    fs.mkdirSync(path.dirname(script), { recursive: true });
+    fs.writeFileSync(script, STAND_IN);
+    fs.copyFileSync(path.join(PLUGIN, 'zcode-appearance.cmd'), path.join(home, 'zcode-appearance.cmd'));
+    // Started by its bare name from its own folder, as Explorer does on a double-click: the
+    // awkward path is then only in %~dp0, which is what the wrapper has to get right.
+    const out = spawnSync(commandPrompt(), ['/d', '/c', 'zcode-appearance.cmd'], { cwd: home, encoding: 'utf8', windowsHide: true, timeout: 20_000 });
+    assert.equal(out.status, 0, out.stderr);
+    // The wrapper does not change the folder: the script runs from where the wrapper was started.
+    const state = await started(path.join(home, 'started.json'));
+    assert.ok(state, 'the script ran');
+    assert.deepEqual(state.argv.map((item) => real(item)), [real(script)], 'the whole path, as one argument');
+    assert.equal(real(state.cwd), real(home));
+    assert.equal(state.noConsole, '1');
   });
 });
 
@@ -315,9 +336,12 @@ describe('the macOS and Linux layouts, made here with the platform switched', ()
 
   it('makes a script with the path file next to it and an entry in the applications list; the entry goes with it', async () => {
     const { linux } = installed();
-    const target = tempDir('appearance-linux-');
+    // A folder whose name has the characters the entry format reserves: they get a backslash on
+    // the way out, and are read back as themselves.
+    const target = path.join(tempDir('appearance-linux-'), 'it`s$home');
     const data = tempDir('appearance-xdg-');
-    const made = await setup({ platform: 'linux', name: 'My "ZCode"', dir: target, zcode: linux, shortcut: true, env: { XDG_DATA_HOME: data } });
+    const env = { XDG_DATA_HOME: data };
+    const made = await setup({ platform: 'linux', name: 'My "ZCode"', dir: target, zcode: linux, shortcut: true, env });
     assert.equal(made.exe, path.join(target, 'my-zcode'));
     assert.equal(fs.readFileSync(made.exe, 'utf8'), fs.readFileSync(STUB, 'utf8'));
     assert.equal(fs.readFileSync(path.join(target, 'launch-path.txt'), 'utf8').trim(), path.join(PLUGIN, 'bin', 'launch.mjs'));
@@ -325,16 +349,41 @@ describe('the macOS and Linux layouts, made here with the platform switched', ()
     const entry = path.join(data, 'applications', 'my-zcode.desktop');
     assert.equal(real(made.shortcut), real(entry));
     const text = fs.readFileSync(entry, 'utf8');
-    // The path in double quotes; what the format reserves in it is escaped with a backslash,
-    // which on this machine is the backslash of a Windows path itself.
-    assert.ok(text.split(/\r?\n/).includes(`Exec="${made.exe.replace(/[\\"`$]/g, '\\$&')}"`), text);
+    // Spelled out, not worked out with the implementation's own expression: the backtick and the
+    // dollar sign get a backslash in front, the separator a second one.
+    assert.ok(text.split(/\r?\n/).some((line) => line.startsWith('Exec="') && line.endsWith('it\\`s\\$home\\\\my-zcode"')), text);
     assert.match(text, /^Name=My "ZCode"$/m);
-    assert.match(text, new RegExp(`^Icon=${path.join(target, 'icon.png').replaceAll('\\', '\\\\')}$`, 'm'));
+    // The icon's path is escaped too (a separator becomes two backslashes); the reserved
+    // characters need no escape outside the Exec line.
+    assert.ok(text.split(/\r?\n/).some((line) => line.startsWith('Icon=') && line.endsWith('it`s$home\\\\icon.png')), text);
     assert.match(text, /^Terminal=false$/m);
-    // An entry that starts something else stays; ours goes with the folder.
+    // Ours: the entry goes, then what the command wrote, then the folder. (Compared as resolved
+    // paths: the first two are gone by now, so what they really are can no longer be asked.)
+    const gone = uninstall({ platform: 'linux', name: 'My "ZCode"', dir: target, env });
+    assert.deepEqual(gone.removed.slice(0, 2).map((item) => path.resolve(item)), [path.resolve(entry), path.resolve(path.join(target, 'my-zcode'))]);
+    assert.equal(gone.removed.at(-1), target);
+    assert.equal(gone.left, null);
+    assert.equal(fs.existsSync(target), false);
+    assert.equal(fs.existsSync(entry), false);
+    // An entry that starts something else stays.
+    await setup({ platform: 'linux', name: 'My "ZCode"', dir: target, zcode: linux, shortcut: true, env });
     fs.writeFileSync(entry, 'Type=Application\nExec="/somewhere/else/my-zcode"\n');
-    assert.deepEqual(uninstall({ platform: 'linux', name: 'My "ZCode"', dir: target, env: { XDG_DATA_HOME: data } }).removed, [target]);
+    assert.ok(uninstall({ platform: 'linux', name: 'My "ZCode"', dir: target, env }).removed.every((item) => path.resolve(item) !== path.resolve(entry)), 'the entry stays');
     assert.equal(fs.existsSync(entry), true);
+  });
+
+  it('on Linux too, refuses a folder that holds someone else\'s files, and takes away only its own', async () => {
+    const { linux } = installed();
+    const busy = tempDir('appearance-linux-busy-');
+    fs.writeFileSync(path.join(busy, 'tool.sh'), 'keep');
+    await assert.rejects(setup({ platform: 'linux', name: 'My ZCode', dir: busy, zcode: linux, shortcut: false, env: {} }), /不往别人的目录里写/);
+    assert.deepEqual(fs.readdirSync(busy), ['tool.sh'], 'nothing was written');
+    const own = tempDir('appearance-linux-own-');
+    await setup({ platform: 'linux', name: 'My ZCode', dir: own, zcode: linux, shortcut: false, env: {} });
+    fs.writeFileSync(path.join(own, 'notes.txt'), 'keep');
+    const gone = uninstall({ platform: 'linux', name: 'My ZCode', dir: own, env: {} });
+    assert.equal(gone.left, own);
+    assert.deepEqual(fs.readdirSync(own), ['notes.txt']);
   });
 
   it('puts the default places where each system keeps such things', () => {
@@ -360,8 +409,36 @@ describe('setting it up', { skip }, () => {
     assert.equal(result.shortcut, null);
     assert.equal(fileNameOf(result.exe), fileNameOf(path.join(dir, 'ZCode Appearance Setup.exe')));
     const gone = uninstall({ name: 'ZCode Appearance Setup', dir });
-    assert.deepEqual(gone.removed, [dir]);
+    // Its own files by name, then the folder, which is empty by then.
+    assert.deepEqual(gone.removed.map((item) => path.basename(item)), ['ZCode Appearance Setup.exe', 'Launcher.cs', 'app.ico', 'launch-path.txt', path.basename(dir)]);
+    assert.equal(gone.left, null);
     assert.equal(fs.existsSync(dir), false);
+  });
+
+  it('takes away only its own files, and leaves the folder when someone else keeps things there', async () => {
+    const dir = tempDir('appearance-setup-shared-');
+    await setup({ name: 'ZCode Appearance Shared', dir, shortcut: false });
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'keep');
+    const gone = uninstall({ name: 'ZCode Appearance Shared', dir });
+    assert.equal(gone.left, dir, 'the folder stays');
+    assert.equal(gone.kept, null);
+    assert.ok(gone.removed.every((item) => item !== dir));
+    assert.deepEqual(fs.readdirSync(dir), ['notes.txt']);
+  });
+
+  it('refuses a folder that holds someone else\'s files, and an app/ folder that is not its own', async () => {
+    // Pointed at a tools folder, this command once wrote into it and later took the whole folder away.
+    const busy = tempDir('appearance-setup-busy-');
+    fs.writeFileSync(path.join(busy, 'tool.exe'), 'keep');
+    await assert.rejects(setup({ name: 'ZCode Appearance Busy', dir: busy, shortcut: false }), /不往别人的目录里写/);
+    assert.deepEqual(fs.readdirSync(busy), ['tool.exe'], 'nothing was written');
+    // Its own folder, but with an app/ folder someone else made: --copy wants that place.
+    const own = tempDir('appearance-setup-app-');
+    await setup({ name: 'ZCode Appearance App', dir: own, shortcut: false });
+    fs.mkdirSync(path.join(own, 'app'));
+    fs.writeFileSync(path.join(own, 'app', 'precious.txt'), 'keep');
+    await assert.rejects(setup({ name: 'ZCode Appearance App', dir: own, shortcut: false, mode: 'copy' }), /--copy 要用它放启动器的文件/);
+    assert.equal(fs.readFileSync(path.join(own, 'app', 'precious.txt'), 'utf8'), 'keep');
   });
 
   it('copies the launcher\'s own files when asked, and those are enough to run', async () => {
@@ -377,7 +454,10 @@ describe('setting it up', { skip }, () => {
     const imports = [...fs.readFileSync(script, 'utf8').matchAll(/from '\.\.\/(src\/[^']+)'/g)].map((match) => match[1]);
     assert.ok(imports.length > 0);
     for (const name of imports) assert.ok(fs.existsSync(path.join(dir, 'app', name)), name);
-    assert.equal(uninstall({ name: 'ZCode Appearance Copy', dir }).kept, null);
+    const gone = uninstall({ name: 'ZCode Appearance Copy', dir });
+    assert.equal(gone.kept, null);
+    assert.equal(gone.left, null);
+    assert.equal(fs.existsSync(dir), false);
   });
 
   it('leaves a folder alone that it did not make', () => {
@@ -399,5 +479,8 @@ describe('setting it up', { skip }, () => {
     assert.equal(parseArgs(['--copy']).mode, 'copy');
     assert.equal(parseArgs(['--dir', 'x']).dir, path.resolve('x'));
     assert.throws(() => buildLauncher({ outDir: tempDir('appearance-noscript-'), name: 'x', script: path.join('nowhere', 'launch.mjs') }), (err) => err instanceof SetupError && /启动脚本不存在/.test(err.message));
+    // A line break cannot go into the program's title: it becomes a space there, and nothing in the file name.
+    const named = buildLauncher({ outDir: tempDir('appearance-named-'), name: 'Two\nLines', script: path.join(PLUGIN, 'bin', 'launch.mjs') });
+    assert.equal(path.basename(named.exe), 'TwoLines.exe');
   });
 });

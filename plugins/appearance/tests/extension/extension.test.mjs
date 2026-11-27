@@ -175,17 +175,21 @@ describe('view tools', () => {
     const file = seed(dir);
     const host = hostFor();
     await activate(host, { file, statusFile: path.join(dir, 'appearance.status.json'), pick: async () => [], open: () => {} });
+    // Started from values that are not the defaults, so that "kept" cannot be mistaken for "reset".
+    await call(host, 'set', { blur: 7, rotateMinutes: 30 });
     const answer = await call(host, 'set', { scope: 'chat', mask: 0.6 });
     assert.equal(answer.ok, true);
     assert.equal(answer.message, viewStrings('zh-CN').saved);
     assert.equal(answer.data.background.scope, 'chat');
     assert.equal(answer.data.background.mask, 0.6);
-    assert.equal(answer.data.background.blur, 0, 'untouched');
+    assert.equal(answer.data.background.blur, 7, 'untouched');
+    assert.equal(answer.data.background.rotateMinutes, 30, 'untouched');
     assert.equal(answer.data.media.length, 3, 'the files are untouched');
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal(saved.background.scope, 'chat');
     assert.equal(saved.background.mask, 0.6);
     assert.equal(await call(host, 'set', { skin: 'sepia' }).then((result) => result.data.skin.preset), 'sepia');
+    assert.equal(await call(host, 'set', { mask: 0.5 }).then((result) => result.data.skin.preset), 'sepia', 'the skin is untouched by a later change');
   }));
 
   it('set refuses a value out of range without touching the file', () => inTempHome(async (dir) => {
@@ -227,6 +231,36 @@ describe('view tools', () => {
     assert.equal(answer.ok, true);
     assert.equal(answer.message, '已移除 gone.png。');
     assert.deepEqual(answer.data.media.map((item) => item.name), ['a.png', 'clip.webm']);
+    // A path that is not in the list is said, not reported as removed.
+    const absent = await call(host, 'remove', { path: path.join(dir, 'never.png') });
+    assert.equal(absent.ok, false);
+    assert.equal(absent.message, '列表里没有 never.png，没有东西可移除。');
+    assert.equal((await call(host, 'get', {})).data.media.length, 2);
+  }));
+
+  it('pick: opening the dialog again does not take away the answer waiting to be read', () => inTempHome(async (dir) => {
+    const file = seed(dir);
+    const late = path.join(dir, 'late.png');
+    fs.writeFileSync(late, PNG);
+    let release = null;
+    let dialogs = 0;
+    const host = hostFor();
+    await activate(host, { file, statusFile: path.join(dir, 'appearance.status.json'), pick: async () => {
+      dialogs += 1;
+      // The first dialog closes at once; the second stays open until the test lets it go.
+      return dialogs === 1 ? [late] : new Promise((resolve) => {
+        release = resolve;
+      });
+    }, open: () => {} });
+    await call(host, 'pick', {});
+    await sleep(20);
+    await call(host, 'pick', {});
+    const waiting = await call(host, 'get', {});
+    assert.deepEqual(waiting.data.pick, { files: [late], message: '已添加 late.png。' }, 'the answer of the first dialog is still there');
+    release([late]);
+    await sleep(20);
+    const next = await call(host, 'get', {});
+    assert.deepEqual(next.data.pick.files, [late], 'then the second dialog\'s answer');
   }));
 
   it('pick: answers at once, then hands the chosen files over once', () => inTempHome(async (dir) => {
