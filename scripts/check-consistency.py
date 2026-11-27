@@ -375,11 +375,30 @@ def check_marketplace_sources():
     check("marketplace sources resolve", not bad, "; ".join(bad))
 
 
+def check_marketplace_icons():
+    """ZCode shows a community plugin's icon only from an HTTPS URL (a path into the plugin
+    folder is ignored), and that file is put on the CDN by hand from the repository. So the
+    two have to carry the same name, or the list points at a file nobody uploads: on
+    2026-11-27 three entries still named icon.png / dev-icon.png / guard-icon.png."""
+    bad = []
+    for entry in load("marketplace.json")["plugins"]:
+        name = entry["name"]
+        icon = entry.get("icon")
+        if not isinstance(icon, str) or not icon.startswith("https://"):
+            bad.append(f"{name}: icon is not an HTTPS URL")
+            continue
+        if icon.rsplit("/", 1)[-1] != f"{name}.png":
+            bad.append(f"{name}: icon {icon} is not named {name}.png")
+        if not os.path.isfile(os.path.join(ROOT, "plugins", name, "assets", f"{name}.png")):
+            bad.append(f"{name}: no plugins/{name}/assets/{name}.png to upload")
+    check("marketplace icons match the repository", not bad, "; ".join(bad))
+
+
 def main():
     if not os.path.isfile(os.path.join(ROOT, "marketplace.json")):
         print(f"not a marketplace root: {ROOT}")
         return 2
-    for probe in (check_json, check_versions, check_marketplace_sources,
+    for probe in (check_json, check_versions, check_marketplace_sources, check_marketplace_icons,
                   check_agent_count, check_frontmatter, check_agent_descriptions,
                   check_agent_tool_wording, check_stale_markers, check_line_endings,
                   check_shell_syntax, check_hook_scripts, check_skill_references,

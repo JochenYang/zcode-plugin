@@ -25,6 +25,7 @@
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 | `plugins/codegraph` | 0.2.1 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`，`lookup` 还能列 import 环与受改动影响的测试文件；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；桌面端另有输入框状态位与索引管理面板；零遥测、零外联、不执行项目代码 |
+| `plugins/appearance` | 0.1.0 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance.json`，`/appearance` 在对话里改 |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
@@ -186,6 +187,21 @@ plugins/<plugin-name>/
 
 工具参数、配置键、语言表、隐私与限制见 `plugins/codegraph/README.md`。
 
+## appearance
+
+自定义背景与配色皮肤。ZCode 的插件接口碰不到应用外壳（插件只能在沙箱页面和几类入口里出现），所以它由三部分组成：一个外置启动器负责让背景出现，一个很小的 MCP server 负责在对话里改设置，一个扩展负责侧边栏里的面板。
+
+- **启动器**（`plugins/appearance/bin/launch.mjs`，零依赖，需要 Node 22+）在完全退出 ZCode 之后运行：带调试通道启动 ZCode，把样式注入每个窗口，然后留在后台——改配置即时生效（监听配置文件所在的目录，变了才读）、页面重载后自动补注入、按间隔轮换，ZCode 退出时一起退出。日常有两种启动方式：双击 `zcode-appearance.cmd`，或运行一次 `node plugins/appearance/bin/setup-launcher.mjs` 做一个带 ZCode 图标、名称自己定的启动器程序，固定到任务栏（macOS 是拖到程序坞的 `.app`，Linux 是应用列表里的条目）；ZCode 的位置自动找（配置 → 环境变量 → 正在运行的进程 → 系统的安装记录 → 常见目录）
+- **两种范围**：`page` 整页（背景铺在最底层，底色与侧栏透明，遮罩压在上面保证可读）或 `chat` 只换会话区（画在应用自己标记为 `data-testid="conversation"` 的会话区上，只有图片可以）；图片和视频都能用，可调遮罩、模糊（仅整页）、定时轮换
+- **配色皮肤**：`default` 保持应用原色，内置 `midnight` / `sepia` 两套，或用 `customSkin` 给浅色、深色各五个颜色（底色、卡片、文字、强调色、边框），由它生成整套 `--color-*` 变量
+- 设置在 `~/.zcode/appearance.json`（`--edit` 打开），或在对话里用 `/appearance 只换会话区，遮罩 0.7`；工具是 `mcp__plugin_appearance_style__get_appearance` / `__set_appearance`，只读写这个文件，不碰 ZCode
+- **面板**：侧边栏「扩展」里的「外观」（ZCode 未公开文档的扩展接口，首次启用要确认，之后要完全退出应用再打开）：开关、范围、遮罩与模糊滑块、轮换间隔、图片与视频列表（填路径，或弹系统的文件选择框）、皮肤预设与十个颜色的自定义；每个控件改了就生效
+- **它为什么做得到**：主窗口是从 `app.asar` 里的 `file://` 地址加载的，页面没有 CSP；图片转成 `data:` URL 写进样式，视频由 `<video>` 元素从本地文件播放。调试通道只在 ZCode 启动时打开，而且应用是单实例——已有一个实例在运行时，新启动的那个会把控制权交出去，所以必须先完全退出
+- **安全**：调试通道没有鉴权，本机任何进程连上后都能在 ZCode 页面里执行脚本，只适合个人电脑；通道只监听 127.0.0.1，启动器不安装任何东西、不改 ZCode 的文件
+- 已知限制：只改外观，不加功能；ZCode 自动更新后自己重启时不带通道，要从启动器再启动一次；版本更新若改掉 `conversation` 钩子、根容器的底色变量或 `--color-*` 变量名，样式要跟着改（启动器会在日志里报 `missing-root`）；冷启动第一帧可能闪一下原样；面板和文件选择框还没有在真机上试过
+
+配置项、原理、验证情况与排障见 `plugins/appearance/README.md`。
+
 ## 校验
 
 仓库自带两个零依赖检查（需要 Python 3.8+ 与 bash），改动插件后手动跑：
@@ -201,6 +217,7 @@ python plugins/dev-workflow/tests/test-review-gate.py  # 多轮审查闸门脚�
 python plugins/dev-workflow/tests/test-on-dispatch.py  # 派发提醒钩子：三种角色各一句、始终退出 0、输出是 PreToolUse 的 additionalContext、提示词里提到 subagent_type 不改判
 node --test plugins/codegraph/tests/hooks/*.test.mjs  # codegraph 钩子：真实 spawn，SessionStart 文案/schema、dirty.log 协议、hooks.json 字段
 node --test plugins/codegraph/tests/extension/       # codegraph 桌面端扩展：状态位、面板的工具，以及面板在无头浏览器里的检查（要 Chrome 或 Edge）
+node --test plugins/appearance/tests/          # appearance：配置校验、样式生成、MCP 协议（含真实进程）、启动器（变了才读）、找 ZCode 的三种来源、启动器程序（Windows 上真实编译并运行，macOS / Linux 的布局与脚本）与扩展的七个工具；注入、轮询循环、视频播放和面板页面在无头浏览器里跑（要 Chrome 或 Edge，没有则跳过）
 ```
 
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法、agent 描述把任务交给一个不存在的 agent 或与内置类型撞名。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。

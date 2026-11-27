@@ -1,0 +1,1523 @@
+<!doctype html>
+<html lang="en" data-zcode-design>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appearance</title>
+<style id="zcode-contract">
+/* =====================================================================================
+   ZCode's own theme contract and utilities, copied rule for rule from the stylesheet the
+   app ships for its sandboxed views (ZCode Desktop 4.0.10870, out/plugin-sandbox/visualize.css,
+   kept in sync with the visualize skill the app bundles). The same file is in the public
+   repository zai-org/ZCode under Apache-2.0 (Copyright 2026 Z.AI Co., Ltd; the license is in
+   ui/licenses/LICENSE.zcode.txt, the source in THIRD-PARTY-NOTICES.md §1). Rules this view
+   does not use are left out; the ones kept are not edited.
+
+   Do not edit a rule in this block: when ZCode changes, copy again. tests/extension/page.test.mjs
+   checks that no rule of this block but the contract itself declares a colour, and that the
+   view's own block (the second <style>) declares layout only. Tokens are listed in
+   design-system-zcode.md.
+   ===================================================================================== */
+:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: var(--gen-ui-card, light-dark(#ffffff, #2b2b2b));
+  --card-border: var(--gen-ui-card-border, var(--border));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --gen-ui-primary, light-dark(#000000, #ffffff)
+  );
+  --content-accent: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --gen-ui-primary-foreground,
+    light-dark(rgb(255 255 255), rgb(0 0 0))
+  );
+  --secondary: var(
+    --gen-ui-secondary,
+    light-dark(rgb(230 230 230), rgb(54 54 54))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --gen-ui-input-border-focused,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--content-accent);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: var(--font-size-base);
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: var(--font-text-sm-size, calc(var(--font-size-base) - 2px));
+  --font-size-h1: var(--font-heading-md-size, calc(var(--font-size-base) + 4px));
+  --font-size-h2: var(--font-heading-sm-size, calc(var(--font-size-base) + 2px));
+  --font-size-h3: var(--font-heading-xs-size, var(--font-size-base));
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --icon-size: 16px;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --corner-shape: round;
+  --radius-sm: var(--border-radius-sm, 4px);
+  --radius-md: var(--border-radius-md, 6px);
+  --radius-lg: var(--border-radius-lg, 8px);
+  --radius-xl: var(--border-radius-xl, 12px);
+  --radius-2xl: var(--radius-xl);
+  --control-radius: var(--radius-lg);
+  --input-bg: var(--gen-ui-input, light-dark(#ffffff, #2b2b2b));
+  --input-bg-focused: var(--gen-ui-input-focused, var(--input-bg));
+  --input-border: var(--gen-ui-input-border, var(--input));
+  --input-border-hover: var(--gen-ui-input-border-hover, var(--border));
+  --input-border-focused: var(--gen-ui-input-border-focused, var(--ring));
+  --placeholder: var(--gen-ui-foreground-subtlest, var(--muted-foreground));
+  --hover: var(--gen-ui-hover, var(--muted));
+  --selected: var(--gen-ui-selected, var(--muted));
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--content-accent);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: var(--visualize-paint-gutter, 0px);
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: var(--corner-shape);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive > .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table :is(.text-end, [align="right"]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align="center"]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-xl);
+  corner-shape: var(--corner-shape);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+:is(.card, .widget) {
+  --control-radius: var(--radius-lg);
+}
+:is(.card, .widget) :is(.card, .widget) {
+  border-radius: var(--radius-lg);
+  --control-radius: var(--radius-md);
+}
+:is(.card, .widget) :is(.card, .widget) :is(.card, .widget) {
+  border-radius: var(--radius-md);
+  --control-radius: var(--radius-sm);
+}
+:is(.card, .widget) :is(.card, .widget) :is(.card, .widget) :is(.card, .widget) {
+  border-radius: var(--radius-sm);
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.nav-link,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+.btn,
+.nav-link {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--gen-ui-border, var(--input));
+  border-radius: var(--control-radius);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background: transparent;
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:not(:disabled):hover,
+.nav-link:not(:disabled):not([aria-disabled="true"]):hover {
+  border-color: var(--gen-ui-border-hover, var(--border));
+  background: color-mix(in srgb, var(--input-bg) 50%, transparent);
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  background-clip: padding-box;
+}
+
+.btn-primary:not(:disabled):hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--primary) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  border-color: transparent;
+  color: var(--foreground);
+  background: var(--hover);
+}
+
+.btn:is(.btn-xs, .btn-sm, .btn-lg) {
+  line-height: 1;
+  padding-block: 2px;
+}
+.btn-xs {
+  min-height: 20px;
+}
+.btn-sm {
+  min-height: 24px;
+}
+.btn-lg {
+  min-height: 32px;
+  padding-inline: 10px;
+}
+
+.btn:disabled,
+.nav-link:disabled,
+.nav-link[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input-border);
+  border-radius: var(--control-radius);
+  corner-shape: var(--corner-shape);
+  color: var(--foreground);
+  background: var(--input-bg);
+}
+
+.form-control::placeholder {
+  color: var(--placeholder);
+}
+
+.form-control:focus-visible {
+  border-color: var(--input-border-focused);
+  background-color: var(--input-bg-focused);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.form-control:not(:disabled):not(:focus-visible):hover {
+  border-color: var(--input-border-hover);
+}
+.form-control.form-control-sm, .form-select.form-select-sm {
+  min-height: 28px;
+}
+
+</style>
+<style id="appearance-layout">
+/* =====================================================================================
+   Layout of this view: placement and spacing only, on the host's scale (2, 3, 4, 6, 8, 10,
+   12 px). No colour and no type of its own here; those come from the blocks around this one
+   and are listed in ui/design-system-zcode.md. Checked by tests/extension/page.test.mjs.
+   ===================================================================================== */
+
+html > body {
+  padding: var(--visualize-paint-gutter, 12px);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.appearance {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.appearance-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.appearance-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.appearance-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* An empty message takes no room but stays in the page: a live region that is taken out and
+   put back is not reliably announced. */
+.appearance-message:empty {
+  position: absolute;
+}
+
+.appearance-icon-tile {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+}
+
+.appearance-icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.appearance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.appearance-bar-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.appearance-bar-heading::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  border-radius: var(--radius-full);
+}
+
+.appearance-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.appearance-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.appearance-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.appearance-media {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.appearance-media-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.appearance-media-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.appearance-media-name {
+  overflow-wrap: anywhere;
+}
+
+.appearance-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.appearance-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.appearance-add-path {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.appearance-skins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.appearance-skin {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.appearance-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appearance-swatches-row {
+  display: flex;
+  gap: 2px;
+}
+
+.appearance-swatch {
+  width: 14px;
+  height: 14px;
+}
+
+.appearance-colours {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.appearance-colour {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.appearance-colour-input {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+}
+
+.appearance-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (max-width: 520px) {
+  .appearance-colours {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>
+<style id="appearance-decorations">
+/* =====================================================================================
+   What this view adds to the looks of the contract: a tinted tile behind an icon, a bar
+   before a section title, a quiet colour for captions, the pill that marks the background in
+   use, and the swatches of a skin.
+   Every colour is a token of the contract or a mix of one, so the app's light and dark theme
+   carry over by themselves. A swatch is the one place a colour of its own appears, and it is
+   not the view's: it is the skin's colour, set as a custom property from the data the
+   extension sent. There is no other rule of its own in this page.
+   ===================================================================================== */
+
+.appearance-caption {
+  color: color-mix(in oklab, var(--muted-foreground) 80%, var(--foreground));
+  /* The contract's small type is spaced for Latin lines; a Chinese hint of two lines needs the
+     body's measure to stay readable. */
+  line-height: 1.5;
+}
+
+.appearance-icon-tile[data-tone="accent"] {
+  color: color-mix(in oklab, var(--content-accent) 50%, var(--foreground));
+  background: color-mix(in srgb, var(--content-accent) 12%, transparent);
+}
+
+.appearance-bar-heading::before {
+  background: var(--content-accent);
+}
+
+.appearance-current {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  background: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.appearance-swatch {
+  border-radius: var(--radius-sm);
+  background: var(--swatch);
+}
+</style>
+</head>
+<body>
+<!-- Lucide icons (lucide-static 0.468.0, ISC; the notice is in THIRD-PARTY-NOTICES.md), one
+     symbol each, used below. The sandbox gives an extension view no icon library, so the
+     official files are inlined here; ui/icons/ holds the files these were taken from, and a
+     test holds the two together. -->
+<svg aria-hidden="true" focusable="false" hidden>
+  <symbol id="appearance-icon-palette" viewBox="0 0 24 24">
+    <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+    <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+    <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+    <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+  </symbol>
+  <symbol id="appearance-icon-image" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+  </symbol>
+  <symbol id="appearance-icon-film" viewBox="0 0 24 24">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M7 3v18" />
+    <path d="M3 7.5h4" />
+    <path d="M3 12h18" />
+    <path d="M3 16.5h4" />
+    <path d="M17 3v18" />
+    <path d="M17 7.5h4" />
+    <path d="M17 16.5h4" />
+  </symbol>
+  <symbol id="appearance-icon-folder-open" viewBox="0 0 24 24">
+    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+  </symbol>
+  <symbol id="appearance-icon-plus" viewBox="0 0 24 24">
+    <path d="M5 12h14" />
+    <path d="M12 5v14" />
+  </symbol>
+  <symbol id="appearance-icon-trash-2" viewBox="0 0 24 24">
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    <line x1="10" x2="10" y1="11" y2="17" />
+    <line x1="14" x2="14" y1="11" y2="17" />
+  </symbol>
+  <symbol id="appearance-icon-undo-2" viewBox="0 0 24 24">
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+  </symbol>
+</svg>
+
+<main id="appearance-panel" class="appearance" aria-busy="true">
+  <header class="appearance-head">
+    <div class="appearance-title">
+      <span class="appearance-icon-tile" data-tone="accent" aria-hidden="true">
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-palette"></use></svg>
+      </span>
+      <div class="appearance-title-text">
+        <h1 id="appearance-title"></h1>
+        <p id="appearance-subtitle" class="text-small appearance-caption"></p>
+      </div>
+    </div>
+    <p id="appearance-status" class="card appearance-message" role="status" aria-live="polite"></p>
+    <div class="card appearance-section" id="appearance-error-box" hidden>
+      <p id="appearance-error" class="appearance-message text-destructive" role="alert"></p>
+      <button type="button" class="btn btn-sm" id="appearance-retry"></button>
+    </div>
+  </header>
+
+  <section class="card appearance-section" id="appearance-background" aria-labelledby="appearance-background-heading" hidden>
+    <h2 id="appearance-background-heading" class="appearance-bar-heading"></h2>
+    <label class="form-label appearance-toggle" for="appearance-enabled">
+      <input type="checkbox" id="appearance-enabled">
+      <span id="appearance-enabled-label"></span>
+    </label>
+    <div class="appearance-group">
+      <span class="form-label" id="appearance-scope-label"></span>
+      <div class="appearance-choice" role="group" aria-labelledby="appearance-scope-label">
+        <button type="button" class="btn btn-sm" id="appearance-scope-page" data-scope="page" aria-pressed="false"></button>
+        <button type="button" class="btn btn-sm" id="appearance-scope-chat" data-scope="chat" aria-pressed="false"></button>
+      </div>
+      <p class="text-small appearance-caption" id="appearance-scope-hint"></p>
+      <p class="text-small appearance-caption" id="appearance-scope-video" hidden></p>
+    </div>
+    <div class="viz-controls">
+      <label class="form-label" for="appearance-mask">
+        <span id="appearance-mask-label"></span>
+        <output id="appearance-mask-value" class="tabular-nums" for="appearance-mask"></output>
+        <input type="range" class="form-range" id="appearance-mask" min="0" max="100" step="1">
+      </label>
+      <label class="form-label" for="appearance-blur">
+        <span id="appearance-blur-label"></span>
+        <output id="appearance-blur-value" class="tabular-nums" for="appearance-blur"></output>
+        <input type="range" class="form-range" id="appearance-blur" min="0" max="40" step="1">
+      </label>
+      <label class="form-label" for="appearance-rotate">
+        <span id="appearance-rotate-label"></span>
+        <output id="appearance-rotate-value" class="tabular-nums" for="appearance-rotate"></output>
+        <input type="number" class="form-control form-control-sm" id="appearance-rotate" min="0" max="1440" step="1">
+      </label>
+    </div>
+    <p class="text-small appearance-caption" id="appearance-mask-hint"></p>
+    <p class="text-small appearance-caption" id="appearance-launcher"></p>
+  </section>
+
+  <section class="card appearance-section" id="appearance-media" aria-labelledby="appearance-media-heading" hidden>
+    <h2 id="appearance-media-heading" class="appearance-bar-heading"></h2>
+    <p class="text-small appearance-caption" id="appearance-media-hint"></p>
+    <ul class="appearance-media" id="appearance-media-list"></ul>
+    <p class="text-small appearance-caption" id="appearance-media-empty"></p>
+    <form class="appearance-add" id="appearance-add-form">
+      <label class="sr-only" for="appearance-path" id="appearance-path-label"></label>
+      <input class="form-control form-control-sm appearance-add-path" id="appearance-path" type="text" autocomplete="off">
+      <button type="submit" class="btn btn-sm" id="appearance-add">
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-plus"></use></svg>
+        <span id="appearance-add-label"></span>
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" id="appearance-pick">
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-folder-open"></use></svg>
+        <span id="appearance-pick-label"></span>
+      </button>
+    </form>
+  </section>
+
+  <section class="card appearance-section" id="appearance-skin" aria-labelledby="appearance-skin-heading" hidden>
+    <h2 id="appearance-skin-heading" class="appearance-bar-heading"></h2>
+    <p class="text-small appearance-caption" id="appearance-skin-hint"></p>
+    <div class="appearance-skins" id="appearance-skins" role="group" aria-labelledby="appearance-skin-heading"></div>
+    <div class="appearance-colours" id="appearance-colours" hidden>
+      <fieldset class="appearance-section">
+        <legend class="form-label" id="appearance-light-legend"></legend>
+      </fieldset>
+      <fieldset class="appearance-section">
+        <legend class="form-label" id="appearance-dark-legend"></legend>
+      </fieldset>
+    </div>
+  </section>
+
+  <footer class="card appearance-footer" id="appearance-footer" hidden>
+    <button type="button" class="btn btn-ghost btn-sm" id="appearance-open-config">
+      <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-folder-open"></use></svg>
+      <span id="appearance-open-config-label"></span>
+    </button>
+    <span class="appearance-choice">
+      <button type="button" class="btn btn-ghost btn-sm" id="appearance-reset">
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-undo-2"></use></svg>
+        <span id="appearance-reset-label"></span>
+      </button>
+      <span class="appearance-choice" id="appearance-reset-confirm" role="group" aria-labelledby="appearance-reset-question" hidden>
+        <span id="appearance-reset-question" class="text-small appearance-caption"></span>
+        <button type="button" class="btn btn-primary btn-sm" id="appearance-reset-yes"></button>
+        <button type="button" class="btn btn-ghost btn-sm" id="appearance-reset-no"></button>
+      </span>
+    </span>
+  </footer>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // The host's alias runtime; absent when the page is opened outside ZCode.
+  const zcode = window.zcode;
+
+  // ---------------------------------------------------------------- theme
+
+  // The host hands over the app's live tokens (`--color-*`, `--font-*`, radii) but applies
+  // nothing itself. Each one goes on the root, where the contract above picks it up, and the
+  // same happens again whenever the host reports a change (a theme switch).
+  function applyHostTheme() {
+    const variables = zcode?.hostContext?.styles?.variables;
+    if (variables) {
+      for (const [name, value] of Object.entries(variables)) {
+        if (value !== undefined && value !== null && value !== '') document.documentElement.style.setProperty(name, String(value));
+      }
+    }
+    const theme = zcode?.theme;
+    if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  }
+  window.addEventListener('zcode:globals', applyHostTheme);
+  applyHostTheme();
+
+  // ---------------------------------------------------------------- copy
+
+  // The first answer brings every line of the interface in the user's language. These few are
+  // what the page can say before that answer arrives, or when it never does.
+  const BOOT = {
+    zh: { title: '外观', loading: '正在读取设置…', failed: '没有成功：', noHost: '这个页面要在 ZCode 里面打开。', retry: '重试' },
+    en: { title: 'Appearance', loading: 'Reading the settings…', failed: 'It did not work: ', noHost: 'This page runs inside ZCode.', retry: 'Try again' },
+  };
+  const isZh = (locale) => String(locale || '').toLowerCase().startsWith('zh');
+  const boot = BOOT[isZh(zcode?.locale || navigator.language) ? 'zh' : 'en'];
+  document.documentElement.lang = boot === BOOT.zh ? 'zh-CN' : 'en';
+  document.title = boot.title;
+
+  // ---------------------------------------------------------------- state
+
+  const $ = (id) => document.getElementById(id);
+  const main = $('appearance-panel');
+  const el = {
+    title: $('appearance-title'),
+    subtitle: $('appearance-subtitle'),
+    launcher: $('appearance-launcher'),
+    error: $('appearance-error'),
+    errorBox: $('appearance-error-box'),
+    status: $('appearance-status'),
+    retry: $('appearance-retry'),
+    background: $('appearance-background'),
+    backgroundHeading: $('appearance-background-heading'),
+    enabled: $('appearance-enabled'),
+    enabledLabel: $('appearance-enabled-label'),
+    scopeLabel: $('appearance-scope-label'),
+    scopePage: $('appearance-scope-page'),
+    scopeChat: $('appearance-scope-chat'),
+    scopeHint: $('appearance-scope-hint'),
+    scopeVideo: $('appearance-scope-video'),
+    mask: $('appearance-mask'),
+    maskValue: $('appearance-mask-value'),
+    maskLabel: $('appearance-mask-label'),
+    maskHint: $('appearance-mask-hint'),
+    blur: $('appearance-blur'),
+    blurValue: $('appearance-blur-value'),
+    blurLabel: $('appearance-blur-label'),
+    rotate: $('appearance-rotate'),
+    rotateValue: $('appearance-rotate-value'),
+    rotateLabel: $('appearance-rotate-label'),
+    media: $('appearance-media'),
+    mediaHeading: $('appearance-media-heading'),
+    mediaHint: $('appearance-media-hint'),
+    mediaList: $('appearance-media-list'),
+    mediaEmpty: $('appearance-media-empty'),
+    addForm: $('appearance-add-form'),
+    path: $('appearance-path'),
+    pathLabel: $('appearance-path-label'),
+    add: $('appearance-add'),
+    addLabel: $('appearance-add-label'),
+    pick: $('appearance-pick'),
+    pickLabel: $('appearance-pick-label'),
+    skin: $('appearance-skin'),
+    skinHeading: $('appearance-skin-heading'),
+    skinHint: $('appearance-skin-hint'),
+    skins: $('appearance-skins'),
+    colours: $('appearance-colours'),
+    lightLegend: $('appearance-light-legend'),
+    darkLegend: $('appearance-dark-legend'),
+    footer: $('appearance-footer'),
+    openConfig: $('appearance-open-config'),
+    openConfigLabel: $('appearance-open-config-label'),
+    reset: $('appearance-reset'),
+    resetLabel: $('appearance-reset-label'),
+    resetConfirm: $('appearance-reset-confirm'),
+    resetQuestion: $('appearance-reset-question'),
+    resetYes: $('appearance-reset-yes'),
+    resetNo: $('appearance-reset-no'),
+  };
+
+  // The last answer from the extension (bin/extension.mjs): the settings, the files, the
+  // skins and every line of copy. Null until the first answer.
+  let view = null;
+  let text = boot;
+  let busy = false;
+  // Only the latest change gets to redraw and report: a slider sends one change after another.
+  let serial = 0;
+  let askReset = false;
+  let pickTimer = 0;
+  let throttleTimer = 0;
+  let queued = null;
+
+  const COLOURS = ['base', 'surface', 'text', 'accent', 'border'];
+  // Where a skin of one's own starts before a colour was chosen: the colours the contract
+  // itself falls back to when the app hands none over.
+  const START = {
+    light: { base: '#ffffff', surface: '#ffffff', text: '#1a1c1f', accent: '#339cff', border: '#e4e6e8' },
+    dark: { base: '#181818', surface: '#2b2b2b', text: '#ffffff', accent: '#83c3ff', border: '#3a3c3f' },
+  };
+  // A file dialog can stay open as long as the user likes, but not for ever.
+  const PICK_LIMIT_MS = 15 * 60 * 1000;
+  const PICK_EVERY_MS = 400;
+  const THROTTLE_MS = 60;
+
+  const make = (tag, className, content) => {
+    const item = document.createElement(tag);
+    if (className) item.className = className;
+    if (content !== undefined) item.textContent = String(content);
+    return item;
+  };
+  const icon = (name) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'appearance-icon');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#appearance-icon-${name}`);
+    svg.append(use);
+    return svg;
+  };
+  const button = (className, label, attributes = {}) => {
+    const item = make('button', className, label);
+    item.type = 'button';
+    for (const [name, value] of Object.entries(attributes)) item.setAttribute(name, String(value));
+    return item;
+  };
+  // A colour control wants six hexadecimal digits; a skin may be written with three.
+  const six = (hex) => {
+    const value = String(hex ?? '').trim().replace(/^#/, '');
+    return value.length === 3 ? `#${[...value].map((digit) => digit + digit).join('')}` : `#${value}`;
+  };
+
+  function syncDisabled() {
+    for (const control of main.querySelectorAll('button, input')) control.disabled = busy;
+    el.retry.disabled = busy;
+    // Blur is for the whole window only: the conversation area is painted by a stylesheet.
+    if (view) el.blur.disabled = busy || view.background.scope === 'chat';
+  }
+
+  function setBusy(value) {
+    busy = value;
+    main.setAttribute('aria-busy', String(value));
+    syncDisabled();
+  }
+
+  // The status line says what the last action did, in the error colour when it did not work.
+  function say(message, failed = false) {
+    el.status.textContent = message;
+    el.status.classList.toggle('text-destructive', failed);
+  }
+
+  function showError(message) {
+    el.error.textContent = message;
+    el.retry.textContent = boot.retry;
+    el.errorBox.hidden = false;
+    el.retry.disabled = false;
+  }
+  const hideError = () => {
+    el.error.textContent = '';
+    el.errorBox.hidden = true;
+  };
+
+  // ---------------------------------------------------------------- host calls
+
+  const firstText = (result) => (Array.isArray(result?.content) && result.content[0]?.text) || '';
+
+  // A tool of this view (bin/extension.mjs). It answers `{ ok, message, data }` and never
+  // throws; a failure on the way arrives as `isError`. `data` is the settings to draw; a tool
+  // that only did something ("open the settings file") answers without it.
+  async function call(name, args) {
+    if (!zcode) throw new Error(boot.noHost);
+    const result = await zcode.callTool(name, args);
+    const answer = result?.structuredContent;
+    if (result?.isError || !answer || typeof answer !== 'object') throw new Error(firstText(result) || boot.noHost);
+    if (!answer.ok) throw new Error(answer.message || boot.failed);
+    return answer;
+  }
+
+  // One change: sent, and when it is the latest one, what came back is drawn and said. `wait`
+  // blanks the controls meanwhile (adding a file, a reset); a slider must stay usable, so it
+  // does not wait.
+  async function apply(name, args, { wait = false, announce = true } = {}) {
+    if (!view) return null;
+    if (wait) setBusy(true);
+    const mine = ++serial;
+    try {
+      const answer = await call(name, args);
+      if (mine !== serial) return null;
+      hideError();
+      if (answer.data) render(answer.data);
+      if (announce) say(answer.message || text.saved);
+      return answer.data ?? view;
+    } catch (err) {
+      if (mine === serial) showError((text?.failed ?? boot.failed) + (err?.message ?? err));
+      return null;
+    } finally {
+      if (mine === serial && wait) setBusy(false);
+    }
+  }
+
+  // Sliders and colour controls fire many times a second: the last value within a moment is
+  // the one that is sent.
+  function soon(run) {
+    queued = run;
+    clearTimeout(throttleTimer);
+    throttleTimer = setTimeout(() => {
+      const pending = queued;
+      queued = null;
+      if (pending) pending();
+    }, THROTTLE_MS);
+  }
+
+  async function load() {
+    setBusy(true);
+    say(boot.loading);
+    try {
+      const answer = await call('get', {});
+      // Nothing to draw is not a settings answer; say so instead of showing an empty page.
+      if (!answer.data || typeof answer.data !== 'object') throw new Error(answer.message || boot.noHost);
+      hideError();
+      render(answer.data);
+      say('');
+    } catch (err) {
+      // Only the page's own words here: the copy of the session may not have arrived yet.
+      showError(boot.failed + (err?.message ?? err));
+      say('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // A control the user is holding on to (a slider being dragged, a number being typed) keeps
+  // the value under the pointer: the answer that comes back is always one change behind.
+  function setValue(control, value) {
+    if (document.activeElement !== control) control.value = String(value);
+  }
+
+  // ---------------------------------------------------------------- drawing
+
+  function render(data) {
+    view = data;
+    text = data.text;
+    const { background } = data;
+    document.title = text.title;
+    document.documentElement.lang = data.lang;
+    el.title.textContent = text.title;
+    el.subtitle.textContent = text.subtitle;
+    el.launcher.textContent = data.launcher.running ? text.launcherOn : text.launcherOff;
+
+    el.backgroundHeading.textContent = text.backgroundHeading;
+    el.enabled.checked = background.enabled;
+    el.enabledLabel.textContent = text.show;
+    el.scopeLabel.textContent = text.scope;
+    el.scopePage.textContent = text.page;
+    el.scopeChat.textContent = text.chat;
+    for (const item of [el.scopePage, el.scopeChat]) {
+      const on = item.dataset.scope === background.scope;
+      item.classList.toggle('btn-primary', on);
+      item.setAttribute('aria-pressed', String(on));
+    }
+    el.scopeHint.textContent = text.scopeHint;
+    const hasVideo = data.media.some((item) => item.kind === 'video');
+    el.scopeVideo.hidden = !hasVideo;
+    el.scopeVideo.textContent = text.videoScope;
+
+    const mask = Math.round(background.mask * 100);
+    el.maskLabel.textContent = text.mask;
+    el.maskHint.textContent = text.maskHint;
+    setValue(el.mask, mask);
+    el.maskValue.textContent = `${mask}%`;
+    el.blurLabel.textContent = text.blur;
+    el.blur.max = String(data.limits.blurMax);
+    setValue(el.blur, background.blur);
+    el.blurValue.textContent = `${background.blur}px`;
+    el.rotateLabel.textContent = text.rotate;
+    setValue(el.rotate, background.rotateMinutes);
+    el.rotateValue.textContent = background.rotateMinutes > 0 ? text.every.replace('{n}', background.rotateMinutes) : text.never;
+
+    renderMedia(data.media);
+    renderSkins(data);
+    renderColours(data);
+
+    el.mediaHeading.textContent = text.mediaHeading;
+    el.mediaHint.textContent = text.mediaHint;
+    el.pathLabel.textContent = text.pathPlaceholder;
+    el.path.placeholder = text.pathPlaceholder;
+    el.addLabel.textContent = text.add;
+    el.pickLabel.textContent = text.pick;
+    el.skinHeading.textContent = text.skinHeading;
+    el.skinHint.textContent = text.skinHint;
+    el.lightLegend.textContent = text.light;
+    el.darkLegend.textContent = text.dark;
+    el.openConfigLabel.textContent = text.openConfig;
+    el.resetLabel.textContent = text.reset;
+    el.resetQuestion.textContent = text.resetConfirm;
+    el.resetYes.textContent = text.confirmReset;
+    el.resetNo.textContent = text.cancel;
+
+    for (const section of [el.background, el.media, el.skin, el.footer]) section.hidden = false;
+    syncDisabled();
+  }
+
+  function renderMedia(list) {
+    el.mediaList.replaceChildren();
+    for (const [index, item] of list.entries()) {
+      const row = make('li', 'appearance-media-item');
+      row.dataset.path = item.path;
+      row.append(icon(item.kind === 'video' ? 'film' : 'image'));
+      const words = make('span', 'appearance-media-text');
+      const name = make('span', 'appearance-media-name', item.name);
+      name.title = item.path;
+      words.append(name);
+      words.append(make('span', 'text-small appearance-caption', item.kind === 'video' ? text.video : text.picture));
+      if (!item.exists) words.append(make('span', 'text-small text-destructive', text.missing));
+      row.append(words);
+      const actions = make('span', 'appearance-actions');
+      if (index === 0) {
+        const current = make('span', 'appearance-current', text.current);
+        current.title = text.current;
+        actions.append(current);
+      }
+      const remove = button('btn btn-ghost btn-xs', '', { 'data-action': 'remove', title: text.remove, 'aria-label': `${text.remove} ${item.name}` });
+      remove.append(icon('trash-2'));
+      actions.append(remove);
+      row.append(actions);
+      el.mediaList.append(row);
+    }
+    el.mediaEmpty.textContent = text.mediaEmpty;
+    el.mediaEmpty.hidden = list.length > 0;
+  }
+
+  function renderSkins(data) {
+    el.skins.replaceChildren();
+    const own = data.skin.preset === 'default' && data.skin.custom;
+    for (const skin of data.skins) {
+      const on = !own && data.skin.preset === skin.name;
+      const item = button('btn btn-sm appearance-skin', '', { 'data-skin': skin.name, 'aria-pressed': String(on) });
+      if (on) item.classList.add('btn-primary');
+      if (skin.light && skin.dark) {
+        const swatches = make('span', 'appearance-swatches');
+        swatches.setAttribute('aria-hidden', 'true');
+        for (const mode of [skin.light, skin.dark]) {
+          const line = make('span', 'appearance-swatches-row');
+          for (const key of COLOURS) {
+            const swatch = make('span', 'appearance-swatch');
+            swatch.style.setProperty('--swatch', six(mode[key]));
+            line.append(swatch);
+          }
+          swatches.append(line);
+        }
+        item.append(swatches);
+      }
+      const label = skin.name === 'default' ? text.defaultSkin : skin.name;
+      item.append(make('span', '', label));
+      el.skins.append(item);
+    }
+    const custom = button('btn btn-sm', text.custom, { 'data-skin': 'custom', 'aria-pressed': String(own) });
+    if (own) custom.classList.add('btn-primary');
+    el.skins.append(custom);
+  }
+
+  // The colour controls are made once and then only given new values: rebuilding them while a
+  // colour is being picked would close the system's colour window.
+  function renderColours(data) {
+    const custom = data.skin.custom;
+    const shown = data.skin.preset === 'default' && Boolean(custom);
+    el.colours.hidden = !shown;
+    if (!shown) return;
+    const [light, dark] = el.colours.children;
+    for (const [fieldset, mode] of [[light, 'light'], [dark, 'dark']]) {
+      const legend = fieldset.firstElementChild;
+      if (fieldset.children.length === 1) {
+        for (const key of COLOURS) {
+          const label = make('label', 'appearance-colour');
+          label.append(make('span', 'text-small', text[key]));
+          const input = make('input', 'appearance-colour-input');
+          input.type = 'color';
+          input.dataset.mode = mode;
+          input.dataset.key = key;
+          label.append(input);
+          fieldset.append(label);
+        }
+      }
+      for (const input of fieldset.querySelectorAll('input[data-key]')) {
+        setValue(input, six(custom?.[mode]?.[input.dataset.key] ?? START[mode][input.dataset.key]));
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- actions
+
+  el.retry.addEventListener('click', load);
+
+  el.enabled.addEventListener('change', () => apply('set', { enabled: el.enabled.checked }));
+
+  for (const item of [el.scopePage, el.scopeChat]) {
+    item.addEventListener('click', () => apply('set', { scope: item.dataset.scope }));
+  }
+
+  el.mask.addEventListener('input', () => {
+    const value = Number(el.mask.value);
+    el.maskValue.textContent = `${value}%`;
+    soon(() => apply('set', { mask: value / 100 }, { announce: false }));
+  });
+  el.blur.addEventListener('input', () => {
+    const value = Number(el.blur.value);
+    el.blurValue.textContent = `${value}px`;
+    soon(() => apply('set', { blur: value }, { announce: false }));
+  });
+  // The value that leaves with the control is the one that is reported.
+  for (const control of [el.mask, el.blur]) {
+    control.addEventListener('change', () => {
+      clearTimeout(throttleTimer);
+      queued = null;
+      apply('set', control === el.mask ? { mask: Number(control.value) / 100 } : { blur: Number(control.value) }, { announce: false });
+    });
+  }
+
+  el.rotate.addEventListener('change', () => {
+    if (!el.rotate.validity.valid || el.rotate.value.trim() === '') {
+      el.rotate.value = String(view?.background.rotateMinutes ?? 0);
+      say((text?.failed ?? boot.failed) + (text.rotateLabel || '') + ': ' + (el.rotate.validationMessage || ''), true);
+      return;
+    }
+    apply('set', { rotateMinutes: Number(el.rotate.value) });
+  });
+
+  el.addForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const typed = el.path.value.trim();
+    if (!typed) return;
+    apply('add', { paths: [typed] }, { wait: true }).then((data) => {
+      if (data) el.path.value = '';
+    });
+  });
+
+  // A file dialog is the system's own window, outside this page: the tool starts it and
+  // answers at once, and the files it gives are asked for until they arrive.
+  el.pick.addEventListener('click', async () => {
+    if (!view) return;
+    let opened;
+    try {
+      opened = await call('pick', {});
+    } catch (err) {
+      showError((text?.failed ?? boot.failed) + (err?.message ?? err));
+      return;
+    }
+    hideError();
+    render(opened.data);
+    say(opened.message || text.picking);
+    clearTimeout(pickTimer);
+    const started = Date.now();
+    const poll = async () => {
+      let answer;
+      try {
+        answer = await call('get', {});
+      } catch (err) {
+        showError((text?.failed ?? boot.failed) + (err?.message ?? err));
+        return;
+      }
+      if (answer.data.pick) {
+        render(answer.data);
+        if (answer.data.pick.message) say(answer.data.pick.message, Boolean(answer.data.pick.error));
+        return;
+      }
+      if (Date.now() - started > PICK_LIMIT_MS) {
+        say(text.pickNone);
+        return;
+      }
+      pickTimer = setTimeout(poll, PICK_EVERY_MS);
+    };
+    pickTimer = setTimeout(poll, PICK_EVERY_MS);
+  });
+
+  el.mediaList.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-action="remove"]');
+    if (!target) return;
+    const row = target.closest('li');
+    const index = [...el.mediaList.children].indexOf(row);
+    apply('remove', { path: row.dataset.path }, { wait: true }).then((data) => {
+      if (!data) return;
+      // The control that was pressed is gone with its row: the focus goes to the next one.
+      const next = el.mediaList.querySelectorAll('[data-action="remove"]')[index] ?? el.path;
+      next.focus();
+    });
+  });
+
+  el.skins.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-skin]');
+    if (!target) return;
+    const name = target.dataset.skin;
+    if (name === 'custom') {
+      // A skin of one's own starts from the colours already in the file, or from where the
+      // contract starts when there are none yet.
+      const custom = view?.skin.custom ?? START;
+      apply('set', { skin: 'default', customSkin: custom }).then((data) => {
+        if (data) el.colours.querySelector('input')?.focus();
+      });
+      return;
+    }
+    apply('set', { skin: name });
+  });
+
+  el.colours.addEventListener('input', (event) => {
+    const input = event.target.closest('input[data-mode]');
+    if (!input || !view) return;
+    const custom = structuredClone(view.skin.custom ?? START);
+    custom[input.dataset.mode] = { ...(custom[input.dataset.mode] ?? START[input.dataset.mode]), [input.dataset.key]: input.value };
+    soon(() => apply('set', { skin: 'default', customSkin: custom }, { announce: false }));
+  });
+
+  el.openConfig.addEventListener('click', () => apply('openConfig', {}));
+
+  // Restoring the defaults asks first: nothing is restored by the press that asks for it.
+  function askRestore(value) {
+    askReset = value;
+    el.reset.hidden = value;
+    el.resetConfirm.hidden = !value;
+  }
+  el.reset.addEventListener('click', () => {
+    askRestore(true);
+    el.resetYes.focus();
+  });
+  el.resetNo.addEventListener('click', () => {
+    askRestore(false);
+    el.reset.focus();
+  });
+  el.resetYes.addEventListener('click', () => {
+    askRestore(false);
+    apply('reset', {}, { wait: true }).then(() => el.reset.focus());
+  });
+  main.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && askReset) {
+      askRestore(false);
+      el.reset.focus();
+    }
+  });
+
+  // ---------------------------------------------------------------- start
+
+  document.title = boot.title;
+  el.title.textContent = boot.title;
+  el.retry.textContent = boot.retry;
+  setBusy(true);
+  load();
+})();
+</script>
+</body>
+</html>

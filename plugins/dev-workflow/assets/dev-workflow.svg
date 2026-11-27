@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- dev-workflow · final "the round": plan, build, review, and back to the start, around the
+       piece of work. Same grid, palette and stroke weight as codegraph. The marketplace icon is
+       the 512 PNG rendered from this. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B3A9E"/>
+      <stop offset="0.55" stop-color="#2E3178"/>
+      <stop offset="1" stop-color="#1F2937"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="226" ry="226"/>
+    </clipPath>
+    <radialGradient id="lift" cx="0.3" cy="0.2" r="0.8">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <rect width="1024" height="1024" fill="url(#lift)"/>
+  </g>
+  <path d="M 681 405 A 200 200 0 1 0 681 619" fill="none" stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="44" stroke-linecap="round"/>
+  <polygon points="718,560 725,654 630,594" fill="#FFFFFF" fill-opacity="0.92"/>
+  <circle cx="512" cy="512" r="44" fill="#2DD4BF"/>
+</svg>

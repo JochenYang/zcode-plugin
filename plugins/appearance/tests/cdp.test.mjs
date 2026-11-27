@@ -1,0 +1,131 @@
+// End to end against a real Chromium, not Electron: the same debugging channel, the same CSP as
+// the ZCode shell, the same injection. What this proves about the protocol and the page side is
+// the part the launcher cannot be trusted on without a window to talk to; the ZCode-specific
+// parts (the startup switch, the conversation area's hook) are checked on the real app instead.
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { after, before, describe, it } from 'node:test';
+import { findFreePort, listTargets } from '../src/cdp.mjs';
+import { closeAll, syncTarget } from '../src/apply.mjs';
+import { CHAT_ROOT, IMAGE_LAYER_ID, STYLE_ID, TINT_LAYER_ID, buildPlan } from '../src/css.mjs';
+import { defaultConfig } from '../src/config.mjs';
+import { PIXEL, findBrowser, startTestBrowser, until } from './helpers/browser.mjs';
+
+const BROWSER = findBrowser();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const shellTarget = async (port) => (await listTargets(port)).find((target) => target.url.endsWith('/shell'));
+const pageWith = (extra) => ({ ...defaultConfig(), background: { ...defaultConfig().background, ...extra } });
+
+describe('debugging channel against a real browser', { skip: BROWSER ? false : 'no Chrome or Edge found' }, () => {
+  let world;
+  const sessions = new Map();
+
+  before(async () => {
+    world = await startTestBrowser(BROWSER);
+  });
+
+  after(async () => {
+    closeAll(sessions);
+    await world.stop();
+  });
+
+  it('finds a free port by listening, and skips a busy one', async () => {
+    const busy = http.createServer();
+    const taken = await new Promise((resolve) => busy.listen(0, '127.0.0.1', () => resolve(busy.address().port)));
+    try {
+      const free = await findFreePort(taken - 1, { tries: 5 });
+      assert.ok(Number.isInteger(free) && free > 0);
+      assert.notEqual(free, taken);
+    } finally {
+      await new Promise((resolve) => busy.close(resolve));
+    }
+  });
+
+  // The window the tests talk to, once its page is really there. A target shows up in the list
+  // before its navigation commits, so a test that does not wait races the page load.
+  const settled = async () => {
+    const { session } = sessions.get((await shellTarget(world.port)).id);
+    await until(() => session.evaluate(`document.readyState === 'complete' && !!document.getElementById('root')`), Boolean);
+    return session;
+  };
+
+  it('injects the stylesheet under the shell CSP, and a reload gets it again', async () => {
+    const plan = buildPlan(pageWith({ media: ['pixel.png'] }), { imageDataUrl: PIXEL });
+    const opened = await world.openPage(`${world.base}/shell`);
+    const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
+    // Registering before the document exists is what the launcher does on a cold start; which
+    // of the two paths applied the stylesheet is not the point, the page state is.
+    await syncTarget(target, sessions, plan);
+    const { session } = sessions.get(target.id);
+    await until(() => session.evaluate(`document.readyState === 'complete' && !!document.getElementById(${JSON.stringify(STYLE_ID)})`), Boolean);
+
+    assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), 'transparent');
+    assert.equal(await session.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), '#fafafa');
+    // Every base the window paints with has to go: the shell root's own (`bg-background-win-alt`)
+    // once stayed opaque and hid the picture behind everything but the start-up screen.
+    assert.equal(await session.evaluate(`getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor`), 'rgba(0, 0, 0, 0)');
+    assert.equal(await session.evaluate(`getComputedStyle(document.querySelector('.bg-sidebar')).backgroundColor`), 'rgba(0, 0, 0, 0)');
+    // The layers are laid out as intended: fixed, the whole viewport, the picture on the first.
+    // (A selector missing its # once left these as two empty static divs, and nothing showed.)
+    const layers = JSON.parse(await session.evaluate(`JSON.stringify(['${IMAGE_LAYER_ID}', '${TINT_LAYER_ID}'].map((id) => { const node = document.getElementById(id); const box = node.getBoundingClientRect(); const style = getComputedStyle(node); return [node !== null, style.position, style.zIndex, Math.round(box.width) === document.documentElement.clientWidth && Math.round(box.height) === innerHeight, Math.round(box.left) === 0 && Math.round(box.top) === 0, style.backgroundImage.startsWith('url("data:image/png;base64,'), style.backgroundImage.length]; }))`));
+    assert.deepEqual(layers[0].slice(0, 6), [true, 'fixed', '-1', true, true, true]);
+    assert.ok(layers[0][6] > 80, 'the picture itself is in the computed value');
+    assert.deepEqual(layers[1].slice(0, 6), [true, 'fixed', '-1', true, true, false]);
+    assert.equal(await session.evaluate(`document.body.firstChild === document.getElementById('${IMAGE_LAYER_ID}') && document.body.children[1].id === '${TINT_LAYER_ID}'`), true);
+    // The tint is the base colour the app had, at the configured strength. Compared with an
+    // element given that very mix, so neither the untouched colour nor a fallback would pass.
+    const tint = await session.evaluate(`(() => { const probe = document.createElement('div'); probe.style.background = 'color-mix(in oklab, #fafafa 72%, transparent)'; document.body.appendChild(probe); const wanted = getComputedStyle(probe).backgroundColor; const actual = getComputedStyle(document.getElementById('${TINT_LAYER_ID}')).backgroundColor; probe.remove(); return [actual, wanted]; })()`);
+    assert.equal(tint[0], tint[1]);
+    // The picture really loads: the policy lets data: URLs through, which a file path would not be.
+    const width = await session.evaluate(`new Promise((resolve) => { const image = new Image(); image.onload = () => resolve(image.naturalWidth); image.onerror = () => resolve('blocked'); image.src = ${JSON.stringify(PIXEL)}; })`, { awaitPromise: true });
+    assert.equal(width, 1);
+
+    // Nothing to do on the next poll. Then a reload: the registered script restores the stylesheet
+    // before any page code runs, without the launcher sending it again.
+    assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), null);
+    const loaded = new Promise((resolve) => session.on('Page.loadEventFired', resolve));
+    await session.send('Page.reload');
+    await loaded;
+    await until(() => session.evaluate(`document.getElementById(${JSON.stringify(STYLE_ID)}) !== null`), Boolean);
+    assert.equal(await session.evaluate(plan.check), 'ok');
+    assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), null);
+  });
+
+  it('switches to the conversation area when the plan changes', async () => {
+    await settled();
+    const plan = buildPlan(pageWith({ scope: 'chat', mask: 0.5 }), { imageDataUrl: PIXEL });
+    assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), 'applied');
+    const { session } = sessions.get((await shellTarget(world.port)).id);
+    assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
+    const chat = JSON.parse(await session.evaluate(`JSON.stringify([getComputedStyle(document.querySelector(${JSON.stringify(CHAT_ROOT)})).backgroundImage, getComputedStyle(document.querySelector(${JSON.stringify(CHAT_ROOT)})).backgroundAttachment, getComputedStyle(document.documentElement).getPropertyValue('--color-background'), getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor])`));
+    const [image, attachment, baseColour, rootAlt] = chat;
+    assert.match(image, /linear-gradient/);
+    assert.match(image, /url\("data:image\/png;base64,/);
+    assert.equal(attachment, 'fixed, fixed');
+    // The conversation area alone: the rest of the window keeps the app's own colours, the
+    // shell root's base included.
+    assert.equal(baseColour.trim(), '#fafafa');
+    assert.equal(rootAlt, 'rgb(228, 228, 231)');
+    assert.equal(await session.evaluate(plan.check), 'ok');
+  });
+
+  it('reports a missing conversation area instead of failing silently', async () => {
+    const target = await shellTarget(world.port);
+    await sessions.get(target.id).session.evaluate(`document.querySelector(${JSON.stringify(CHAT_ROOT)}).removeAttribute('data-testid')`);
+    // A different picture makes it a different plan, so the window is brought up to date again.
+    const plan = buildPlan(pageWith({ scope: 'chat' }), { imageDataUrl: `${PIXEL}=` });
+    assert.equal(await syncTarget(target, sessions, plan), 'missing-root');
+  });
+
+  it('leaves a window without the app root alone', async () => {
+    const plan = buildPlan(defaultConfig(), { imageDataUrl: PIXEL });
+    const opened = await world.openPage(`${world.base}/other`);
+    const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
+    await syncTarget(target, sessions, plan);
+    const { session } = sessions.get(target.id);
+    await until(() => session.evaluate(`document.readyState === 'complete' && !!document.querySelector('h1')`), Boolean);
+    await sleep(300);
+    assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(STYLE_ID)}) === null`), true);
+    assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
+  });
+});

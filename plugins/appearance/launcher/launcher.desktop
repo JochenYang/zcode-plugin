@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=__TITLE__
+Comment=__DESCRIPTION__
+Exec=__EXECUTABLE__
+Icon=__ICON__
+Terminal=false
+Categories=Development;
+StartupNotify=false

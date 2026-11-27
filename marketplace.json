@@ -19,7 +19,7 @@
         "conventional-commits",
         "hooks"
       ],
-      "icon": "https://static.geluman.cn/icon/icon.png",
+      "icon": "https://static.geluman.cn/icon/git-conventions.png",
       "source": "./plugins/git-conventions"
     },
     {
@@ -40,7 +40,7 @@
         "planning",
         "documentation"
       ],
-      "icon": "https://static.geluman.cn/icon/dev-icon.png",
+      "icon": "https://static.geluman.cn/icon/dev-workflow.png",
       "source": "./plugins/dev-workflow"
     },
     {
@@ -60,7 +60,7 @@
         "safety",
         "secrets"
       ],
-      "icon": "https://static.geluman.cn/icon/guard-icon.png",
+      "icon": "https://static.geluman.cn/icon/guardrails.png",
       "source": "./plugins/guardrails"
     },
     {
@@ -125,6 +125,26 @@
       "icon": "https://static.geluman.cn/icon/codegraph.png",
       "description_i18n": {
         "zh-CN": "ZCode 本地代码图谱：零依赖 MCP server，用随包的 tree-sitter 把 35 行语言索引成符号/引用/调用图，存进插件数据目录的 SQLite；codegraph_status、codegraph_lookup（符号搜索、调用者、被调用者、影响面、大纲）、codegraph_map 三个工具直接给出精确 file:line，替代 Grep 加整文件 Read。索引在会话打开时自动建立或刷新；SessionStart、UserPromptSubmit、PostToolUse 三个钩子告诉模型图谱何时就绪、何时该用它。零遥测、零外联、不执行项目代码；需 Node ≥ 22.13，钩子只认 PATH。"
+      }
+    },
+    {
+      "name": "appearance",
+      "version": "0.1.0",
+      "description": "Background pictures or videos and colour skins for the ZCode desktop window, whole page or conversation area only, with tint, blur and rotation. ZCode gives plugins no way to restyle the app itself, so an external launcher (plugins/appearance/bin/launch.mjs) starts ZCode with its debugging channel and injects the styles; start ZCode from the launcher after quitting it completely. A view in the side pane changes every setting at once; /appearance does the same from the conversation; the settings live in ~/.zcode/appearance.json.",
+      "author": {
+        "name": "JochenYang"
+      },
+      "category": "productivity",
+      "tags": [
+        "theme",
+        "background",
+        "desktop",
+        "launcher"
+      ],
+      "source": "./plugins/appearance",
+      "icon": "https://static.geluman.cn/icon/appearance.png",
+      "description_i18n": {
+        "zh-CN": "ZCode 桌面端自定义背景与配色皮肤：图片或视频可以铺整页或只换会话区，带遮罩、模糊、定时轮换，另有内置皮肤与自定义皮肤。ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式——要先完全退出 ZCode，再从启动器启动。侧边栏的面板里每个设置改了就生效，/appearance 在对话里改，设置在 ~/.zcode/appearance.json。"
       }
     }
   ]
