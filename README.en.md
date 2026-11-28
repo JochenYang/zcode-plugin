@@ -20,7 +20,7 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | Plugin | Version | Description |
 |---|---|---|
 | `plugins/git-conventions` | 0.1.0 | Commit message guard: a `PreToolUse` hook validates the message a `git commit` writes before git runs (subject format and the 50-character limit, body as `-` bullets ending with a `Verified:` line) and denies a non-compliant one |
-| `plugins/dev-workflow` | 0.9.1 | Development flow: 7 skills + `.devflow` / `docs/plans` plan files + a gated multi-round review protocol + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` (they locate code with codegraph, so enable `codegraph` too) |
+| `plugins/dev-workflow` | 0.10.0 | Development flow: 8 skills (including the optional `grill-me` interview) + `.devflow` / `docs/plans` plan files + a gated multi-round review protocol + `/handoff` session contract + a `SessionStart` repo snapshot + 23 specialist subagents auto-installed into `~/.zcode/agents` (they locate code with codegraph, so enable `codegraph` too) |
 | `plugins/guardrails` | 0.2.1 | Deterministic safety hooks: `PreToolUse` gates that block irreversible commands and hardcoded credentials, and route deploys to a prompt; the prompt tier steps aside in full access mode, the blocks never do |
 | `plugins/websearch` | 0.2.0 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel and Bing with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |

@@ -46,8 +46,8 @@ done < <(git log -3 --format='%h %s' 2>/dev/null)
 if compgen -G ".devflow/*.md" >/dev/null 2>&1; then
   append ""
   append "Active task plans under .devflow/ (task-level acceptance basis; read the"
-  append "matching file before acting, and prefer the docs/plans/ target when it has"
-  append "a 'Plan:' pointer):"
+  append "matching file before acting, and follow its 'Plan:' pointer to docs/plans/"
+  append "or its 'Interview:' pointer to .devflow/<slug>/interview.md when present):"
   shown=0
   for plan in .devflow/*.md; do
     shown=$((shown + 1))
