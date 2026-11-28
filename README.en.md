@@ -62,11 +62,12 @@ Stops a non-compliant commit message before git records it. A `PreToolUse` hook 
 
 ## dev-workflow
 
-7 flow skills covering the development lifecycle. They fire automatically when appropriate, or can be picked manually from the Skills group by typing `/`:
+8 flow skills covering the development lifecycle. They fire automatically when appropriate, or can be picked manually from the Skills group by typing `/`; `grill-me` is used only when the user asks for it:
 
 | Skill | When | Output |
 |---|---|---|
-| `change-plan` | before a feature/refactor/complex fix | executable plan + `.devflow/<slug>.md` (task-level acceptance basis); with a regression surface also `docs/plans/<slug>.md` (Work items / Phases gates / Test plan / Phase log) |
+| `grill-me` | the user says "grill me", "interview me", "make sure you understand" | one-question-at-a-time interview record `.devflow/<slug>/interview.md`: decisions asked in dependency order, each with a recommended answer, anything answerable from the code is looked up instead; consensus and OPEN items feed `change-plan`, no plan is written |
+| `change-plan` | before a feature/refactor/complex fix | executable plan + `.devflow/<slug>.md` (task-level acceptance basis); with a regression surface also `docs/plans/<slug>.md` (Work items / Phases gates / Test plan / Phase log); reads the interview record first when one exists and does not re-ask aligned decisions |
 | `debug` | bug/test failure/build failure | iron rule: no fix before the root cause is established; reproduce → gather evidence → falsifiable hypotheses → root cause → minimal fix → regression check, with `git bisect`, boundary logging and a three-strikes stop; details in `references/` |
 | `test-changed` | changes need verification | minimal valid test scope + evidence log + phase-gate verdict, writing Test plan results and Phase log back into the persistent plan |
 | `review` | changes need review | P0–P3 findings with `path:line`, `introduced`/`pre-existing` and evidence level, a four-way verdict, stops after three unconverged rounds; from the second round on, or for high-risk changes, the gated convergence protocol (`review-gate.mjs`) applies |
@@ -87,7 +88,7 @@ Core mechanics: `change-plan` writes the plan and acceptance criteria to `.devfl
 
 Multi-round review convergence: once a review reaches its second round, or the change is high risk, `reviewer` only produces findings and evidence, the main session verifies each one and writes its decision to `.devflow/<slug>/review-<round>.json`, and `scripts/review-gate.mjs` decides `converged` / `needs_user_confirmation` / `stop_max_rounds` / `continue` through eight gates. When a state file exists, `commit-review` only passes once the latest round is `converged`.
 
-Recommended lifecycle: `change-plan → implement → test-changed → review → commit → release-check → doc-gen`
+Recommended lifecycle: `grill-me (optional) → change-plan → implement → test-changed → review → commit → release-check → doc-gen`
 
 The pre-commit change check is the `commit-review` skill; the commit message itself is validated by the `git-conventions` plugin's hook before git runs.
 

@@ -62,11 +62,12 @@
 
 ## dev-workflow
 
-7 个 flow skill 覆盖开发生命周期，合适时机自动触发，也可输入 `/` 从「技能」分组手动选用：
+8 个 flow skill 覆盖开发生命周期，合适时机自动触发，也可输入 `/` 从「技能」分组手动选用；`grill-me` 只在用户主动要求时用：
 
 | Skill | 时机 | 产出 |
 |---|---|---|
-| `change-plan` | 新功能/重构/复杂修复前 | 可执行计划 + `.devflow/<slug>.md`（任务级验收依据），有回归面时同时写 `docs/plans/<slug>.md`（Work items / Phases Gate / Test plan / Phase log） |
+| `grill-me` | 用户说「grill me」「拷问我」「把我问清楚」 | 逐题访谈记录 `.devflow/<slug>/interview.md`：一次一题、每题带推荐答案、按决策依赖排序、能查代码的不问；共识与 OPEN 项供 `change-plan` 消费，不写计划 |
+| `change-plan` | 新功能/重构/复杂修复前 | 可执行计划 + `.devflow/<slug>.md`（任务级验收依据），有回归面时同时写 `docs/plans/<slug>.md`（Work items / Phases Gate / Test plan / Phase log）；有访谈记录时先读它，aligned 的决策不重问 |
 | `debug` | bug/测试失败/构建失败 | 铁律：根因未明不提出修复；复现→取证→可证伪假设→根因→最小修复→回归验证，含 `git bisect`、跨层边界日志、连续 3 次失败即停；细则见 `references/` |
 | `test-changed` | 当前改动要验证 | 最小有效测试范围 + 证据记录 + 阶段 Gate 判定，并把 Test plan 结果与 Phase log 回写到持久计划 |
 | `review` | 要审查改动 | P0–P3 分级发现，带 `path:line`、`introduced`/`pre-existing` 与证据等级，四档 verdict，三轮未收敛即停；第二轮起或高风险走多轮收敛协议（`review-gate.mjs`） |
@@ -87,7 +88,7 @@
 
 多轮审查收敛：审查进入第二轮，或改动为高风险时，`reviewer` 只产出 findings 与证据，主会话逐条核实并把裁决写进 `.devflow/<slug>/review-<round>.json`，`scripts/review-gate.mjs` 按八道闸门判出 `converged` / `needs_user_confirmation` / `stop_max_rounds` / `continue`。存在状态文件时，`commit-review` 只在最新一轮 `converged` 后放行。
 
-推荐生命周期：`change-plan → 实现 → test-changed → review → 提交 → release-check → doc-gen`
+推荐生命周期：`grill-me（可选）→ change-plan → 实现 → test-changed → review → 提交 → release-check → doc-gen`
 
 提交前的改动范围检查用 `commit-review` skill；提交信息由 `git-conventions` 插件的钩子在提交前校验。
 
