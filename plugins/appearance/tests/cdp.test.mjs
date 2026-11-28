@@ -68,6 +68,8 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     // for it: this page never names one.
     assert.equal(await session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), false, 'not shown at once');
     assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), '#fafafa', 'the app\'s own colour stays');
+    // ...and the layers are not shown either: before the app mounts, no base covers them.
+    assert.deepEqual(JSON.parse(await session.evaluate(`JSON.stringify(['${IMAGE_LAYER_ID}', '${TINT_LAYER_ID}'].map((id) => getComputedStyle(document.getElementById(id)).visibility))`)), ['hidden', 'hidden']);
     await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 7000 });
 
     assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), 'transparent');
@@ -77,9 +79,13 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     // by fading, not at once: covered until now, the picture layer is drawn only from here on,
     // and a window made see-through in one step showed what is behind it for those frames.
     const baseAlpha = () => session.evaluate(`Number((/rgba\\(\\d+, \\d+, \\d+, ([\\d.]+)\\)/.exec(getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor) || [0, 1])[1])`);
+    // The layers themselves were hidden until the word: the app paints no base before it mounts,
+    // so nothing else could have kept the picture, under the light tint, off the screen.
+    assert.deepEqual(JSON.parse(await session.evaluate(`JSON.stringify(['${IMAGE_LAYER_ID}', '${TINT_LAYER_ID}'].map((id) => getComputedStyle(document.getElementById(id)).visibility))`)), ['visible', 'visible']);
     assert.ok((await baseAlpha()) > 0, 'the base is still fading just after the word, not gone at once');
     await until(baseAlpha, (alpha) => alpha === 0, { timeoutMs: 2000 });
-    assert.equal(await session.evaluate(`getComputedStyle(document.querySelector('.bg-sidebar')).backgroundColor`), 'rgba(0, 0, 0, 0)');
+    // (Read as an alpha: a colour that faded to transparent is reported with its own channels.)
+    await until(() => session.evaluate(`Number((/rgba\\(\\d+, \\d+, \\d+, ([\\d.]+)\\)/.exec(getComputedStyle(document.querySelector('.bg-sidebar')).backgroundColor) || [0, 1])[1])`), (alpha) => alpha === 0, { timeoutMs: 2000 });
     // The layers are laid out as intended: fixed, the whole viewport, the picture on the first.
     // (A selector missing its # once left these as two empty static divs, and nothing showed.)
     const layers = JSON.parse(await session.evaluate(`JSON.stringify(['${IMAGE_LAYER_ID}', '${TINT_LAYER_ID}'].map((id) => { const node = document.getElementById(id); const box = node.getBoundingClientRect(); const style = getComputedStyle(node); return [node !== null, style.position, style.zIndex, Math.round(box.width) === document.documentElement.clientWidth && Math.round(box.height) === innerHeight, Math.round(box.left) === 0 && Math.round(box.top) === 0, style.backgroundImage.startsWith('url("data:image/png;base64,'), style.backgroundImage.length]; }))`));
@@ -103,9 +109,15 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     // pop, is not touched. The screen is hidden in this page, so the names are what is read.
     const startup = JSON.parse(await session.evaluate(`JSON.stringify([getComputedStyle(document.querySelector('.startup-logo-shell')).animationName, getComputedStyle(document.querySelector('.startup-logo')).animationName, getComputedStyle(document.querySelector('.startup-logo')).transformOrigin, getComputedStyle(document.getElementById('loading')).transitionDuration, getComputedStyle(document.getElementById('root')).transitionDuration])`));
     assert.deepEqual(startup, ['fixture-pop', 'za-startup-breathe', '50% 50%', '0.36s', '0.3s'], 'the shell keeps the animation the page gave it');
-    // When the page says the first screen is ready, the moment is kept for whoever asks.
+    // When the page says the first screen is ready, the moment is kept for whoever asks — and
+    // nothing else happens: a class that is not the theme must not read the colours again, for
+    // reading takes the stylesheet out for a moment and the screen being faded in jumped (a
+    // flicker at every start, read on the real app: the repaint landed on the hand-off).
+    const repaintsBefore = await session.evaluate(`window.__zcodeAppearance.repaints`);
     await session.evaluate(`document.body.classList.add('zcode-startup-ready')`);
     await until(() => session.evaluate(`window.__zcodeAppearance.readyAt`), (value) => Number.isInteger(value) && value >= 0);
+    await sleep(200);
+    assert.equal(await session.evaluate(`window.__zcodeAppearance.repaints`), repaintsBefore, 'no repaint for a class that is not the theme');
     await session.evaluate(`document.body.classList.remove('zcode-startup-ready')`);
     const loaded = new Promise((resolve) => session.on('Page.loadEventFired', resolve));
     await session.send('Page.reload');
@@ -197,10 +209,10 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     }
   });
 
-  it('shows the picture in the conversation area on a page of its own, and keeps the newest plan when a class changes', async () => {
+  it('shows the picture in the conversation area on a page of its own, and keeps the newest plan when the theme changes', async () => {
     // Two things a page that had a page-scope plan first would hide: the conversation scope's
     // rules wait for the page script's word too, and that scope has no layer to wait for; and
-    // the observer that re-reads the colours on a class change must re-insert the newest plan,
+    // the observer that re-reads the colours on a change of theme must re-insert the newest plan,
     // not the first one the page was given.
     const opened = await world.openPage(world.pages.shell);
     const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
@@ -211,10 +223,11 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
       // This page names no theme: the word comes after the four seconds the script gives it.
       await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 7000 });
       assert.match(await session.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(CARD)})).backgroundImage`), /^url\("data:image\/png;base64,/, 'the card carries the picture');
-      // A newer plan, then a class change on the body (the window losing focus does that).
+      // A newer plan, then a change of theme (the `dark` class is one of the app's theme
+      // classes; this page's colours do not depend on it, so the tint stays what it was).
       assert.equal(await syncTarget(target, sessions, buildPlan(pageWith({ scope: 'chat', mask: 0.6 }), { imageDataUrl: PIXEL })), 'applied');
       const before = await session.evaluate(`window.__zcodeAppearance.repaints`);
-      await session.evaluate(`document.body.classList.add('inactive')`);
+      await session.evaluate(`document.documentElement.classList.add('dark')`);
       await until(() => session.evaluate(`window.__zcodeAppearance.repaints`), (count) => count > before);
       await sleep(120);
       const tint = await session.evaluate(`(() => { const probe = document.createElement('div'); probe.style.background = 'color-mix(in oklab, #fafafa 60%, transparent)'; document.body.appendChild(probe); const newest = getComputedStyle(probe).backgroundColor; probe.style.background = 'color-mix(in oklab, #fafafa 50%, transparent)'; const older = getComputedStyle(probe).backgroundColor; const actual = getComputedStyle(document.querySelector(${JSON.stringify(CARD)}), '::before').backgroundColor; probe.remove(); return [actual, newest, older]; })()`);

@@ -131,7 +131,12 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
     tint,
     // Both layers sit behind the app: negative z-index paints above the page canvas and below
     // everything in normal flow, so text, cards and menus stay on top and keep receiving clicks.
-    `${image}, ${tintLayer} { position: fixed; inset: 0; z-index: -1; pointer-events: none; }`,
+    // Hidden until the word, though: the app paints its base only once it has mounted (about
+    // 900 ms into the page), and until then nothing covers these layers — injected at 350 ms,
+    // they showed at once, under the light tint that is all there is before the theme is known.
+    // (The gate on the base's colour could not help: there was no base yet.)
+    `${image}, ${tintLayer} { position: fixed; inset: 0; z-index: -1; pointer-events: none; visibility: hidden; }`,
+    `${THEME_SELECTORS.split(', ').map((selector) => `${selector}.${SHOWN} :is(${image}, ${tintLayer})`).join(', ')} { visibility: visible; }`,
     imageDataUrl
       ? `${image} { background: url("${imageDataUrl}") center / cover no-repeat; }`
       // A <video> element takes the picture layer's place (see install); it fills the layer the same way.
@@ -444,11 +449,22 @@ function install(payload) {
     }
   }
 
+  // Only the classes that say which theme is on: the app toggles `theme-zai-light` /
+  // `theme-zai-dark` (and `dark`) on <html> when its theme changes.
+  function themeKey(names) {
+    return names.split(/\s+/).filter((name) => /^(theme-zai-(light|dark)|dark|light)$/.test(name)).sort().join(' ');
+  }
+
   function watchTheme() {
     if (state.watching) return;
     state.watching = true;
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((records) => {
       noteReady();
+      // Only a change of theme is worth reading the colours again. Reading takes the stylesheet
+      // out for a moment, and that retargets every transition the page is running: on any class
+      // change at all (the app's `zcode-startup-ready` at the hand-off from its start-up screen,
+      // our own reveal classes) the screen being faded in jumped — a flicker at every start.
+      if (!records.some((record) => themeKey(record.oldValue ?? '') !== themeKey(record.target.className))) return;
       clearTimeout(repaintTimer);
       repaintTimer = setTimeout(() => {
         // The newest plan's: this observer is made once, by the first stylesheet the page got,
@@ -457,7 +473,7 @@ function install(payload) {
       }, 60);
     });
     for (const node of [document.documentElement, document.body]) {
-      if (node) observer.observe(node, { attributes: true, attributeFilter: ['class'] });
+      if (node) observer.observe(node, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
     }
   }
 

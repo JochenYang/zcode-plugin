@@ -35,7 +35,10 @@ describe('stylesheet', () => {
   it('puts the picture behind the window with a tint of the theme colour on top', () => {
     const css = buildCss(withScope('page', { mask: 0.5, blur: 6 }), { imageDataUrl: PIXEL });
     // Id selectors: without the # the browser reads a tag name and nothing matches.
-    assert.ok(css.includes(`#${IMAGE_LAYER_ID}, #${TINT_LAYER_ID} { position: fixed; inset: 0; z-index: -1;`));
+    // Hidden until the word: before the app mounts there is no base to cover these layers, and
+    // injected at 350 ms they showed at once under the light tint of the unknown theme.
+    assert.ok(css.includes(`#${IMAGE_LAYER_ID}, #${TINT_LAYER_ID} { position: fixed; inset: 0; z-index: -1; pointer-events: none; visibility: hidden; }`));
+    assert.ok(css.includes(`:root.${SHOWN} :is(#${IMAGE_LAYER_ID}, #${TINT_LAYER_ID}), .theme-zai-light.${SHOWN} :is(#${IMAGE_LAYER_ID}, #${TINT_LAYER_ID}), .theme-zai-dark.${SHOWN} :is(#${IMAGE_LAYER_ID}, #${TINT_LAYER_ID}) { visibility: visible; }`), 'and shown with it');
     assert.ok(css.includes(`#${IMAGE_LAYER_ID} { background: url("${PIXEL}") center / cover no-repeat; }`));
     assert.ok(css.includes(`#${IMAGE_LAYER_ID} { filter: blur(6px);`));
     // On the body: that is where the app's colours were read onto, and a var() in a custom
