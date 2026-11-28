@@ -667,6 +667,8 @@ html > body {
 
 .appearance-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 4px;
 }
@@ -787,6 +789,17 @@ html > body {
   font-weight: var(--font-weight-medium);
 }
 
+/* While a row is dragged its text steps back; the row it is dropped on is marked with the
+   muted surface. (Colour only, as everywhere in this block.) */
+.appearance-media-dragging {
+  color: var(--muted-foreground);
+}
+
+.appearance-media-drop-target {
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
 .appearance-swatch {
   border-radius: var(--radius-sm);
   background: var(--swatch);
@@ -839,13 +852,25 @@ html > body {
     <path d="M9 14 4 9l5-5" />
     <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
   </symbol>
+  <symbol id="appearance-icon-arrow-up" viewBox="0 0 24 24">
+    <path d="m5 12 7-7 7 7" />
+    <path d="M12 19V5" />
+  </symbol>
+  <symbol id="appearance-icon-arrow-down" viewBox="0 0 24 24">
+    <path d="M12 5v14" />
+    <path d="m19 12-7 7-7-7" />
+  </symbol>
+  <symbol id="appearance-icon-eye" viewBox="0 0 24 24">
+    <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+    <circle cx="12" cy="12" r="3" />
+  </symbol>
 </svg>
 
 <main id="appearance-panel" class="appearance" aria-busy="true">
   <header class="appearance-head">
     <div class="appearance-title">
       <span class="appearance-icon-tile" data-tone="accent" aria-hidden="true">
-        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-palette"></use></svg>
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor" /><circle cx="17.5" cy="10.5" r=".5" fill="currentColor" /><circle cx="8.5" cy="7.5" r=".5" fill="currentColor" /><circle cx="6.5" cy="12.5" r=".5" fill="currentColor" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" /></svg>
       </span>
       <div class="appearance-title-text">
         <h1 id="appearance-title"></h1>
@@ -904,11 +929,11 @@ html > body {
       <label class="sr-only" for="appearance-path" id="appearance-path-label"></label>
       <input class="form-control form-control-sm appearance-add-path" id="appearance-path" type="text" autocomplete="off">
       <button type="submit" class="btn btn-sm" id="appearance-add">
-        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-plus"></use></svg>
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
         <span id="appearance-add-label"></span>
       </button>
       <button type="button" class="btn btn-ghost btn-sm" id="appearance-pick">
-        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-folder-open"></use></svg>
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg>
         <span id="appearance-pick-label"></span>
       </button>
     </form>
@@ -930,12 +955,12 @@ html > body {
 
   <footer class="card appearance-footer" id="appearance-footer" hidden>
     <button type="button" class="btn btn-ghost btn-sm" id="appearance-open-config">
-      <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-folder-open"></use></svg>
+      <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg>
       <span id="appearance-open-config-label"></span>
     </button>
     <span class="appearance-choice">
       <button type="button" class="btn btn-ghost btn-sm" id="appearance-reset">
-        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#appearance-icon-undo-2"></use></svg>
+        <svg class="appearance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></svg>
         <span id="appearance-reset-label"></span>
       </button>
       <span class="appearance-choice" id="appearance-reset-confirm" role="group" aria-labelledby="appearance-reset-question" hidden>
@@ -1087,9 +1112,10 @@ html > body {
     svg.setAttribute('stroke-linejoin', 'round');
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('focusable', 'false');
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `#appearance-icon-${name}`);
-    svg.append(use);
+    // The drawing itself, copied from the sprite, not a reference to it: a <use> that points
+    // into the hidden sprite now and then came up empty in the app's sandbox until something
+    // repainted the page.
+    for (const node of document.getElementById(`appearance-icon-${name}`)?.children ?? []) svg.append(node.cloneNode(true));
     return svg;
   };
   const button = (className, label, attributes = {}) => {
@@ -1109,6 +1135,14 @@ html > body {
     el.retry.disabled = busy;
     // Blur is for the whole window only: the conversation area is painted by a stylesheet.
     if (view) el.blur.disabled = busy || view.background.scope === 'chat';
+    // The first file has no way up and the last no way down: their place, not the busy state.
+    const rows = [...el.mediaList.children];
+    for (const [index, row] of rows.entries()) {
+      const up = row.querySelector('[data-action="up"]');
+      const down = row.querySelector('[data-action="down"]');
+      if (up) up.disabled = busy || index === 0;
+      if (down) down.disabled = busy || index === rows.length - 1;
+    }
   }
 
   function setBusy(value) {
@@ -1276,9 +1310,15 @@ html > body {
 
   function renderMedia(list) {
     el.mediaList.replaceChildren();
+    // With more than one file the order is the user's to set: it is the order of rotation, and
+    // without an interval the first one is what shows. Rows can be dragged, and each has
+    // buttons, for keyboards and for touch.
+    const ordered = list.length > 1;
+    const rotating = (view?.background.rotateMinutes ?? 0) > 0;
     for (const [index, item] of list.entries()) {
       const row = make('li', 'appearance-media-item');
       row.dataset.path = item.path;
+      if (ordered) row.draggable = true;
       row.append(icon(item.kind === 'video' ? 'film' : 'image'));
       const words = make('span', 'appearance-media-text');
       const name = make('span', 'appearance-media-name', item.name);
@@ -1293,7 +1333,22 @@ html > body {
         current.title = text.current;
         actions.append(current);
       }
-      const remove = button('btn btn-ghost btn-xs', '', { 'data-action': 'remove', title: text.remove, 'aria-label': `${text.remove} ${item.name}` });
+      const act = (action, label) => button('btn btn-ghost btn-xs', '', { 'data-action': action, title: label, 'aria-label': `${label} ${item.name}` });
+      if (ordered) {
+        // Which of these is pressable is decided with the rest (see syncDisabled).
+        const up = act('up', text.moveUp);
+        up.append(icon('arrow-up'));
+        const down = act('down', text.moveDown);
+        down.append(icon('arrow-down'));
+        actions.append(up, down);
+        // Which one shows is the first one; this puts a file there in one press.
+        if (!rotating && index !== 0) {
+          const show = act('show', text.showThis);
+          show.append(icon('eye'));
+          actions.append(show);
+        }
+      }
+      const remove = act('remove', text.remove);
       remove.append(icon('trash-2'));
       actions.append(remove);
       row.append(actions);
@@ -1305,9 +1360,11 @@ html > body {
 
   function renderSkins(data) {
     el.skins.replaceChildren();
-    const own = data.skin.preset === 'default' && data.skin.custom;
+    // "custom" is a preset like the others: the colours of one's own, shown while it is the one
+    // chosen. Choosing "default" or a built-in one leaves those colours where they are.
+    const own = data.skin.preset === 'custom';
     for (const skin of data.skins) {
-      const on = !own && data.skin.preset === skin.name;
+      const on = data.skin.preset === skin.name;
       const item = button('btn btn-sm appearance-skin', '', { 'data-skin': skin.name, 'aria-pressed': String(on) });
       if (on) item.classList.add('btn-primary');
       if (skin.light && skin.dark) {
@@ -1337,7 +1394,7 @@ html > body {
   // colour is being picked would close the system's colour window.
   function renderColours(data) {
     const custom = data.skin.custom;
-    const shown = data.skin.preset === 'default' && Boolean(custom);
+    const shown = data.skin.preset === 'custom';
     el.colours.hidden = !shown;
     if (!shown) return;
     const [light, dark] = el.colours.children;
@@ -1446,17 +1503,68 @@ html > body {
     pickTimer = setTimeout(poll, PICK_EVERY_MS);
   });
 
+  // The order of the files is sent as the whole list, in its new order: the order is the list.
   el.mediaList.addEventListener('click', (event) => {
-    const target = event.target.closest('[data-action="remove"]');
+    const target = event.target.closest('[data-action]');
     if (!target) return;
     const row = target.closest('li');
     const index = [...el.mediaList.children].indexOf(row);
-    apply('remove', { path: row.dataset.path }, { wait: true }).then((data) => {
+    if (target.dataset.action === 'remove') {
+      apply('remove', { path: row.dataset.path }, { wait: true }).then((data) => {
+        if (!data) return;
+        // The control that was pressed is gone with its row: the focus goes to the next one.
+        const next = el.mediaList.querySelectorAll('[data-action="remove"]')[index] ?? el.path;
+        next.focus();
+      });
+      return;
+    }
+    const action = target.dataset.action;
+    const path = row.dataset.path;
+    const to = action === 'up' ? index - 1 : action === 'down' ? index + 1 : 0;
+    const paths = view.media.map((item) => item.path);
+    const [moved] = paths.splice(index, 1);
+    paths.splice(to, 0, moved);
+    // The row is drawn again in its new place; the focus follows to a button of its own there.
+    apply('set', { setMedia: paths }, { wait: true }).then((data) => {
       if (!data) return;
-      // The control that was pressed is gone with its row: the focus goes to the next one.
-      const next = el.mediaList.querySelectorAll('[data-action="remove"]')[index] ?? el.path;
-      next.focus();
+      const again = el.mediaList.querySelector(`li[data-path="${CSS.escape(path)}"]`);
+      const wanted = action === 'show' ? 'down' : action;
+      (again?.querySelector(`[data-action="${wanted}"]:not(:disabled)`) ?? again?.querySelector('[data-action="up"]:not(:disabled), [data-action="down"]:not(:disabled)'))?.focus();
     });
+  });
+
+  // Dragging a row onto another moves it there.
+  let dragged = null;
+  el.mediaList.addEventListener('dragstart', (event) => {
+    const row = event.target.closest('li');
+    if (!row || !row.draggable) return event.preventDefault();
+    dragged = row;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', row.dataset.path);
+    row.classList.add('appearance-media-dragging');
+  });
+  el.mediaList.addEventListener('dragover', (event) => {
+    const row = event.target.closest('li');
+    if (!row || !dragged || row === dragged) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    for (const item of el.mediaList.children) item.classList.toggle('appearance-media-drop-target', item === row);
+  });
+  const endDrag = () => {
+    dragged = null;
+    for (const item of el.mediaList.querySelectorAll('.appearance-media-dragging, .appearance-media-drop-target')) item.classList.remove('appearance-media-dragging', 'appearance-media-drop-target');
+  };
+  el.mediaList.addEventListener('dragend', endDrag);
+  el.mediaList.addEventListener('drop', (event) => {
+    const row = event.target.closest('li');
+    if (!row || !dragged || row === dragged) return endDrag();
+    event.preventDefault();
+    const paths = view.media.map((item) => item.path);
+    const from = paths.indexOf(dragged.dataset.path);
+    const [moved] = paths.splice(from, 1);
+    paths.splice(paths.indexOf(row.dataset.path), 0, moved);
+    endDrag();
+    apply('set', { setMedia: paths });
   });
 
   el.skins.addEventListener('click', (event) => {
@@ -1467,7 +1575,7 @@ html > body {
       // A skin of one's own starts from the colours already in the file, or from where the
       // contract starts when there are none yet.
       const custom = view?.skin.custom ?? START;
-      apply('set', { skin: 'default', customSkin: custom }).then((data) => {
+      apply('set', { skin: 'custom', customSkin: custom }).then((data) => {
         if (data) el.colours.querySelector('input')?.focus();
       });
       return;
@@ -1480,7 +1588,7 @@ html > body {
     if (!input || !view) return;
     const custom = structuredClone(view.skin.custom ?? START);
     custom[input.dataset.mode] = { ...(custom[input.dataset.mode] ?? START[input.dataset.mode]), [input.dataset.key]: input.value };
-    soon(() => apply('set', { skin: 'default', customSkin: custom }, { announce: false }));
+    soon(() => apply('set', { skin: 'custom', customSkin: custom }, { announce: false }));
   });
 
   el.openConfig.addEventListener('click', () => apply('openConfig', {}));

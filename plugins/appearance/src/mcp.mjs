@@ -7,11 +7,17 @@
 // is running (the settings are saved either way; they show the next time ZCode is started from
 // the launcher).
 import { createInterface } from 'node:readline';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { applyPatch, BLUR_MAX, loadConfig, MASK_MAX, MASK_MIN, ROTATE_MAX_MINUTES, saveConfig, SCOPES } from './config.mjs';
-import { paths } from './paths.mjs';
-import { SKIN_NAMES } from './skins.mjs';
+import { bringAlong, paths } from './paths.mjs';
+import { SKIN_PRESETS } from './skins.mjs';
 import { launcherState } from './status.mjs';
 import { PLUGIN_VERSION } from './version.mjs';
+
+// The command that makes the launcher program, in this copy of the plugin (the installed copy
+// sits in a folder named by version, which a person would not guess).
+const SETUP_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'setup-launcher.mjs');
 
 const ERROR_CODES = {
   PARSE_ERROR: -32700,
@@ -67,14 +73,14 @@ export const TOOLS = [
         rotateMinutes: { type: 'integer', minimum: 0, maximum: ROTATE_MAX_MINUTES, description: 'Move to the next file every N minutes; 0 = never.' },
         skin: {
           type: 'string',
-          enum: SKIN_NAMES,
-          description: `Colour skin preset. ${SKIN_NAMES.filter((name) => name !== 'default').map((name) => `"${name}"`).join(', ')} replace the base, surface, text, accent and border colours in both light and dark mode; "default" keeps the app's own colours, or the custom ones when customSkin is set.`,
+          enum: SKIN_PRESETS,
+          description: `Colour skin in use. "default" keeps the app's own colours; "custom" shows customSkin, the colours of one's own; ${SKIN_PRESETS.filter((name) => name !== 'default' && name !== 'custom').map((name) => `"${name}"`).join(', ')} replace the base, surface, text, accent and border colours in both light and dark mode.`,
         },
         customSkin: {
           type: ['object', 'null'],
           properties: { light: colourSet, dark: colourSet },
           additionalProperties: false,
-          description: 'An own skin, used while skin is "default": { "light": { ... }, "dark": { ... } }, either mode optional. null clears it.',
+          description: 'Colours of one\'s own: { "light": { ... }, "dark": { ... } }, either mode optional. Passing them makes "custom" the skin in use; null clears them. They are kept while another preset is chosen.',
         },
       },
       additionalProperties: false,
@@ -96,7 +102,10 @@ export function describe(config, { file, exists, changed, status = launcherState
   } else {
     lines.push('media: none set yet');
   }
-  lines.push(`skin: ${skin.preset}${skin.custom ? ' + custom' : ''}`);
+  lines.push(`skin: ${skin.preset}${skin.preset !== 'custom' && skin.custom ? ' (a custom skin is kept, not in use)' : ''}`);
+  // Where the command lives that makes the launcher program: a person asks the model for it
+  // after installing, and the installed copy sits in a folder named by version.
+  lines.push(`launcher program: ${SETUP_SCRIPT} (makes a launcher of its own for the Start menu, the Dock or the applications list; run it only when the person asks, the plugin's README says what it does)`);
   if (background.enabled && !background.media.length) lines.push('next: set a picture or video with setMedia before anything can show.');
   if (!status.running) lines.push('next: the launcher is not running, so this shows the next time ZCode is started from it (quit ZCode completely first).');
   return lines.join('\n');
@@ -176,6 +185,7 @@ export function createServer({ tools = TOOLS, onCall = callTool } = {}) {
 // reads and writes the same file; ping and notifications bypass the queue so a slow call never
 // blocks the client's liveness checks.
 export function serve({ input = process.stdin, output = process.stdout, options = {} } = {}) {
+  bringAlong();
   const server = createServer(options);
   const rl = createInterface({ input, crlfDelay: Infinity });
   const write = (text) => text !== null && output.write(`${text}\n`);

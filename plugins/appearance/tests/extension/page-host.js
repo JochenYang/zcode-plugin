@@ -302,8 +302,12 @@
     const iconSize = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--icon-size'));
     const icons = [...main.querySelectorAll('svg.appearance-icon')];
     // The title, "Add", "Choose files…", "Open the settings file", "Restore defaults", and per
-    // file its kind and its remove button.
-    check('every icon is drawn from a symbol', icons.length === 5 + first.media.length * 2 && icons.every((icon) => icon.querySelector('use') && icon.getAttribute('aria-hidden') === 'true'), String(icons.length));
+    // file its kind, its remove button and its two for the order; "show this one" on every file
+    // but the first while no interval is set.
+    check('every icon carries its drawing', icons.length === 4 + first.media.length * 5 && icons.every((icon) => icon.children.length > 0 && !icon.querySelector('use') && icon.getAttribute('aria-hidden') === 'true'), String(icons.length));
+    // The title's icon sits on a tinted tile: its colour must not be the tile's own.
+    const tile = main.querySelector('.appearance-icon-tile');
+    check('the title icon stands out from its tile', getComputedStyle(tile).color !== getComputedStyle(tile).backgroundColor, `${getComputedStyle(tile).color} on ${getComputedStyle(tile).backgroundColor}`);
     for (const icon of icons) {
       const box = icon.getBoundingClientRect();
       // The box of an `<svg>` is the same whether its symbol exists or not; the drawing has a size of its own.
@@ -439,6 +443,37 @@
     check('focus moves on to the next file, not off the page', focused()?.closest('li')?.dataset.path === clip, focused()?.outerHTML.slice(0, 80));
     check('it is said', $('appearance-status').textContent === run.answers.remove[0].message);
 
+    // ------------------------------------------------------------------ the order of the files
+
+    const order = () => [...$('appearance-media-list').children].map((item) => item.dataset.path);
+    check('with several files each row can be dragged and has buttons for its place', rows() === 4 && order().join('|') === [firstFile, clip, late, picked].join('|') && [...$('appearance-media-list').children].every((item) => item.draggable && item.querySelector('[data-action="up"]') && item.querySelector('[data-action="down"]')), order().join('|'));
+    check('the first row has no way up and the last no way down', row(firstFile).querySelector('[data-action="up"]').disabled && !row(firstFile).querySelector('[data-action="down"]').disabled && row(picked).querySelector('[data-action="down"]').disabled, order().join('|'));
+    check('the buttons say which file they move', row(clip).querySelector('[data-action="up"]').getAttribute('aria-label') === `${text.moveUp} ${clip.split(/[\\/]/).pop()}`);
+    check('while an interval is set, which one shows is not asked', !$('appearance-media-list').querySelector('[data-action="show"]'));
+    $('appearance-rotate').value = '0';
+    change($('appearance-rotate'));
+    await tick();
+    check('without an interval every other row can be made the one that shows', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ rotateMinutes: 0 }) && row(late).querySelector('[data-action="show"]') !== null && row(firstFile).querySelector('[data-action="show"]') === null);
+    click(row(late).querySelector('[data-action="show"]'));
+    await tick();
+    check('showing a file puts it first and sends the whole order', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ setMedia: [late, firstFile, clip, picked] }) && order().join('|') === [late, firstFile, clip, picked].join('|'), order().join('|'));
+    check('and the focus stays in that row', focused()?.closest('li')?.dataset.path === late, focused()?.outerHTML.slice(0, 70));
+    click(row(late).querySelector('[data-action="down"]'));
+    await tick();
+    check('a row moves down by one', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ setMedia: [firstFile, late, clip, picked] }) && order().join('|') === [firstFile, late, clip, picked].join('|'));
+    click(row(clip).querySelector('[data-action="up"]'));
+    await tick();
+    check('and up by one', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ setMedia: [firstFile, clip, late, picked] }) && order().join('|') === [firstFile, clip, late, picked].join('|'));
+    // Dragging: the browser's own events, with the data a drag carries.
+    const drag = (type, target) => target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
+    drag('dragstart', row(late));
+    drag('dragover', row(firstFile));
+    check('the row it is dropped on is marked, and the one dragged', row(firstFile).classList.contains('appearance-media-drop-target') && row(late).classList.contains('appearance-media-dragging'));
+    drag('drop', row(firstFile));
+    await tick();
+    check('a row dropped on another moves there', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ setMedia: [late, firstFile, clip, picked] }) && order().join('|') === [late, firstFile, clip, picked].join('|'), order().join('|'));
+    check('and the marks are gone', !$('appearance-media-list').querySelector('.appearance-media-drop-target, .appearance-media-dragging'));
+
     // ------------------------------------------------------------------ the switch and the scope
 
     click($('appearance-enabled'));
@@ -452,14 +487,14 @@
 
     // ------------------------------------------------------------------ skins
 
-    click($('appearance-skins').querySelector('[data-skin="midnight"]'));
+    click($('appearance-skins').querySelector('[data-skin="catppuccin"]'));
     await tick();
-    check('a preset is sent by name', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'midnight' }));
-    check('and is the one pressed', $('appearance-skins').querySelector('[data-skin="midnight"]').getAttribute('aria-pressed') === 'true');
+    check('a preset is sent by name', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'catppuccin' }));
+    check('and is the one pressed', $('appearance-skins').querySelector('[data-skin="catppuccin"]').getAttribute('aria-pressed') === 'true');
     check('with no colours of one\'s own to edit', $('appearance-colours').hidden);
     click($('appearance-skins').querySelector('[data-skin="custom"]'));
     await tick();
-    check('a skin of one\'s own starts from the colours already there', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'default', customSkin: run.start }));
+    check('a skin of one\'s own starts from the colours already there', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'custom', customSkin: run.start }));
     check('the colours are shown, ten of them, in two sets', !$('appearance-colours').hidden && $('appearance-colours').querySelectorAll('input[type="color"]').length === 10 && $('appearance-light-legend').textContent === text.light && $('appearance-dark-legend').textContent === text.dark);
     check('each named', [...$('appearance-colours').querySelectorAll('label')].map((label) => label.textContent.trim()).join('|') === [text.base, text.surface, text.text, text.accent, text.border, text.base, text.surface, text.text, text.accent, text.border].join('|'));
     check('a skin of one\'s own is the one pressed', $('appearance-skins').querySelector('[data-skin="custom"]').classList.contains('btn-primary'));
@@ -468,8 +503,13 @@
     accent.value = '#ff0000';
     change(accent, 'input');
     await tick(200);
-    check('a colour is sent with the whole skin it belongs to', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'default', customSkin: { ...run.start, light: { ...run.start.light, accent: '#ff0000' } } }), JSON.stringify(callsOf('set').at(-1)?.args));
+    check('a colour is sent with the whole skin it belongs to', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'custom', customSkin: { ...run.start, light: { ...run.start.light, accent: '#ff0000' } } }), JSON.stringify(callsOf('set').at(-1)?.args));
     check('and the colour control is still the one being used', focused() === accent, focused()?.outerHTML.slice(0, 60));
+    // The app's own colours are a choice again, with the colours of one's own kept for later.
+    click($('appearance-skins').querySelector('[data-skin="default"]'));
+    await tick();
+    check('choosing the app\'s own colours works while a skin of one\'s own is kept', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'default' }) && $('appearance-skins').querySelector('[data-skin="default"]').getAttribute('aria-pressed') === 'true' && $('appearance-skins').querySelector('[data-skin="custom"]').getAttribute('aria-pressed') === 'false' && $('appearance-colours').hidden);
+    check('and the kept skin is still there', run.answers.set.at(-1)?.data.skin.custom?.light?.accent === '#ff0000' && run.answers.set.at(-1)?.data.skin.preset === 'default');
 
     // ------------------------------------------------------------------ a call that fails, and the way back
 

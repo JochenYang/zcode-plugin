@@ -101,10 +101,21 @@ describe('tools', () => {
     assert.ok(reply.includes('elsewhere.png'), 'the path is stored as given; the launcher is what reads the picture');
   }));
 
-  it('describes the skin', () => {
-    const base = { background: defaultBackground(), skin: { preset: 'midnight', custom: null } };
-    assert.ok(describeConfig(base, { file: 'x', exists: true, changed: false, status: RUNNING }).includes('skin: midnight'));
-    assert.ok(describeConfig({ ...base, skin: { preset: 'default', custom: {} } }, { file: 'x', exists: true, changed: false, status: RUNNING }).includes('skin: default + custom'));
+  it('describes the skin, and says when one of the user\'s own is kept but not in use', () => {
+    const base = { background: defaultBackground(), skin: { preset: 'catppuccin', custom: null } };
+    const described = (skin) => describeConfig({ ...base, skin }, { file: 'x', exists: true, changed: false, status: RUNNING });
+    assert.ok(described(base.skin).includes('skin: catppuccin'));
+    assert.ok(described({ preset: 'custom', custom: {} }).includes('skin: custom'));
+    assert.ok(described({ preset: 'default', custom: {} }).includes('skin: default (a custom skin is kept, not in use)'));
+  });
+
+  it('tells the model where the command for the launcher program is, in this copy of the plugin', () => {
+    const text = describeConfig({ background: defaultBackground(), skin: { preset: 'default', custom: null } }, { file: 'x', exists: true, changed: false, status: RUNNING });
+    const line = text.split('\n').find((item) => item.startsWith('launcher program: '));
+    assert.ok(line, text);
+    const script = /launcher program: (\S+)/.exec(line)[1];
+    assert.equal(path.basename(script), 'setup-launcher.mjs');
+    assert.ok(fs.existsSync(script), 'the file is there, in this copy');
   });
 });
 
@@ -130,7 +141,7 @@ describe('the process', () => {
       assert.equal(replies[0].result.serverInfo.name, 'appearance');
       assert.ok(replies[1].result.content[0].text.includes('scope chat'));
       assert.equal(replies[2].result.tools.length, TOOLS.length);
-      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'appearance.json'), 'utf8')).background.scope, 'chat');
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'appearance', 'config.json'), 'utf8')).background.scope, 'chat');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -129,8 +129,8 @@
     },
     {
       "name": "appearance",
-      "version": "0.1.1",
-      "description": "Background pictures or videos and colour skins for the ZCode desktop window, whole page or conversation area only, with tint, blur and rotation. ZCode gives plugins no way to restyle the app itself, so an external launcher (plugins/appearance/bin/launch.mjs) starts ZCode with its debugging channel and injects the styles; start ZCode from the launcher after quitting it completely. A view in the side pane changes every setting at once; /appearance does the same from the conversation; the settings live in ~/.zcode/appearance.json.",
+      "version": "0.2.0",
+      "description": "Background pictures or videos and colour skins for the ZCode desktop window, whole page or conversation area only, with tint, blur and rotation. ZCode gives plugins no way to restyle the app itself, so an external launcher (plugins/appearance/bin/launch.mjs) starts ZCode with its debugging channel and injects the styles; start ZCode from the launcher after quitting it completely. A view in the side pane changes every setting at once; /appearance does the same from the conversation; the settings live in ~/.zcode/appearance/config.json.",
       "author": {
         "name": "JochenYang"
       },
@@ -144,7 +144,7 @@
       "source": "./plugins/appearance",
       "icon": "https://static.geluman.cn/icon/appearance.png",
       "description_i18n": {
-        "zh-CN": "ZCode 桌面端自定义背景与配色皮肤：图片或视频可以铺整页或只换会话区，带遮罩、模糊、定时轮换，另有内置皮肤与自定义皮肤。ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式——要先完全退出 ZCode，再从启动器启动。侧边栏的面板里每个设置改了就生效，/appearance 在对话里改，设置在 ~/.zcode/appearance.json。"
+        "zh-CN": "ZCode 桌面端自定义背景与配色皮肤：图片或视频可以铺整页或只换会话区，带遮罩、模糊、定时轮换，另有内置皮肤与自定义皮肤。ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式——要先完全退出 ZCode，再从启动器启动。侧边栏的面板里每个设置改了就生效，/appearance 在对话里改，设置在 ~/.zcode/appearance/config.json。"
       }
     }
   ]

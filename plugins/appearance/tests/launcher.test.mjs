@@ -6,9 +6,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it } from 'node:test';
 import { defaultConfig, ROTATE_MAX_MINUTES, saveConfig } from '../src/config.mjs';
-import { createLogger, createPlanSource, findZcode, LauncherError, locateZcode, parseArgs, resolveZcode, supervise, zcodeCandidates } from '../src/launcher.mjs';
+import { createLogger, createPlanSource, findZcode, isZcodeRunning, LauncherError, locateZcode, parseArgs, resolveZcode, supervise, zcodeCandidates } from '../src/launcher.mjs';
 import { isAlive, launcherState, readStatus } from '../src/status.mjs';
-import { commandPrompt, powershellExe } from '../src/system.mjs';
+import { commandPrompt, powershellExe, shellEnvironment } from '../src/system.mjs';
 
 const quiet = { info() {}, warn() {} };
 
@@ -118,21 +118,20 @@ describe('finding ZCode', () => {
     assert.deepEqual(system.asked, ['processes'], 'the registry was not asked: a running copy says where it is');
   }));
 
-  it('takes what the installer told the system when nothing is running', () => inTempDir(async (dir) => {
-    const registered = path.join(dir, 'D Apps', 'ZCode.exe');
-    fs.mkdirSync(path.dirname(registered));
-    fs.writeFileSync(registered, '');
-    const system = fakeSystem({ processes: '0\r\n', registry: `${registered}\r\n` });
-    assert.equal(await resolveZcode({ env: {}, platform: 'win32', run: system.run }), registered);
-    assert.deepEqual(system.asked, ['processes', 'registry']);
-  }));
-
-  it('falls back to the usual folders when the record names a file that is not there', async () => {
-    const system = fakeSystem({ processes: '0\r\n', registry: 'D:\\Gone\\ZCode.exe\r\n' });
+  it('asks the installer\'s record only when the usual folders have nothing: that answer costs a PowerShell start', async () => {
     const usual = zcodeCandidates({ env: {}, platform: 'win32' })[0];
-    const found = await resolveZcode({ env: {}, platform: 'win32', run: system.run, exists: (file) => file === usual });
-    assert.equal(found, usual);
-    assert.deepEqual(system.asked, ['processes', 'registry']);
+    const registered = 'D:\\D Apps\\ZCode.exe';
+    // Both are there: the usual folder wins, and the registry is not even asked.
+    const both = fakeSystem({ processes: '0\r\n', registry: `${registered}\r\n` });
+    assert.equal(await resolveZcode({ env: {}, platform: 'win32', run: both.run, exists: (file) => file === usual || file === registered }), usual);
+    assert.deepEqual(both.asked, ['processes'], 'no PowerShell for the registry');
+    // Nothing usual: the record is asked, and taken.
+    const record = fakeSystem({ processes: '0\r\n', registry: `${registered}\r\n` });
+    assert.equal(await resolveZcode({ env: {}, platform: 'win32', run: record.run, exists: (file) => file === registered }), registered);
+    assert.deepEqual(record.asked, ['processes', 'registry']);
+    // A record that names a file that is not there is no answer.
+    const gone = fakeSystem({ processes: '0\r\n', registry: 'D:\\Gone\\ZCode.exe\r\n' });
+    assert.equal(await resolveZcode({ env: {}, platform: 'win32', run: gone.run, exists: () => false }), null);
   });
 
   it('asks nothing when something was configured, and nothing of the registry elsewhere', async () => {
@@ -156,12 +155,27 @@ describe('finding ZCode', () => {
     await assert.rejects(resolveZcode({ configured: path.join('nowhere', 'ZCode.exe'), env: {}, platform: 'win32', run: fakeSystem({}).run }), (err) => err instanceof LauncherError && /launcher\.zcodePath/.test(err.message));
   });
 
+  // Before a start: one quick question instead of a PowerShell start. The answer is read by the
+  // line that names the process, not by the "no tasks" line, which is in the system's language.
+  it('says whether ZCode is running from what tasklist lists, whatever its language', async () => {
+    const running = await isZcodeRunning({ platform: 'win32', run: async (file, args) => { assert.ok(/tasklist\.exe$/.test(file)); assert.deepEqual(args.slice(0, 2), ['/FI', 'IMAGENAME eq ZCode.exe']); return '"ZCode.exe","1844","Console","1","412,356 K"\r\n"ZCode.exe","1908","Console","1":"88,012 K"\r\n'; } });
+    assert.equal(running, true);
+    assert.equal(await isZcodeRunning({ platform: 'win32', run: async () => '\r\n信息: 没有运行的任务匹配指定标准。\r\n' }), false, 'Chinese Windows');
+    assert.equal(await isZcodeRunning({ platform: 'win32', run: async () => 'INFO: No tasks are running which match the specified criteria.\r\n' }), false);
+    // Another process with a name that begins the same way is not ZCode.
+    assert.equal(await isZcodeRunning({ platform: 'win32', run: async () => '"ZCodeHelper.exe","777","Console","1","9,004 K"\r\n' }), false);
+    assert.equal(await isZcodeRunning({ platform: 'linux', run: async (_file, args) => { assert.deepEqual(args, ['-x', 'ZCode']); return '4188\n'; } }), true);
+    assert.equal(await isZcodeRunning({ platform: 'darwin', run: async () => '' }), false);
+  });
+
   it('says where the answer came from, for the log', () => inTempDir(async (dir) => {
     const live = path.join(dir, 'ZCode.exe');
     fs.writeFileSync(live, '');
     const system = fakeSystem({ processes: `1\r\n${live}\r\n`, registry: `${live}\r\n` });
     assert.equal((await locateZcode({ env: {}, platform: 'win32', run: system.run })).source, '正在运行的 ZCode 进程');
-    assert.equal((await locateZcode({ env: {}, platform: 'win32', run: system.run, running: { count: 0, path: null } })).source, '系统的安装记录');
+    const usual = zcodeCandidates({ env: {}, platform: 'win32' })[0];
+    assert.equal((await locateZcode({ env: {}, platform: 'win32', run: system.run, running: { count: 0, path: null }, exists: (file) => file === usual })).source, '常见目录');
+    assert.equal((await locateZcode({ env: {}, platform: 'win32', run: system.run, running: { count: 0, path: null }, exists: (file) => file === live })).source, '系统的安装记录');
     assert.equal((await locateZcode({ env: { ZCODE_APPEARANCE_EXE: live }, platform: 'win32', run: system.run })).source, '环境变量 ZCODE_APPEARANCE_EXE');
     assert.equal((await locateZcode({ configured: live, env: {}, platform: 'win32', run: system.run })).source, '配置里的 launcher.zcodePath');
     assert.deepEqual(await locateZcode({ env: { PATH: '' }, platform: 'linux', run: system.run, exists: () => false }), { exe: null, source: null });
@@ -176,6 +190,18 @@ describe('system tools', () => {
     assert.ok(path.isAbsolute(commandPrompt()) && fs.existsSync(commandPrompt()), commandPrompt());
     assert.equal(commandPrompt({ SystemRoot: 'C:\\not-a-windows' }), 'cmd');
     assert.equal(commandPrompt({ ComSpec: 'Z:\\not-there\\cmd.exe' }), 'cmd', 'a ComSpec that is not there is not used');
+  });
+
+  // The process the app starts this code in may lack what Windows itself expects; the shell
+  // behind the file dialog then wrote its caches into a folder literally called `%SystemDrive%`.
+  it('gives a Windows tool the variables the shell expects, and only the ones that are missing', () => {
+    const filled = shellEnvironment({ SystemRoot: 'C:\\Windows', PATH: '' });
+    assert.deepEqual([filled.SystemDrive, filled.ProgramData], ['C:', 'C:\\ProgramData']);
+    assert.deepEqual(filled, { SystemRoot: 'C:\\Windows', PATH: '', SystemDrive: 'C:', ProgramData: 'C:\\ProgramData' });
+    const kept = shellEnvironment({ SystemDrive: 'D:', ProgramData: 'D:\\Data', SystemRoot: 'D:\\Windows', PATH: 'x' });
+    assert.deepEqual(kept, { SystemDrive: 'D:', ProgramData: 'D:\\Data', SystemRoot: 'D:\\Windows', PATH: 'x' }, 'what is there stays');
+    assert.deepEqual(shellEnvironment({}), {}, 'nothing to go by: nothing made up');
+    assert.deepEqual(shellEnvironment({ WINDIR: 'E:\\Win' }), { WINDIR: 'E:\\Win', SystemDrive: 'E:', ProgramData: 'E:\\ProgramData' }, 'WINDIR will do for the drive');
   });
 });
 

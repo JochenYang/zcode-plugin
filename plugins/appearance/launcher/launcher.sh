@@ -81,8 +81,9 @@ $script
 插件可能被更新到了别的目录，或者被移走了。重新运行一次安装命令即可修复。"
 [ -n "$node_bin" ] || fail "启动器需要 Node.js 22 或更新版本。没有找到 node：装好以后重新登录一次，或者把它的位置写进环境变量 ZCODE_APPEARANCE_NODE。"
 
-case $script in */*) script_folder=${script%/*} ;; *) script_folder=. ;; esac
-cd -- "$script_folder" || exit 1
+# The user's own folder, not the script's: ZCode is started from the launcher and inherits this
+# folder, and whatever the app then writes "next to itself" lands in the user's folder.
+cd -- "${HOME:-/}" || exit 1
 # nohup: the launcher outlives this program, and whatever started it.
 ZCODE_APPEARANCE_NO_CONSOLE=1 nohup "$node_bin" "$script" >/dev/null 2>&1 &
 exit 0

@@ -9,6 +9,7 @@ import { COMMAND_ID, TOOL_NAMES, VIEW_ID, activate } from '../../bin/extension.m
 import { PATH_TIMEOUT_MS, mediaInfo, skinList, viewData, viewStrings } from '../../src/extension/describe.mjs';
 import { defaultConfig, saveConfig } from '../../src/config.mjs';
 import { paths } from '../../src/paths.mjs';
+import { SKIN_NAMES } from '../../src/skins.mjs';
 
 const quiet = { error() {} };
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
@@ -148,7 +149,7 @@ describe('view tools', () => {
     assert.equal(data.background.mask, 0.4);
     assert.equal(data.background.scope, 'page');
     assert.deepEqual(data.media.map((item) => [item.name, item.kind, item.exists]), [['a.png', 'picture', true], ['gone.png', 'picture', false], ['clip.webm', 'video', true]]);
-    assert.deepEqual(data.skins.map((skin) => skin.name), ['default', 'midnight', 'sepia']);
+    assert.deepEqual(data.skins.map((skin) => skin.name), [...SKIN_NAMES], 'every preset the stylesheet knows, the custom one aside');
     assert.deepEqual(data.launcher, { running: false, port: null });
     assert.equal(data.file, path.join(dir, 'appearance.json'));
     assert.equal(data.lang, 'zh-CN');
@@ -188,8 +189,8 @@ describe('view tools', () => {
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal(saved.background.scope, 'chat');
     assert.equal(saved.background.mask, 0.6);
-    assert.equal(await call(host, 'set', { skin: 'sepia' }).then((result) => result.data.skin.preset), 'sepia');
-    assert.equal(await call(host, 'set', { mask: 0.5 }).then((result) => result.data.skin.preset), 'sepia', 'the skin is untouched by a later change');
+    assert.equal(await call(host, 'set', { skin: 'kanagawa' }).then((result) => result.data.skin.preset), 'kanagawa');
+    assert.equal(await call(host, 'set', { mask: 0.5 }).then((result) => result.data.skin.preset), 'kanagawa', 'the skin is untouched by a later change');
   }));
 
   it('set refuses a value out of range without touching the file', () => inTempHome(async (dir) => {
@@ -269,9 +270,11 @@ describe('view tools', () => {
     fs.writeFileSync(late, PNG);
     let asked = 0;
     const host = hostFor();
-    await activate(host, { file, statusFile: path.join(dir, 'appearance.status.json'), pick: async ({ title }) => {
+    await activate(host, { file, statusFile: path.join(dir, 'appearance.status.json'), pick: async ({ title, initial }) => {
       asked += 1;
       assert.equal(title, '选择文件', 'the dialog is named in the session language, without the ellipsis');
+      // The folder of the first listed file that is there (a.png; gone.png is listed before nothing else that exists).
+      assert.equal(path.resolve(initial), path.resolve(dir), 'the dialog opens where the listed files are');
       return [late];
     }, open: () => {} });
     const opened = await call(host, 'pick', {});
@@ -331,7 +334,7 @@ describe('view tools', () => {
     const file = seed(dir);
     const host = hostFor();
     await activate(host, { file, statusFile: path.join(dir, 'appearance.status.json'), pick: async () => [], open: () => {} });
-    await call(host, 'set', { mask: 0.1, blur: 9, rotateMinutes: 30, skin: 'midnight' });
+    await call(host, 'set', { mask: 0.1, blur: 9, rotateMinutes: 30, skin: 'catppuccin' });
     const answer = await call(host, 'reset', {});
     assert.equal(answer.ok, true);
     assert.deepEqual(answer.data.background, { enabled: true, scope: 'page', mask: 0.72, blur: 0, rotateMinutes: 0 });
@@ -413,6 +416,6 @@ describe('what a view is made of', () => {
     assert.deepEqual(data.defaults, { scope: 'page', mask: 0.72, blur: 0, rotateMinutes: 0, preset: 'default' });
     assert.deepEqual(data.limits, { blurMax: 40, maskMax: 1 });
     assert.equal(data.launcher.running, true);
-    assert.equal(paths().config.endsWith('appearance.json'), true);
+    assert.equal(paths().config.endsWith(path.join('appearance', 'config.json')), true);
   });
 });

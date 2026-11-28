@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { applyPatch, defaultConfig, loadConfig, saveConfig } from '../src/config.mjs';
 import { openWithDefaultApp } from '../src/open.mjs';
-import { paths } from '../src/paths.mjs';
+import { bringAlong, paths } from '../src/paths.mjs';
 import { mediaInfo, viewData, viewStrings } from '../src/extension/describe.mjs';
 import { pickFiles } from '../src/extension/pick.mjs';
 import { launcherState } from '../src/status.mjs';
@@ -37,6 +37,10 @@ export const TOOL_NAMES = Object.freeze(['get', 'set', 'add', 'remove', 'pick', 
  * @returns {Promise<{ dispose: () => void }>}
  */
 export async function activate(ctx, { file = paths().config, statusFile = paths().status, pick = pickFiles, open = openWithDefaultApp } = {}) {
+  // Before anything is read, the files may still be where they used to be. Only when they are
+  // the plugin's own: a caller that names other files has nothing to do with them (the tests
+  // name files in a folder of their own, and must never touch the real ones).
+  if (file === paths().config && statusFile === paths().status) bringAlong();
   const log = (message) => {
     try {
       if (typeof ctx?.log?.error === 'function') ctx.log.error(`appearance: ${message}`);
@@ -71,6 +75,12 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
       file,
       pick: picked,
     });
+  };
+  // The folder of the first listed file that is there, for the file dialog to open in.
+  const firstListed = () => {
+    const { config } = loadConfig({ file });
+    const first = config.background.media.find((item) => fs.existsSync(item));
+    return first ? path.dirname(first) : null;
   };
   const answer = async () => {
     const view = await data();
@@ -161,7 +171,12 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
           // The answer of the dialog before, if the view has not taken it yet, stays until it does.
           // Not awaited: a dialog can stay open for as long as the user likes.
           Promise.resolve()
-            .then(() => pick({ title: text.pick.replace(/…$/, '') }))
+            .then(() => pick({
+              title: text.pick.replace(/…$/, ''),
+              // Opens in the folder of a file already listed, when there is one, so the next
+              // one is usually in sight.
+              initial: firstListed(),
+            }))
             .then(async (files) => {
               if (disposed) return;
               if (!files.length) {

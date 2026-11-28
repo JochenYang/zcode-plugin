@@ -88,7 +88,8 @@ describe('appearance config', () => {
     assert.match(message({ background: { scope: 'window' } }), /background\.scope must be one of page, chat/);
     assert.match(message({ background: { enabled: 'yes' } }), /background\.enabled/);
     assert.match(message({ background: { media: 'a.png' } }), /background\.media must be a list/);
-    assert.match(message({ skin: { preset: 'solarized' } }), /skin\.preset must be one of default, midnight, sepia/);
+    assert.match(message({ skin: { preset: 'solarized' } }), /skin\.preset must be one of default, catppuccin, kanagawa, ayu/);
+    assert.equal(message({ skin: { preset: 'custom' } }), 'appearance config is invalid: skin.preset custom needs skin.custom');
     assert.match(message({ skin: { custom: { dark: { base: 'red' } } } }), /skin\.custom\.dark\.base must be a hex colour/);
     assert.match(message({ skin: { custom: { dark: { shadow: '#111111' } } } }), /skin\.custom\.dark: unknown colour shadow/);
     assert.match(message({ skin: { custom: { night: {} } } }), /skin\.custom: unknown mode night/);
@@ -153,13 +154,13 @@ describe('appearance config', () => {
   describe('partial updates', () => {
     it('changes only what was passed', () => {
       // Started from values that are not the defaults, so that "kept" cannot be mistaken for "reset".
-      const config = applyPatch(defaultConfig(), { blur: 7, skin: 'sepia', rotateMinutes: 30 }, { cwd: '/nowhere' });
+      const config = applyPatch(defaultConfig(), { blur: 7, skin: 'kanagawa', rotateMinutes: 30 }, { cwd: '/nowhere' });
       const next = applyPatch(config, { mask: 0.3, scope: 'chat' }, { cwd: '/nowhere' });
       assert.equal(next.background.mask, 0.3);
       assert.equal(next.background.scope, 'chat');
       assert.equal(next.background.blur, 7, 'untouched');
       assert.equal(next.background.rotateMinutes, 30, 'untouched');
-      assert.equal(next.skin.preset, 'sepia', 'untouched');
+      assert.equal(next.skin.preset, 'kanagawa', 'untouched');
       assert.equal(config.background.mask, 0.72, 'the input is not changed');
     });
 
@@ -192,8 +193,8 @@ describe('appearance config', () => {
     });
 
     it('sets a skin, a custom skin, and clears the custom one', () => {
-      let config = applyPatch(defaultConfig(), { skin: 'midnight' });
-      assert.equal(config.skin.preset, 'midnight');
+      let config = applyPatch(defaultConfig(), { skin: 'catppuccin' });
+      assert.equal(config.skin.preset, 'catppuccin');
       const custom = { dark: { base: '#101418', surface: '#181d25', text: '#e6e6e6', accent: '#38bdf8', border: '#2a303a' } };
       config = applyPatch(config, { skin: 'default', customSkin: custom });
       assert.equal(config.skin.preset, 'default');

@@ -55,7 +55,9 @@ const readIn = async (port, expression) => {
   }
 };
 const layerIn = (port) => readIn(port, `document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) !== null`);
-const chatIn = (port) => readIn(port, `getComputedStyle(document.querySelector(${JSON.stringify(CHAT_ROOT)})).backgroundImage.includes('data:image/png')`);
+// The card the app draws inside the conversation area is what carries the picture in chat scope.
+const CARD = '[data-testid="conversation"] > * > .bg-background';
+const chatIn = (port) => readIn(port, `getComputedStyle(document.querySelector(${JSON.stringify(CARD)})).backgroundImage.includes('data:image/png')`);
 
 describe('launcher loop against a real browser', { skip: BROWSER ? false : 'no Chrome or Edge found' }, () => {
   let world;
@@ -79,6 +81,43 @@ describe('launcher loop against a real browser', { skip: BROWSER ? false : 'no C
     await supervise({ port: world.port, getPlan: source.getPlan, shouldStop: () => false, logger: quiet, pollMs: 100, once: true, sessions });
     await until(() => layerIn(world.port), Boolean);
     source.stop();
+  });
+
+  it('reaches a window that shows up after the loop started without waiting a whole interval', async () => {
+    // On a start the window comes a moment after the channel does. Waiting the full interval
+    // for it was most of the time the background took to appear. Only the late window is let
+    // into the loop: the page the other cases use is already there and would end it at once.
+    home.write({ scope: 'page', mask: 0.72 });
+    const source = createPlanSource({ file: home.file, logger: quiet });
+    let said = 0;
+    let lateId = null;
+    const loop = supervise({
+      port: world.port,
+      getPlan: source.getPlan,
+      shouldStop: () => false,
+      logger: quiet,
+      pollMs: 5000,
+      once: true,
+      sessions,
+      onBrought: () => {
+        said += 1;
+      },
+      listTargetsImpl: async (port) => (await listTargets(port)).filter((target) => target.id === lateId),
+    });
+    await sleep(300);
+    const opened = Date.now();
+    const late = await world.openPage(`${world.pages.shell}?late`);
+    lateId = late.id;
+    const { brought } = await loop;
+    const took = Date.now() - opened;
+    source.stop();
+    assert.equal(brought, 1, 'the late window was brought up');
+    assert.equal(said, 1, 'and said so once, at the first');
+    assert.ok(took < 1500, `the window came up ${took} ms after it was asked for, not after the 5000 ms interval`);
+    // Closed again: while it is the page in front, the first page counts as hidden, and the
+    // video test after this one needs its page visible to play.
+    await fetch(`http://127.0.0.1:${world.port}/json/close/${late.id}`);
+    await until(() => readIn(world.port, 'document.visibilityState'), (state) => state === 'visible');
   });
 
   it('follows a change to the file the moment it is written, not at the next tick', async () => {

@@ -85,6 +85,15 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     // Nothing to do on the next poll. Then a reload: the registered script restores the stylesheet
     // before any page code runs, without the launcher sending it again.
     assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), null);
+    // The start-up screen's logo breathes (by a transform, which the compositor animates: the
+    // main thread is the app's while that screen is on); the shell's own animation, the app's
+    // pop, is not touched. The screen is hidden in this page, so the names are what is read.
+    const startup = JSON.parse(await session.evaluate(`JSON.stringify([getComputedStyle(document.querySelector('.startup-logo-shell')).animationName, getComputedStyle(document.querySelector('.startup-logo')).animationName, getComputedStyle(document.querySelector('.startup-logo')).transformOrigin, getComputedStyle(document.getElementById('loading')).transitionDuration, getComputedStyle(document.getElementById('root')).transitionDuration])`));
+    assert.deepEqual(startup, ['none', 'za-startup-breathe', '50% 50%', '0.36s', '0.3s']);
+    // When the page says the first screen is ready, the moment is kept for whoever asks.
+    await session.evaluate(`document.body.classList.add('zcode-startup-ready')`);
+    await until(() => session.evaluate(`window.__zcodeAppearance.readyAt`), (value) => Number.isInteger(value) && value >= 0);
+    await session.evaluate(`document.body.classList.remove('zcode-startup-ready')`);
     const loaded = new Promise((resolve) => session.on('Page.loadEventFired', resolve));
     await session.send('Page.reload');
     await loaded;
@@ -99,11 +108,29 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), 'applied');
     const { session } = sessions.get((await shellTarget(world.port)).id);
     assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
-    const chat = JSON.parse(await session.evaluate(`JSON.stringify([getComputedStyle(document.querySelector(${JSON.stringify(CHAT_ROOT)})).backgroundImage, getComputedStyle(document.querySelector(${JSON.stringify(CHAT_ROOT)})).backgroundAttachment, getComputedStyle(document.documentElement).getPropertyValue('--color-background'), getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor])`));
-    const [image, attachment, baseColour, rootAlt] = chat;
-    assert.match(image, /linear-gradient/);
-    assert.match(image, /url\("data:image\/png;base64,/);
-    assert.equal(attachment, 'fixed, fixed');
+    // The card the app draws in the area carries the picture and no longer paints over it; the
+    // area itself paints nothing. Where there is no such card, the area itself carries it.
+    const CARD = '[data-testid="conversation"] > * > .bg-background';
+    const chat = JSON.parse(await session.evaluate(`(() => {
+      const card = document.querySelector(${JSON.stringify(CARD)});
+      const probe = document.createElement('div');
+      probe.style.background = 'color-mix(in oklab, #fafafa 50%, transparent)';
+      document.body.appendChild(probe);
+      const tint = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return JSON.stringify([getComputedStyle(card).backgroundImage, getComputedStyle(card).backgroundAttachment, getComputedStyle(card).backgroundColor, getComputedStyle(card, '::before').backgroundColor, getComputedStyle(card, '::before').zIndex, getComputedStyle(document.querySelector('[data-testid="conversation"]')).backgroundImage, getComputedStyle(document.querySelector('[data-testid="chat-view"]')).backgroundImage, getComputedStyle(document.documentElement).getPropertyValue('--color-background'), getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor, tint]);
+    })()`));
+    const [image, attachment, cardBase, tintLayer, tintPlace, area, flat, baseColour, rootAlt, tint] = chat;
+    assert.match(image, /^url\("data:image\/png;base64,/, `the picture, and nothing else, in the declaration (${image.slice(0, 90)})`);
+    assert.equal(attachment, 'fixed');
+    // The card's base colour went see-through inside the area; with it left opaque the card
+    // covered the picture, and on the real app the scope looked as if nothing had happened.
+    assert.equal(cardBase, 'rgba(0, 0, 0, 0)');
+    // The tint is a layer of its own over the picture and under the writing.
+    assert.equal(tintLayer, tint);
+    assert.equal(tintPlace, '-1');
+    assert.equal(area, 'none');
+    assert.match(flat, /^url\("data:image\/png;base64,/, 'an area that is a painted box itself carries the picture');
     // The conversation area alone: the rest of the window keeps the app's own colours, the
     // shell root's base included.
     assert.equal(baseColour.trim(), '#fafafa');
@@ -111,9 +138,26 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     assert.equal(await session.evaluate(plan.check), 'ok');
   });
 
+  it('keeps a picture of a few megabytes in the conversation area', async () => {
+    // The picture a person actually uses: noise, which does not compress, drawn by the browser
+    // itself and handed back as a data URL of about the size of a photograph.
+    const big = await (async () => {
+      const target = await shellTarget(world.port);
+      const { session } = sessions.get(target.id);
+      return session.evaluate(`(() => { const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 700; const context = canvas.getContext('2d'); const picture = context.createImageData(canvas.width, canvas.height); let seed = 123456789; const next = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; }; for (let i = 0; i < picture.data.length; i += 4) { const value = next(); picture.data[i] = value & 255; picture.data[i + 1] = (value >>> 8) & 255; picture.data[i + 2] = (value >>> 16) & 255; picture.data[i + 3] = 255; } context.putImageData(picture, 0, 0); return canvas.toDataURL('image/png'); })()`);
+    })();
+    assert.ok(big.length > 2_000_000, `the picture is ${Math.round(big.length / 1e6 * 10) / 10} MB as a data URL, as a photograph is (${String(big).slice(0, 60)})`);
+    const plan = buildPlan(pageWith({ scope: 'chat', mask: 0.5 }), { imageDataUrl: big });
+    assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), 'applied');
+    const { session } = sessions.get((await shellTarget(world.port)).id);
+    await until(() => session.evaluate(`getComputedStyle(document.querySelector('[data-testid="conversation"] > * > .bg-background')).backgroundImage.startsWith('url("data:image/png;base64,')`), Boolean, { timeoutMs: 8000 });
+    const image = await session.evaluate(`getComputedStyle(document.querySelector('[data-testid="conversation"] > * > .bg-background')).backgroundImage`);
+    assert.ok(image.startsWith(`url("${big}")`), `the whole picture is in the computed value (beside a var() it used to be dropped, and nothing showed): computed ${image.length} characters, picture ${big.length}; starts ${image.slice(0, 40)} ends ${image.slice(-30)}`);
+  });
+
   it('reports a missing conversation area instead of failing silently', async () => {
     const target = await shellTarget(world.port);
-    await sessions.get(target.id).session.evaluate(`document.querySelector(${JSON.stringify(CHAT_ROOT)}).removeAttribute('data-testid')`);
+    await sessions.get(target.id).session.evaluate(`document.querySelectorAll(${JSON.stringify(CHAT_ROOT)}).forEach((node) => node.removeAttribute('data-testid'))`);
     // A different picture makes it a different plan, so the window is brought up to date again.
     const plan = buildPlan(pageWith({ scope: 'chat' }), { imageDataUrl: `${PIXEL}=` });
     assert.equal(await syncTarget(target, sessions, plan), 'missing-root');

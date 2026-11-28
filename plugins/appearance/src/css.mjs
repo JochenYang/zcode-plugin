@@ -41,6 +41,28 @@ const MIME = Object.freeze({
   '.avif': 'image/avif',
 });
 
+// The window the app shows while it starts: a dark rounded shell with the logo, which the app
+// itself pops in (0.72 s) and fades out when its first screen is ready. Here the logo also
+// breathes a little while it is shown, and it leaves less abruptly. Nothing moves for someone
+// who asked the system for less motion.
+//
+// The stylesheet arrives while the pop is playing (about 350 ms into the page), and from then
+// until the first screen is ready (about 600 ms) the main thread is the app's: its scripts load
+// and React mounts. The shell's own animation is left alone: replacing it would play the pop a
+// second time. The logo breathes instead, by a transform, which the compositor animates without
+// the main thread. A light running around the border of the shell was tried and taken out: it
+// has to be turned by the compositor too, and that takes an element of ours inside the shell
+// and a masked ring, and it still did not show on a real start; not worth more of the start.
+function startupRules() {
+  return [
+    '#loading .startup-logo { transform-origin: center; animation: za-startup-breathe 2.4s ease-in-out infinite; }',
+    '#loading { transition: opacity 0.36s ease !important; }',
+    '#root { transition: opacity 0.3s ease !important; }',
+    '@keyframes za-startup-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }',
+    '@media (prefers-reduced-motion: reduce) { #loading .startup-logo { animation: none; } }',
+  ];
+}
+
 function backgroundRules(config, { imageDataUrl, videoUrl }) {
   if (!config.background.enabled || !(imageDataUrl || videoUrl)) return [];
   // A video is an element, not a CSS background, so it has no place in the conversation area.
@@ -48,21 +70,35 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
   const percent = Math.round(config.background.mask * 100);
   // On <body>, not on the root: the app's colours are read from the body (see install), and a
   // var() is resolved where the custom property is declared, so the root cannot see them.
+  // The same strength in both themes. A stronger one in the light theme was tried (the setting
+  // plus 18 points): the picture all but disappeared, which is worse than text that is harder
+  // to read here and there.
   const tint = `body { --za-tint: color-mix(in oklab, var(--za-orig-background, var(--za-fallback)) ${percent}%, transparent); }`;
   const fallback = [':root { --za-fallback: #f4f4f5; }', '.theme-zai-dark { --za-fallback: #0a0a0a; }'];
   if (config.background.scope === 'chat') {
+    // `CHAT_ROOT` is a list of selectors, so every rule is written once per selector: anything
+    // appended to the list as a whole would land on its last selector only.
+    const selectors = CHAT_ROOT.split(', ');
+    // The picture goes on the card the app draws right inside the area when there is one (it is
+    // rounded and clips, so the picture gets its corners), and otherwise on the area itself.
+    const area = selectors.map((selector) => `${selector} { --color-background: transparent !important; background-color: transparent !important; }`);
+    const painted = selectors.flatMap((selector) => [`${selector} > * > .bg-background`, `${selector}:not(:has(> * > .bg-background))`]);
     return [
       ...fallback,
       tint,
-      `${CHAT_ROOT} {`,
-      '  background-color: transparent !important;',
-      `  background-image: linear-gradient(var(--za-tint), var(--za-tint)), url("${imageDataUrl}");`,
-      '  background-position: center, center;',
-      '  background-size: cover, cover;',
-      '  background-repeat: no-repeat, no-repeat;',
-      // Fixed: the picture stays put while the conversation scrolls over it.
-      '  background-attachment: fixed, fixed;',
-      '}',
+      // The card the app draws in the conversation area paints with the base colour (bg-background).
+      // Inside the area that colour goes see-through, as it does behind the whole window in page
+      // scope; cards, popovers and the composer keep their own surfaces. Without this the card
+      // covered the picture completely: the scope looked as if nothing had happened.
+      ...area,
+      // The picture is a declaration of its own, without a var() next to it: with the tint's
+      // gradient in the same declaration, a picture of a few megabytes made Chromium drop the
+      // whole declaration (a tiny one survived, so the tests did not see it).
+      ...painted.map((selector) => `${selector} { position: relative; isolation: isolate; background-image: url("${imageDataUrl}"); background-position: center; background-size: cover; background-repeat: no-repeat; background-attachment: fixed; }`),
+      // The tint is a layer of its own, over the picture and under the writing: in the stacking
+      // context the element now has, below its content. Fixed, so the picture stays put while the
+      // conversation scrolls over it.
+      ...painted.map((selector) => `${selector}::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--za-tint); pointer-events: none; }`),
     ];
   }
   const image = `#${IMAGE_LAYER_ID}`;
@@ -92,6 +128,11 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
 
 function skinRules(skin) {
   if (!skin) return [];
+  // The app derives a dozen semantic colours from a few: a secondary button (the composer's
+  // stop button among them), hover backgrounds, borders on hover, subtle text, inputs, headers,
+  // the selected card, the primary action. Each is mixed from the five of the mode here, in
+  // the proportions the app's own themes use, so a skin covers them all; the first skins set
+  // nine colours and left the stop button in the default theme's grey.
   const block = (mode) => [
     `  --color-background: ${mode.base} !important;`,
     `  --color-surface: ${mode.surface} !important;`,
@@ -102,6 +143,20 @@ function skinRules(skin) {
     `  --color-foreground: ${mode.text} !important;`,
     `  --color-border: ${mode.border} !important;`,
     `  --color-brand: ${mode.accent} !important;`,
+    `  --color-foreground-inverse: ${mode.base} !important;`,
+    `  --color-foreground-subtle: color-mix(in oklab, ${mode.text} 60%, transparent) !important;`,
+    `  --color-foreground-subtlest: color-mix(in oklab, ${mode.text} 30%, transparent) !important;`,
+    `  --color-surface-hover: color-mix(in oklab, ${mode.text} 10%, transparent) !important;`,
+    `  --color-border-hover: color-mix(in oklab, ${mode.text} 22%, transparent) !important;`,
+    `  --color-secondary: color-mix(in oklab, ${mode.text} 18%, ${mode.base}) !important;`,
+    `  --color-accent: color-mix(in oklab, ${mode.text} 10%, ${mode.base}) !important;`,
+    `  --color-card-selected: color-mix(in oklab, ${mode.text} 12%, ${mode.base}) !important;`,
+    `  --color-header: color-mix(in oklab, ${mode.surface} 70%, ${mode.base}) !important;`,
+    `  --color-popover-header: color-mix(in oklab, ${mode.surface} 70%, ${mode.base}) !important;`,
+    `  --color-input: ${mode.surface} !important;`,
+    `  --color-input-focused: ${mode.surface} !important;`,
+    `  --color-primary: ${mode.accent} !important;`,
+    `  --color-primary-foreground: ${mode.base} !important;`,
   ].join('\n');
   const rules = [];
   if (skin.light) rules.push(`.theme-zai-light {\n${block(skin.light)}\n}`);
@@ -109,8 +164,15 @@ function skinRules(skin) {
   return rules;
 }
 
-export function buildCss(config, { imageDataUrl = null, videoUrl = null } = {}) {
-  const rules = [...skinRules(resolveSkin(config)), ...backgroundRules(config, { imageDataUrl, videoUrl })];
+export function buildCss(config, options = {}) {
+  const background = backgroundRules(config, options);
+  const rules = [
+    ...skinRules(resolveSkin(config)),
+    ...background,
+    // The start-up screen gets its motion only when a background is shown: that is when this
+    // plugin is showing anything at all.
+    ...(background.length ? startupRules() : []),
+  ];
   return rules.length ? `/* zcode-appearance */\n${rules.join('\n')}\n` : '';
 }
 
@@ -243,8 +305,10 @@ function install(payload) {
     syncLayers();
     state.key = payload.key;
     state.pending = false;
-    // For whoever asks the page what has been going on (the launcher's --attach checks).
+    // For whoever asks the page what has been going on (the launcher's --attach checks): how
+    // often the stylesheet was put in, and when it first was.
     state.repaints = (state.repaints ?? 0) + 1;
+    state.appliedAt ??= Math.round(performance.now());
     if (!captured && tries < RETRIES.length) {
       // A cold start runs this before the app's stylesheet is parsed: nothing to read from yet.
       const delay = RETRIES[tries];
@@ -260,10 +324,19 @@ function install(payload) {
     return 'applied';
   }
 
+  // When the app's first screen was ready, the same way: it says how long the start-up screen
+  // stayed after the stylesheet came.
+  function noteReady() {
+    if (state.readyAt === undefined && document.body.classList.contains('zcode-startup-ready')) {
+      state.readyAt = Math.round(performance.now());
+    }
+  }
+
   function watchTheme() {
     if (state.watching) return;
     state.watching = true;
     const observer = new MutationObserver(() => {
+      noteReady();
       clearTimeout(repaintTimer);
       repaintTimer = setTimeout(() => {
         captured = false;
@@ -277,6 +350,7 @@ function install(payload) {
 
   function start() {
     const result = repaint();
+    noteReady();
     watchTheme();
     watchVisibility();
     return result;

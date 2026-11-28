@@ -114,11 +114,18 @@ export async function runFor(locale, theme = 'light', variables = VARIABLES) {
     await sleep(20);
     await record('get', {}); // the poll that finds what the dialog gave
     await record('remove', { path: gone });
+    // The order of the files: with the interval off again, each way of putting one first.
+    await record('set', { rotateMinutes: 0 });
+    await record('set', { setMedia: [late, first, clip, picked] });
+    await record('set', { setMedia: [first, late, clip, picked] });
+    await record('set', { setMedia: [first, clip, late, picked] });
+    await record('set', { setMedia: [late, first, clip, picked] });
     await record('set', { enabled: false });
     await record('set', { scope: 'chat' });
-    await record('set', { skin: 'midnight' });
-    await record('set', { skin: 'default', customSkin: START });
-    await record('set', { skin: 'default', customSkin: { ...START, light: { ...START.light, accent: '#ff0000' } } });
+    await record('set', { skin: 'catppuccin' });
+    await record('set', { skin: 'custom', customSkin: START });
+    await record('set', { skin: 'custom', customSkin: { ...START, light: { ...START.light, accent: '#ff0000' } } });
+    await record('set', { skin: 'default' });
     await record('openConfig', {});
     await record('get', {}); // the way back from a failed call
     await record('reset', {});

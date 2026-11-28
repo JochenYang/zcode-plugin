@@ -35,8 +35,9 @@ const versionInfo = (exe) => {
 // A Windows without node on it: enough of the environment for a program to start at all.
 const bareEnv = (extra = {}) => ({ SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, PATH: path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32'), ZCODE_APPEARANCE_LAUNCHER_QUIET: '1', ...extra });
 const runExe = (exe, env) => spawnSync(exe, [], { env, encoding: 'utf8', windowsHide: true, timeout: 20_000 });
-// The launcher script as far as the programs know: it writes down how it was started.
-const STAND_IN = "import fs from 'node:fs';\nfs.writeFileSync('started.json', JSON.stringify({ argv: process.argv.slice(1), cwd: process.cwd(), noConsole: process.env.ZCODE_APPEARANCE_NO_CONSOLE }));\n";
+// The launcher script as far as the programs know: it writes down how it was started, next to
+// itself (the working folder is the user's own, where nothing of a test's belongs).
+const STAND_IN = "import fs from 'node:fs';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\nconst here = path.dirname(fileURLToPath(import.meta.url));\nfs.writeFileSync(path.join(here, 'started.json'), JSON.stringify({ argv: process.argv.slice(1), cwd: process.cwd(), noConsole: process.env.ZCODE_APPEARANCE_NO_CONSOLE }));\n";
 const real = (dir) => fs.realpathSync.native(dir).toLowerCase();
 // Waits for the marker the stand-in writes and reads it.
 async function started(marker) {
@@ -102,7 +103,7 @@ describe('the launcher program', { skip }, () => {
     assert.equal(out.stdout.trim(), '32', out.stderr);
   });
 
-  it('starts node on the launcher script, from the script\'s folder, and tells it there is no console', async () => {
+  it('starts node on the launcher script, from the user\'s folder, and tells it there is no console', async () => {
     const home = tempDir('appearance-exe-home-');
     const work = tempDir('appearance-exe-work-');
     const script = path.join(work, 'launch.mjs');
@@ -114,8 +115,10 @@ describe('the launcher program', { skip }, () => {
     const state = await started(path.join(work, 'started.json'));
     assert.ok(state, 'the script ran');
     assert.deepEqual(state.argv, [script]);
-    // Windows may spell the same folder with its short name; compare what they really are.
-    assert.equal(real(state.cwd), real(work), 'from the folder of the script');
+    // From the user's own folder, not the script's: ZCode inherits it, and what the app then
+    // writes "next to itself" must not land in the plugin's. (Windows may spell a folder with
+    // its short name; compare what they really are.)
+    assert.equal(real(state.cwd), real(os.homedir()), 'from the user\'s folder');
     assert.equal(state.noConsole, '1');
     assert.equal(fs.existsSync(path.join(home, 'launcher-error.log')), false, 'nothing to report');
   });
@@ -163,10 +166,10 @@ describe('the launcher program', { skip }, () => {
     const out = spawnSync(commandPrompt(), ['/d', '/c', 'zcode-appearance.cmd'], { cwd: home, encoding: 'utf8', windowsHide: true, timeout: 20_000 });
     assert.equal(out.status, 0, out.stderr);
     // The wrapper does not change the folder: the script runs from where the wrapper was started.
-    const state = await started(path.join(home, 'started.json'));
+    const state = await started(path.join(home, 'bin', 'started.json'));
     assert.ok(state, 'the script ran');
     assert.deepEqual(state.argv.map((item) => real(item)), [real(script)], 'the whole path, as one argument');
-    assert.equal(real(state.cwd), real(home));
+    assert.equal(real(state.cwd), real(os.homedir()), 'from the user\'s folder');
     assert.equal(state.noConsole, '1');
   });
 });
@@ -199,7 +202,7 @@ const cleanEnv = (extra = {}) => {
 describe('the shell stand-in (macOS and Linux)', { skip: skipSh }, () => {
   const runStub = (program, env) => spawnSync(shPath, [posix(program)], { env, encoding: 'utf8', timeout: 20_000, cwd: os.tmpdir() });
 
-  it('starts node on the script the bundle names, from the script\'s folder, and tells it there is no console', async () => {
+  it('starts node on the script the bundle names, from the user\'s folder, and tells it there is no console', async () => {
     const work = tempDir('appearance-stub-work-');
     const program = path.join(tempDir('appearance-stub-home-'), 'My ZCode.app', 'Contents', 'MacOS', 'My ZCode');
     const resources = path.join(program, '..', '..', 'Resources');
@@ -215,7 +218,7 @@ describe('the shell stand-in (macOS and Linux)', { skip: skipSh }, () => {
     assert.ok(state, 'the script ran');
     // What node was given is the same file, spelled the way Windows spells it.
     assert.deepEqual(state.argv.map(real), [real(script)]);
-    assert.equal(real(state.cwd), real(work), 'from the folder of the script');
+    assert.equal(real(state.cwd), real(os.homedir()), 'from the user\'s folder');
     assert.equal(state.noConsole, '1');
     assert.equal(fs.existsSync(path.join(path.dirname(program), 'launcher-error.log')), false, 'nothing to report');
   });
@@ -233,7 +236,7 @@ describe('the shell stand-in (macOS and Linux)', { skip: skipSh }, () => {
     assert.equal(out.status, 0, out.stderr);
     const state = await started(path.join(path.dirname(script), 'started.json'));
     assert.deepEqual(state?.argv.map(real), [real(script)]);
-    assert.equal(real(state.cwd), real(path.dirname(script)));
+    assert.equal(real(state.cwd), real(os.homedir()), 'from the user\'s folder');
   });
 
   it('says so when it does not know where the script is, or the script is gone', () => {

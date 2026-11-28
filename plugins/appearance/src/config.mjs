@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { paths } from './paths.mjs';
-import { SKIN_NAMES } from './skins.mjs';
+import { CUSTOM_SKIN, SKIN_PRESETS } from './skins.mjs';
 
 export const SCOPES = Object.freeze(['page', 'chat']);
 // A picture becomes part of the <style> element as a data: URL, so the page needs no path
@@ -127,7 +127,9 @@ export function validateConfig(raw, { file = null, cwd = process.cwd() } = {}) {
   for (const key of Object.keys(launcherRaw)) if (!(key in DEFAULT_CONFIG.launcher)) problems.push(`unknown setting launcher.${key}`);
   checkBackground(backgroundRaw, problems);
 
-  if (skinRaw.preset !== undefined && !SKIN_NAMES.includes(skinRaw.preset)) problems.push(`skin.preset must be one of ${SKIN_NAMES.join(', ')}`);
+  if (skinRaw.preset !== undefined && !SKIN_PRESETS.includes(skinRaw.preset)) problems.push(`skin.preset must be one of ${SKIN_PRESETS.join(', ')}`);
+  // "custom" shows the colours of skin.custom; without any, there is nothing it could show.
+  if (skinRaw.preset === CUSTOM_SKIN && (skinRaw.custom === undefined || skinRaw.custom === null)) problems.push('skin.preset custom needs skin.custom');
   if (skinRaw.custom !== undefined && skinRaw.custom !== null) checkSkinCustom(skinRaw.custom, problems);
   if (launcherRaw.port !== undefined && !(Number.isInteger(launcherRaw.port) && launcherRaw.port >= PORT_MIN && launcherRaw.port <= PORT_MAX)) {
     problems.push(`launcher.port must be an integer from ${PORT_MIN} to ${PORT_MAX}`);
@@ -209,7 +211,7 @@ export function applyPatch(config, patch, { cwd = process.cwd() } = {}) {
   for (const entry of patch.removeMedia ?? []) {
     if (typeof entry !== 'string' && !(Number.isInteger(entry) && entry >= 1)) problems.push('removeMedia takes file paths or 1-based positions');
   }
-  if (patch.skin !== undefined && !SKIN_NAMES.includes(patch.skin)) problems.push(`skin must be one of ${SKIN_NAMES.join(', ')}`);
+  if (patch.skin !== undefined && !SKIN_PRESETS.includes(patch.skin)) problems.push(`skin must be one of ${SKIN_PRESETS.join(', ')}`);
   if (problems.length) throw new ConfigError(problems[0]);
 
   const next = structuredClone(config);
@@ -233,8 +235,15 @@ export function applyPatch(config, patch, { cwd = process.cwd() } = {}) {
     ))));
     background.media = background.media.filter((existing) => !gone.has(existing));
   }
-  if (patch.skin !== undefined) next.skin.preset = patch.skin;
   if (patch.customSkin !== undefined) next.skin.custom = patch.customSkin === null ? null : structuredClone(patch.customSkin);
+  if (patch.skin !== undefined) next.skin.preset = patch.skin;
+  else if (patch.customSkin !== undefined) {
+    // Colours of one's own that are given become the skin in use; ones that are cleared take
+    // the preset back to the app's own colours. `skin`, when passed, says which it is.
+    if (patch.customSkin === null) {
+      if (next.skin.preset === CUSTOM_SKIN) next.skin.preset = 'default';
+    } else next.skin.preset = CUSTOM_SKIN;
+  }
 
   return validateConfig(next, { cwd });
 }

@@ -1,6 +1,6 @@
 ---
 description: Show or change the ZCode appearance (background pictures or videos, where they show, tint, blur, rotation, colour skin) by updating the appearance settings; the launcher applies them without restarting ZCode.
-argument-hint: "[要求，留空则显示当前设置。例如：只换会话区，遮罩 0.7 | 背景换成 D:\\Wallpapers\\a.jpg | 换成 midnight 皮肤]"
+argument-hint: "[要求，留空则显示当前设置。例如：只换会话区，遮罩 0.7 | 背景换成 D:\\Wallpapers\\a.jpg | 换成 catppuccin 皮肤]"
 ---
 
 Change how the ZCode desktop window looks through the `appearance` plugin.
@@ -23,7 +23,7 @@ If those exact names are not in your tool list, find the tools whose name ends i
 /appearance 整页，模糊 4，每 30 分钟换一个，再加上 D:\Clips\b.mp4
 /appearance 把第二个去掉
 /appearance 关掉背景
-/appearance 换成 midnight 皮肤
+/appearance 换成 catppuccin 皮肤
 /appearance 自定义皮肤，深色底 #101418、卡片 #181d25、文字 #e6e6e6、强调色 #38bdf8、边框 #2a303a
 ```
 
@@ -40,11 +40,13 @@ If those exact names are not in your tool list, find the tools whose name ends i
    | 模糊 N | `blur` |
    | 每 N 分钟换一个 | `rotateMinutes` |
    | 背景换成 / 用某个文件 | `setMedia` (replaces the list) |
+   | 调换顺序 / 先显示某个（不轮换时显示的是列表里的第一个） | `setMedia` with the same files in the new order |
    | 加上 / 再加一个 | `addMedia` |
    | 去掉 / 不要某个 | `removeMedia`, by path or by its number in the list |
    | 关掉背景 / 不要背景 | `enabled: false` |
    | 换成某套皮肤 | `skin` |
-   | 自定义皮肤 / 自己配色 | `skin: "default"` plus `customSkin` |
+   | 自己配色 | `customSkin` (it becomes the skin in use, `skin: "custom"`); `skin: "default"` goes back to the app's own colours and keeps it |
+   | 做一个启动器程序（开始菜单 / 任务栏 / 程序坞 / 应用列表） | not a setting: run the command that `get_appearance` names after `launcher program:` (one line, `node <path>\bin\setup-launcher.mjs`, with `--name "<name>"` if they want another name); ask before running it, and say that Windows compiles a small program with the compiler Windows ships and that pinning is done by hand |
 
    Keep the user's file path as they wrote it unless it is relative, in which case
    resolve it against the workspace. Do not write the settings file yourself: the

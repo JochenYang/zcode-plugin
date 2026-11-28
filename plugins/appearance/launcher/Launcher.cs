@@ -50,7 +50,10 @@ internal static class Program
         start.UseShellExecute = false;
         start.CreateNoWindow = true;
         start.WindowStyle = ProcessWindowStyle.Hidden;
-        start.WorkingDirectory = Path.GetDirectoryName(script);
+        // The user's own folder, not the script's: ZCode is started from the launcher and
+        // inherits this folder, and whatever the app then writes "next to itself" (the shell
+        // behind a file dialog did) lands in the user's folder, not in the plugin's.
+        start.WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         // Tells the launcher to report what went wrong in a message box of its own: there is no
         // console for its output.
         start.EnvironmentVariables["ZCODE_APPEARANCE_NO_CONSOLE"] = "1";

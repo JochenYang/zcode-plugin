@@ -14,9 +14,9 @@ import { buildPlan, imageDataUrl } from './css.mjs';
 import { findFreePort, listTargets, waitForEndpoint } from './cdp.mjs';
 import { defaultConfig, loadConfig, mediaAt, saveConfig } from './config.mjs';
 import { openWithDefaultApp } from './open.mjs';
-import { paths } from './paths.mjs';
+import { bringAlong, paths } from './paths.mjs';
 import { isAlive, readStatus } from './status.mjs';
-import { powershellExe } from './system.mjs';
+import { powershellExe, tasklistExe } from './system.mjs';
 
 export class LauncherError extends Error {
   constructor(message) {
@@ -27,14 +27,14 @@ export class LauncherError extends Error {
 
 export const HELP = `用法：node bin/launch.mjs [选项]
 
-不带选项   完全退出 ZCode 后运行：带调试通道启动 ZCode，并把 appearance.json 里的外观注入每个窗口。
+不带选项   完全退出 ZCode 后运行：带调试通道启动 ZCode，并把 appearance/config.json 里的外观注入每个窗口。
            之后一直运行：改配置文件即时生效，页面重载后自动补注入，ZCode 退出时一起退出。
 --edit     用系统默认程序打开配置文件（没有就先建一份）。
 --status   显示当前配置、启动器和 ZCode 是否在运行。
 --attach   不启动 ZCode，接管一个已经带着调试通道运行的实例（可跟端口号）。
 --once     注入一次就退出，不留在后台。
 --config <文件>   用另一份配置文件。
---verbose  把日志同时打到屏幕上（始终写入 ~/.zcode/appearance.log）。
+--verbose  把日志同时打到屏幕上（始终写入 ~/.zcode/appearance/launcher.log）。
 `;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,8 +155,8 @@ function execFileText(file, args, { env }) {
   });
 }
 
-// How many ZCode processes are running, and where the first one lives. Used twice: to refuse to
-// start a second instance, and to find the executable when nothing was configured.
+// How many ZCode processes are running, and where the first one lives. Used where the count or
+// the place is wanted: `--status`, finding the executable, the message when one is running.
 export async function runningZcode({ env = process.env, platform = process.platform, run = execFileText } = {}) {
   if (platform === 'win32') {
     const script = "$p = @(Get-Process -Name ZCode -ErrorAction SilentlyContinue); $p.Count; ($p | Where-Object { $_.Path } | Select-Object -First 1 -ExpandProperty Path)";
@@ -191,22 +191,34 @@ export async function registeredZcode({ platform = process.platform, env = proce
   return found || null;
 }
 
-// Where ZCode is and how that was found, asked in the order most likely to be right: what was
-// configured, a running copy, what the installer told the system, the usual folders. The first
-// that exists wins. Nothing found is a null executable; a configured path that does not exist is
-// an error. `running` is the answer of a runningZcode() the caller already has, to not ask twice.
-// The source is for the log: the installer's record lives in a part of the registry the user can
-// write, so which answer was taken should be on record.
+// Whether ZCode is running, asked the quick way: before a start, where every moment counts.
+// `tasklist` is a program of its own and answers in well under half a second, where PowerShell
+// takes the better part of one to start. Its "no tasks" line is in the system's language; the
+// line that names the process is not.
+export async function isZcodeRunning({ env = process.env, platform = process.platform, run = execFileText } = {}) {
+  if (platform !== 'win32') return (await run('pgrep', ['-x', 'ZCode'], { env })).trim() !== '';
+  const out = await run(tasklistExe(env), ['/FI', 'IMAGENAME eq ZCode.exe', '/FO', 'CSV', '/NH'], { env });
+  return /^"ZCode\.exe"/m.test(out);
+}
+
+// Where ZCode is and how that was found, asked in the order most likely to be right and quickest
+// to ask: what was configured, a running copy, the usual folders, and only then what the
+// installer told the system (a PowerShell call of the better part of a second, saved on every
+// start of a ZCode that sits where most sit). Nothing found is a null executable; a configured
+// path that does not exist is an error. `running` is the answer of a runningZcode() the caller
+// already has, to not ask twice. The source is for the log: the installer's record lives in a
+// part of the registry the user can write, so which answer was taken should be on record.
 const SOURCES = Object.freeze({ env: '环境变量 ZCODE_APPEARANCE_EXE', config: '配置里的 launcher.zcodePath', running: '正在运行的 ZCode 进程', registered: '系统的安装记录', usual: '常见目录' });
 export async function locateZcode({ configured = null, env = process.env, platform = process.platform, run = execFileText, exists = fs.existsSync, running = null } = {}) {
   const explicit = explicitZcode({ configured, env });
   if (explicit) return { exe: explicit, source: env.ZCODE_APPEARANCE_EXE ? SOURCES.env : SOURCES.config };
   const live = running ?? (await runningZcode({ env, platform, run }));
   if (live.path && exists(live.path)) return { exe: live.path, source: SOURCES.running };
+  const usual = zcodeCandidates({ env, platform }).find((candidate) => exists(candidate));
+  if (usual) return { exe: usual, source: SOURCES.usual };
   const registered = await registeredZcode({ platform, env, run });
   if (registered && exists(registered)) return { exe: registered, source: SOURCES.registered };
-  const usual = zcodeCandidates({ env, platform }).find((candidate) => exists(candidate));
-  return { exe: usual ?? null, source: usual ? SOURCES.usual : null };
+  return { exe: null, source: null };
 }
 
 export async function resolveZcode(options = {}) {
@@ -410,9 +422,13 @@ function mtimeOf(target) {
 // going away is reported at once and then occasionally, and retried: the app opens it again
 // when it restarts. An instance this launcher started ends the loop through `shouldStop`; one
 // it attached to may simply be gone, so the loop also gives up after a minute of silence.
-export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 2000, once = false, giveUpAfterMs = 60000, wake = null, sessions = new Map(), listTargetsImpl = listTargets }) {
+export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 2000, once = false, giveUpAfterMs = 60000, wake = null, sessions = new Map(), listTargetsImpl = listTargets, firstPollMs = 100, onBrought = null }) {
   let failures = 0;
   let failingSince = null;
+  // How many times a window has been brought up to date. Until the first one, the loop comes
+  // back quickly: right after a start the window shows up a moment after the channel does, and
+  // waiting a whole interval for it was most of the time the background took to appear.
+  let brought = 0;
   for (;;) {
     try {
       const plan = await getPlan();
@@ -425,6 +441,8 @@ export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 20
         seen.add(target.id);
         try {
           await syncTarget(target, sessions, plan, { log: (message) => logger.info(message) });
+          brought += 1;
+          if (brought === 1) onBrought?.();
         } catch (err) {
           clean = false;
           logger.warn(`窗口「${target.title || target.url}」：${err.message}`);
@@ -437,7 +455,7 @@ export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 20
         sessions.get(id).session.close();
         sessions.delete(id);
       }
-      if (once && clean) return;
+      if (once && clean) return { brought };
     } catch (err) {
       failures += 1;
       // Counted by the clock, not by the polls: a port that accepts the connection and never
@@ -446,11 +464,11 @@ export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 20
       if (failures === 1 || failures % 15 === 0) logger.warn(`端口 ${port} 上的调试通道：${err.message}`);
       if (Date.now() - failingSince >= giveUpAfterMs) {
         logger.warn(`端口 ${port} 上的调试通道一直没有应答，启动器退出`);
-        return;
+        return { brought };
       }
     }
-    if (shouldStop()) return;
-    await pause(pollMs, shouldStop, wake);
+    if (shouldStop()) return { brought };
+    await pause(brought ? pollMs : firstPollMs, shouldStop, wake);
   }
 }
 
@@ -505,6 +523,7 @@ async function start({ args, file, files, logger }) {
   let child = null;
   let exited = false;
   let spawnError = null;
+  let startedAt = 0;
   const sessions = new Map();
 
   if (args.attach) {
@@ -514,11 +533,14 @@ async function start({ args, file, files, logger }) {
     // the settings, not how ZCode was started.
     writeStatus(files.status, { launcherPid: process.pid, port, zcodePid: null, config: file });
   } else {
-    const running = await runningZcode();
-    if (running.count > 0) {
+    // The quick question first (a program of its own, where PowerShell takes the better part of
+    // a second to start); the exact count is for the message.
+    if (await isZcodeRunning()) {
+      const running = await runningZcode();
       throw new LauncherError(`ZCode 已经在运行（${running.count} 个进程）。请先完全退出它（托盘图标里也要退出），再从这个启动器启动：调试通道只在启动时打开，而且已有一个实例在运行时，新启动的那个会直接把控制权交出去然后退出。`);
     }
-    const { exe, source } = await locateZcode({ configured: config.launcher.zcodePath, running });
+    // Not running, as just established: that source is not asked.
+    const { exe, source } = await locateZcode({ configured: config.launcher.zcodePath, running: { count: 0, path: null } });
     if (!exe) {
       throw new LauncherError(`没有找到 ZCode 的可执行文件：配置和环境变量没有指定，ZCode 没有在运行，系统的安装记录和常见目录里也没有。请在 ${file} 里把 launcher.zcodePath 写成 ZCode 可执行文件的完整路径，或者设置环境变量 ZCODE_APPEARANCE_EXE。`);
     }
@@ -526,6 +548,7 @@ async function start({ args, file, files, logger }) {
     // user can write.
     logger.info(`找到 ZCode：${exe}（来自${source}）`);
     port = await findFreePort(config.launcher.port);
+    startedAt = Date.now();
     child = spawn(exe, [`--remote-debugging-port=${port}`], { stdio: 'ignore' });
     child.once('exit', () => {
       exited = true;
@@ -536,15 +559,12 @@ async function start({ args, file, files, logger }) {
     });
     logger.info(`启动 ${exe}，调试通道在端口 ${port}`);
     try {
-      await waitForEndpoint(port, { shouldStop: () => exited });
+      await waitForEndpoint(port, { shouldStop: () => exited, intervalMs: 100 });
     } catch (err) {
       if (spawnError) throw new LauncherError(`无法启动 ${exe}：${spawnError.message}`);
       throw err;
     }
-    await pause(1500, () => exited);
-    if (exited) {
-      throw new LauncherError('ZCode 启动后马上退出了：多半是还有一个实例没有完全退出（托盘图标里也要退出），新启动的这个把控制权交给它之后结束了。');
-    }
+    logger.info(`调试通道 ${Date.now() - startedAt} 毫秒后应答`);
     writeStatus(files.status, { launcherPid: process.pid, port, zcodePid: child.pid, config: file });
   }
 
@@ -556,19 +576,26 @@ async function start({ args, file, files, logger }) {
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
   const shouldStop = () => interrupted || exited;
+  let brought = 0;
   try {
-    await supervise({ port, getPlan: source.getPlan, shouldStop, logger, once: args.once, pollMs: args.pollMs, wake: () => source.change(), sessions });
+    ({ brought } = await supervise({ port, getPlan: source.getPlan, shouldStop, logger, once: args.once, pollMs: args.pollMs, wake: () => source.change(), sessions, onBrought: child ? () => logger.info(`首个窗口在启动后 ${Date.now() - startedAt} 毫秒拿到样式`) : null }));
   } finally {
     source.stop();
     // Open sockets keep the process alive: with --once the launcher has to be able to exit.
     closeAll(sessions);
     if (readStatus(files.status)?.launcherPid === process.pid) fs.rmSync(files.status, { force: true });
   }
+  // A start that ends without a window ever showing the stylesheet is the single-instance
+  // handover: the new process gave control to one that was still running and quit.
+  if (child && exited && !brought) {
+    throw new LauncherError('ZCode 启动后马上退出了：多半是还有一个实例没有完全退出（托盘图标里也要退出），新启动的这个把控制权交给它之后结束了。');
+  }
   return 0;
 }
 
 export async function run({ argv = process.argv.slice(2), env = process.env, stdout = process.stdout } = {}) {
   const args = parseArgs(argv);
+  bringAlong();
   const files = paths();
   const logger = createLogger({ file: files.log, verbose: args.verbose });
   const file = args.config ?? files.config;

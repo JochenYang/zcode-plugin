@@ -52,15 +52,21 @@ export async function until(read, accept, { timeoutMs = 5000, intervalMs = 50 } 
 export async function startTestBrowser(browserPath) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'appearance-test-'));
   const page = (body) => `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="content-security-policy" content="${CSP}"><style>
-    :root { --color-background: #fafafa; --color-surface: #ffffff; --color-background-win-alt: #e4e4e7; --color-sidebar: #f4f4f5; }
-    .theme-zai-dark { --color-background: #0a0a0a; }
+    :root { --color-background: #fafafa; --color-surface: #ffffff; --color-background-win-alt: #e4e4e7; --color-sidebar: #f4f4f5; --color-brand: #000000; }
+    .theme-zai-dark { --color-background: #0a0a0a; --color-brand: #ffffff; }
     body { margin: 0; } .bg-background { background-color: var(--color-background); }
     .bg-background-win-alt { background-color: var(--color-background-win-alt); min-height: 100vh; } .bg-sidebar { background-color: var(--color-sidebar); }
   </style></head><body>${body}</body></html>`;
+  // The conversation area the way the app lays it out: a wrapper marked `conversation`, a scroll
+  // box inside it, and in that the card the app paints with the base colour. (`chat-view` is the
+  // other name the launcher looks for, here as a plain painted box of its own.) `#loading` is
+  // the app's start-up screen, kept in the page so that its animation can be read.
   const SHELL = page('<div id="root"><div class="bg-background-win-alt">'
     + '<aside class="bg-sidebar" style="width: 40px; height: 30px">side</aside>'
-    + '<section class="bg-background" style="margin: 4px; border-radius: 6px; overflow: hidden"><div data-testid="conversation" style="height: 50px; background-color: var(--color-surface)">chat</div></section>'
-    + '</div></div>');
+    + '<div data-testid="conversation"><div style="overflow: auto"><section class="bg-background" style="height: 50px; border-radius: 6px; overflow: hidden"><span>chat</span></section></div></div>'
+    + '<div data-testid="chat-view" style="height: 20px; background-color: var(--color-surface)">flat</div>'
+    + '</div></div>'
+    + '<div id="loading" style="position: fixed; inset: 0; display: none"><div class="startup-logo-shell" style="position: relative; width: 96px; height: 96px"><svg class="startup-logo" viewBox="0 0 24 24"></svg></div></div>');
   // The app's own pages, loaded the way the real entry page is: from a file.
   fs.writeFileSync(path.join(profile, 'shell.html'), SHELL);
   fs.writeFileSync(path.join(profile, 'other.html'), page('<h1>not the shell</h1>'));
