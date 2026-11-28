@@ -25,7 +25,8 @@ Personal ZCode plugin marketplace. Each plugin lives in its own directory follow
 | `plugins/websearch` | 0.2.0 | Standalone web search: a zero-dependency MCP server chaining AnySearch, Exa, Parallel and Bing with automatic fallback, plus a static page reader. Keyless by default, per-engine keys optional |
 | `plugins/model-speed` | 0.1.0 | Show current model output speed (tok/s) in the composer, per session, zero-dependency extension |
 | `plugins/codegraph` | 0.2.1 | Local code graph: a zero-dependency MCP server keeping a tree-sitter index of 35 language rows in SQLite under the plugin data folder; `codegraph_status` / `codegraph_lookup` / `codegraph_map` return exact `file:line` ranges, and `codegraph_lookup` also lists import cycles and the tests a change can reach; the index is built or refreshed silently when a session opens, and `SessionStart` / `UserPromptSubmit` / `PostToolUse` hooks tell the model when the graph is ready and when to use it; the desktop app gets a composer status item and an index management view; no telemetry, no network, no project code execution |
-| `plugins/appearance` | 0.2.4 | Custom background (pictures or videos) and colour skins: ZCode's plugin interface cannot reach the app's own chrome, so an external launcher starts ZCode with its debugging channel and injects the styles (whole page or conversation area only; tint, blur, rotation); a view in the side pane, settings in `~/.zcode/appearance/config.json`, changed from the conversation with `/appearance` |
+| `plugins/appearance` | 0.2.5 | Custom background (pictures or videos) and colour skins: ZCode's plugin interface cannot reach the app's own chrome, so an external launcher starts ZCode with its debugging channel and injects the styles (whole page or conversation area only; tint, blur, rotation); a view in the side pane, settings in `~/.zcode/appearance/config.json`, changed from the conversation with `/appearance` |
+| `plugins/crew` | 0.1.0 | A fixed team of AI teammates with a model each (in development): define the members in a side-pane board (name, role, model), enable the team for a project and dispatch work; each member is one persistent session in that project. Right now only the manifest, the extension entry and a sandbox probe page exist; the board is not built yet |
 
 The plugins are independent and can be enabled separately. `guardrails` blocks operations, so it is its own plugin and can be switched off on its own.
 
@@ -203,6 +204,19 @@ A custom background (pictures or videos) and colour skins. ZCode's plugin interf
 
 Config keys, how it works, what was verified and troubleshooting: `plugins/appearance/README.md`.
 
+## crew
+
+A fixed team of AI teammates with a model each (in development). Unlike "main session + subagents": the members are persistent sessions of their own, each with its model, peers to each other, and a person can open any member's session at any time.
+
+- **Members**: defined once in the board — name, role, model (the dropdown is the same list the composer's model picker shows). A member is identified by an id, so renaming keeps its bindings
+- **Enable for a project**: the board recognises the project from the focused session and enables the team in one step; the ledger keeps "member → session" per project
+- **Dispatch**: the first dispatch creates the member's session (role, roster of teammates, task, with the member's model); every later one continues that session and carries the member's current model — change the model and the next task uses it
+- **What the host allows** (measured on ZCode 4.0.0): a session created in a user's project is always in `build` permission mode, so a member stops for approval the first time; the reasoning level is the model's default; members can message each other with the `SendToSession` tool every session has
+- **Interface**: only the utilities and theme variables of ZCode's own sandbox stylesheet, icons only Lucide, the same as the app's own interface
+- **State right now**: only the manifest, the extension entry and a sandbox probe page (what the host gives a view: styles, the icon runtime, the capability path); the board, the ledger and dispatch are not built yet. The plan is `docs/plans/crew-plugin.md`
+
+Tests and layout: `plugins/crew/README.md`.
+
 ## Checks
 
 Two dependency-free checks ship with the repo (Python 3.8+ and bash). Run them after changing a plugin:
@@ -219,6 +233,7 @@ python plugins/dev-workflow/tests/test-on-dispatch.py  # the dispatch reminder h
 node --test plugins/codegraph/tests/hooks/*.test.mjs  # the codegraph hooks: real spawn, SessionStart text/schema, dirty.log protocol, hooks.json fields
 node --test plugins/codegraph/tests/extension/       # the codegraph desktop extension: the status item, the view's tools, and the view itself in a headless browser (Chrome or Edge)
 node --test plugins/appearance/tests/          # appearance: config validation, the stylesheet, the MCP protocol (including the real process), the launcher (reads only on change), the three sources for finding ZCode, the launcher programs (compiled and run for real on Windows; the layouts and scripts for macOS / Linux) and the extension's seven tools; injection, the polling loop, video playback and the view itself run in a headless browser (Chrome or Edge, skipped without one)
+node --test plugins/crew/tests/            # crew: the manifest as the extension host validates it strictly, what the page is made of (the official stylesheet byte for byte, own styles layout only, icon names in the Lucide list), and the extension entry's tools (probe state, the saved report, the grant request)
 ```
 
 `check-consistency.py` catches the drift a human review keeps missing: a version bumped in one place only, an agent count that no longer matches the prose, a frontmatter key ZCode does not read, a reference to a missing file, a leftover mention of a removed mechanism, an agent description that hands off to an agent that does not exist or collides with a built-in type. `test-hooks.py` pins every verdict of both hooks — it drives the real hook process, not a mock — so a rule change that alters an unrelated verdict fails immediately. Nothing is wired to CI yet.

@@ -31,4 +31,20 @@ describe('what the view\'s page is made of', () => {
     const urls = [...new Set([...source.matchAll(/\bhttps?:\/\/[^\s"'`)>]+/g)].map((match) => match[0]))];
     assert.deepEqual(urls, NAMESPACES);
   });
+
+  it('carries the official sandbox stylesheet whole and unedited', () => {
+    // The app gives its own views out/plugin-sandbox/visualize.css; this view is to look the
+    // same, so the first <style> is that file, copied whole after its header comment. The
+    // fixture is the copy the test compares with: when ZCode changes its sheet, copy again
+    // (.tmp/bg/splice-full.mjs) rather than edit a rule here.
+    const text = source.replace(/\r\n/g, '\n');
+    const open = text.indexOf('<style id="zcode-contract">');
+    const end = text.indexOf('</style>', open);
+    assert.ok(open !== -1 && end !== -1, 'the contract block is there');
+    const block = text.slice(open, end);
+    const body = block.slice(block.indexOf('*/') + 2).replace(/^\n/, '');
+    const sheet = fs.readFileSync(path.join(path.dirname(PAGE), '..', 'tests', 'fixtures', 'visualize.css'), 'utf8').replace(/\r\n/g, '\n');
+    assert.equal(body, sheet, 'the block after its header is the fixture, byte for byte');
+    assert.ok(sheet.includes('.form-switch .form-check-input:checked') && sheet.includes('.form-range::-webkit-slider-thumb'), 'the fixture is the official sheet with its components');
+  });
 });

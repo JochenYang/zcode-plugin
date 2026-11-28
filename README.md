@@ -25,7 +25,8 @@
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 | `plugins/codegraph` | 0.2.1 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`，`lookup` 还能列 import 环与受改动影响的测试文件；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；桌面端另有输入框状态位与索引管理面板；零遥测、零外联、不执行项目代码 |
-| `plugins/appearance` | 0.2.4 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance/config.json`，`/appearance` 在对话里改 |
+| `plugins/appearance` | 0.2.5 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance/config.json`，`/appearance` 在对话里改 |
+| `plugins/crew` | 0.1.0 | 固定成员、各有模型的 AI 团队（开发中）：侧边栏看板里定义成员（名字、职责、模型），在项目启用后派活；每个成员在该项目里是一个持久会话。现在只有清单、扩展入口和一页沙箱探测，看板还没做 |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
@@ -203,6 +204,19 @@ plugins/<plugin-name>/
 
 配置项、原理、验证情况与排障见 `plugins/appearance/README.md`。
 
+## crew
+
+固定成员、各有模型的 AI 团队（开发中）。和「主会话 + 子智能体」不一样：成员是各自独立的持久会话，各有模型，彼此平级，人随时可以点进任何一个成员的会话。
+
+- **成员**：在看板里定义一次——名字、职责说明、模型（下拉和输入框的模型选择器是同一份列表）。成员用 id 标识，改名不丢绑定
+- **项目启用**：看板按当前焦点会话认出所在项目，一键启用；账本按项目记「成员 → 会话」
+- **派活**：第一次派活才为成员建会话（职责说明 + 队友名册 + 任务，带成员的模型），之后续用同一个会话，每次都带成员当前的模型——改了模型，下一个任务就生效
+- **宿主的边界**（实测，ZCode 4.0.0）：在用户项目里建的会话固定是 `build` 权限模式，成员第一次会停在审批；推理档位跟随模型默认；成员之间可以用每个会话自带的 `SendToSession` 互发消息
+- **界面**：只用 ZCode 官方沙箱样式表的工具类与主题变量，图标只用 Lucide，和宿主自己的界面一致
+- **现在的状态**：只有清单、扩展入口和一页沙箱探测（确认宿主给视图的样式、图标运行时与能力通路）；看板、账本与派活还没做。计划见 `docs/plans/crew-plugin.md`
+
+测试与结构见 `plugins/crew/README.md`。
+
 ## 校验
 
 仓库自带两个零依赖检查（需要 Python 3.8+ 与 bash），改动插件后手动跑：
@@ -219,6 +233,7 @@ python plugins/dev-workflow/tests/test-on-dispatch.py  # 派发提醒钩子：�
 node --test plugins/codegraph/tests/hooks/*.test.mjs  # codegraph 钩子：真实 spawn，SessionStart 文案/schema、dirty.log 协议、hooks.json 字段
 node --test plugins/codegraph/tests/extension/       # codegraph 桌面端扩展：状态位、面板的工具，以及面板在无头浏览器里的检查（要 Chrome 或 Edge）
 node --test plugins/appearance/tests/          # appearance：配置校验、样式生成、MCP 协议（含真实进程）、启动器（变了才读）、找 ZCode 的三种来源、启动器程序（Windows 上真实编译并运行，macOS / Linux 的布局与脚本）与扩展的七个工具；注入、轮询循环、视频播放和面板页面在无头浏览器里跑（要 Chrome 或 Edge，没有则跳过）
+node --test plugins/crew/tests/            # crew：清单按扩展宿主的严格校验、页面来源（官方样式表逐字节一致、自己的样式只有布局、图标名在 Lucide 名单里）、扩展入口的工具（探测状态、报告落盘、授权请求）
 ```
 
 `check-consistency.py` 拦的是人工评审反复漏掉的那类漂移：版本只在一处改了、agent 数量与文案不符、frontmatter 写了 ZCode 不认的键、引用了不存在的文件、残留已删除机制的提法、agent 描述把任务交给一个不存在的 agent 或与内置类型撞名。`test-hooks.py` 把两个钩子的每条判定钉住，改规则时误伤别的判定会立刻失败——它用真实钩子进程跑，不是模拟。目前没有 CI 绑定。

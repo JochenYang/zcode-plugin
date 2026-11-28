@@ -189,15 +189,14 @@
     const otherLines = (id) => linesOf(id).filter((line) => !DECLARATION.test(line) && !/^[^{}]*\{$/.test(line) && line !== '}' && !line.startsWith('@media') && line !== ')');
 
     check('the contract is in the first stylesheet', contract.some((rule) => rule.selectorText === ':root' && rule.style.getPropertyValue('--background') !== ''));
-    for (const rule of contract) {
-      // The `:root` rule is the contract itself, and a token definition (a `--custom-property`)
-      // names the fallback pair it falls back to. No utility gives a real property a colour.
-      if (rule.selectorText === ':root') continue;
-      for (const { property, value } of declarations(rule.style)) {
-        if (property.startsWith('--')) continue;
-        check('a copied rule declares no colour', !COLOUR.test(value), `${rule.selectorText} { ${property}: ${value} }`);
-      }
+    // The rest of the block is the official sheet, byte for byte: tests/extension/
+    // page-source.test.mjs holds it against tests/fixtures/visualize.css. Here only that the
+    // components this view uses came with it: the switch, the range, the colour input, the
+    // secondary button, the pressed button, the icon inside a button.
+    for (const selector of ['.form-switch .form-check-input', '.form-range::-webkit-slider-thumb', '.form-control-color[type="color"]', '.btn-secondary', '.btn svg.lucide']) {
+      check(`the contract carries ${selector}`, contract.some((rule) => rule.selectorText === selector));
     }
+    check('and the pressed state of a button', contract.some((rule) => rule.selectorText?.startsWith('.btn:not(.btn-primary, .viz-tile):is(')));
     check('the layout block is one declaration to a line', otherLines('appearance-layout').length === 0, otherLines('appearance-layout').join(' / '));
     for (const [, property, value] of written('appearance-layout')) {
       check('a layout rule of this view declares layout only', LAYOUT_PROPERTIES.has(property) && !COLOUR.test(value), `${property}: ${value}`);
@@ -313,7 +312,11 @@
       // The box of an `<svg>` is the same whether its symbol exists or not; the drawing has a size of its own.
       const drawn = icon.getBBox();
       check('an icon has a drawing in it', drawn.width > 0 && drawn.height > 0, `${drawn.width} x ${drawn.height}`);
-      check('an icon is the size the contract names', Math.abs(box.width - iconSize) < 0.5 && Math.abs(box.height - iconSize) < 0.5, `${box.width} x ${box.height}`);
+      // The size the contract names for this icon: `--icon-size` where it sits (14 px in a button,
+      // 12 in a small one, 10 in an extra-small one, the page's size elsewhere) — read from the
+      // element itself, so the check follows the contract rather than a number of its own.
+      const named = Number.parseFloat(getComputedStyle(icon).getPropertyValue('--icon-size')) || iconSize;
+      check('an icon is the size the contract names', Math.abs(box.width - named) < 0.5 && Math.abs(box.height - named) < 0.5, `${box.width} x ${box.height}, named ${named}`);
       check('and takes the colour of the text it sits with', getComputedStyle(icon).stroke === getComputedStyle(icon).color && getComputedStyle(icon).color === getComputedStyle(icon.parentElement).color);
     }
     for (const id of ['appearance-background-heading', 'appearance-media-heading', 'appearance-skin-heading']) {
@@ -506,6 +509,23 @@
     check('a skin of one\'s own starts from the colours already there', JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ skin: 'custom', customSkin: run.start }));
     check('the colours are shown, ten of them, in two sets', !$('appearance-colours').hidden && $('appearance-colours').querySelectorAll('input[type="color"]').length === 10 && $('appearance-light-legend').textContent === text.light && $('appearance-dark-legend').textContent === text.dark);
     check('each named', [...$('appearance-colours').querySelectorAll('label')].map((label) => label.textContent.trim()).join('|') === [text.base, text.surface, text.text, text.accent, text.border, text.base, text.surface, text.text, text.accent, text.border].join('|'));
+    // The controls are the contract's own, at the sizes it names: the colour input 40 x 28, the
+    // switch 32 x 18, the secondary button painted with the secondary token. (A control styled
+    // by the view instead would be a size of the view's.)
+    {
+      const box = (node) => { const r = node.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+      const colour = box($('appearance-colours').querySelector('input[type="color"]'));
+      const toggle = box($('appearance-enabled'));
+      const secondary = getComputedStyle($('appearance-add')).backgroundColor;
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--secondary)';
+      main.append(probe);
+      const token = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      check('the colour input is the contract\'s size', colour[0] === 40 && colour[1] === 28, `${colour[0]} x ${colour[1]}`);
+      check('the switch is the contract\'s size', toggle[0] === 32 && toggle[1] === 18, `${toggle[0]} x ${toggle[1]}`);
+      check('the add button takes the contract\'s secondary colour', secondary === token, `${secondary} against ${token}`);
+    }
     check('a skin of one\'s own is the one pressed', $('appearance-skins').querySelector('[data-skin="custom"]').classList.contains('btn-primary'));
     const accent = $('appearance-colours').querySelector('input[data-mode="light"][data-key="accent"]');
     accent.focus();
