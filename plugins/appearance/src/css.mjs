@@ -23,6 +23,9 @@ export const TINT_LAYER_ID = 'zcode-appearance-tint';
 // The class the page script puts on <html> once the app's colours, the theme and the picture
 // are known; every rule that makes the window see-through waits for it (see backgroundRules).
 export const SHOWN = 'za-shown';
+// On <html> for the moment of the reveal only: the base's colour fades to see-through under it,
+// so the picture layer, covered until then, is drawn before the window shows what is behind it.
+export const REVEALING = 'za-revealing';
 // `conversation` is the hook of the session view in 4.0.10870 (checked on the running app).
 // `chat-view` is the name the app's own Markdown layout code looks up; it is kept as a second
 // name in case a build has that one instead.
@@ -85,6 +88,12 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
   // to read here and there.
   const tint = `body { --za-tint: color-mix(in oklab, var(--za-orig-background, var(--za-fallback)) ${percent}%, transparent); }`;
   const fallback = [':root { --za-fallback: #f4f4f5; }', '.theme-zai-dark { --za-fallback: #0a0a0a; }'];
+  // The base does not go see-through in one step: while `za-revealing` is on, its colour fades
+  // over 300 ms. Until the reveal the picture layer was covered by an opaque base, and Chromium
+  // rasterises nothing of a covered layer; made transparent at once, the window showed what is
+  // behind it for the few frames the picture took to come up (a bright blink at every start).
+  // Fading, the layer is uncovered from the first frame while the base is still nearly opaque.
+  const revealing = `:root.${REVEALING} :is(.bg-background-win-alt, .bg-background, .bg-sidebar) { transition: background-color 0.3s ease; }`;
   if (config.background.scope === 'chat') {
     // `CHAT_ROOT` is a list of selectors, so every rule is written once per selector: anything
     // appended to the list as a whole would land on its last selector only.
@@ -109,6 +118,7 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
       // context the element now has, below its content. Fixed, so the picture stays put while the
       // conversation scrolls over it.
       ...painted.map((selector) => `${selector}::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--za-tint); pointer-events: none; }`),
+      revealing,
     ];
   }
   const image = `#${IMAGE_LAYER_ID}`;
@@ -128,11 +138,12 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
       : `video${image} { width: 100%; height: 100%; object-fit: cover; }`,
     blur,
     `${tintLayer} { background: var(--za-tint); }`,
-    // Last on purpose: with a picture behind the window its base and sidebar must stay see-through
-    // even when a skin below gives them a colour. The base the shell root paints on Windows is
-    // `bg-background-win-alt`; leaving that opaque covered the whole picture as soon as the app
-    // mounted, so it showed on the start-up screen only.
+    // After the layers on purpose: with a picture behind the window its base and sidebar must
+    // stay see-through even when a skin below gives them a colour. The base the shell root paints
+    // on Windows is `bg-background-win-alt`; leaving that opaque covered the whole picture as
+    // soon as the app mounted, so it showed on the start-up screen only.
     `${THEME_SELECTORS.split(', ').map((selector) => `${selector}.${SHOWN}`).join(', ')} { --color-background: transparent !important; --color-background-win-alt: transparent !important; --color-sidebar: transparent !important; }`,
+    revealing,
   ];
 }
 
@@ -229,6 +240,7 @@ function install(payload) {
   const TINT = 'zcode-appearance-tint';
   // The same name as SHOWN above; this function is serialised and has nothing else in scope.
   const SHOWN = 'za-shown';
+  const REVEALING = 'za-revealing';
   const ORIGIN = ['background', 'surface', 'panel', 'sidebar', 'card', 'popover'];
   const RETRIES = [200, 500, 1000, 2000, 4000];
   const state = (window.__zcodeAppearance = window.__zcodeAppearance || {});
@@ -327,9 +339,21 @@ function install(payload) {
     // simply paints it once decoded; the window behind keeps the app's colours there.
     if (payload.layers && !state.mediaReady) return;
     if (!themed() && Date.now() < (state.revealAfter ?? Infinity)) return;
-    document.documentElement.classList.add(SHOWN);
+    // Shown, but not in one step: the base's colour fades (see backgroundRules), so the picture
+    // layer, covered until now, is drawn before the window shows what is behind it. The fading
+    // class goes on first, the shown one a frame later (a transition has to be in force before
+    // the colour changes), and it comes off when the fade is over.
     state.shown = true;
-    state.shownAt = Math.round(performance.now());
+    document.documentElement.classList.add(REVEALING);
+    const show = () => {
+      if (state.shownAt !== undefined) return;
+      document.documentElement.classList.add(SHOWN);
+      state.shownAt = Math.round(performance.now());
+      setTimeout(() => document.documentElement.classList.remove(REVEALING), 600);
+    };
+    // Two frames when the page is drawing; a hidden page does not draw, and shows when it does.
+    requestAnimationFrame(() => requestAnimationFrame(show));
+    setTimeout(show, 80);
   }
 
   function watchMedia() {

@@ -10,6 +10,7 @@ import {
   TINT_LAYER_ID,
   CHAT_ROOT,
   SHOWN,
+  REVEALING,
   buildApplyScript,
   buildCheckScript,
   buildCss,
@@ -108,6 +109,13 @@ describe('stylesheet', () => {
     assert.ok(script.includes("theme-zai-(light|dark)"), 'once the app has named its theme');
     assert.ok(script.includes("picture.decode()"), 'and the picture is decoded');
     assert.ok(script.includes('setTimeout(done, 3000)') && script.includes('Date.now() + 4000') && script.includes('Date.now() + 5000'), 'but not for good: the theme after four seconds, the colours after five');
+    // The window is not made see-through in one step: the base's colour fades under
+    // `za-revealing`, so the picture layer, covered until then, is drawn before the window can
+    // show what is behind it (a bright blink of a few frames at every start).
+    assert.ok(script.includes('requestAnimationFrame(() => requestAnimationFrame(show))'), 'the fading class goes on a frame or two before the shown one');
+    for (const scope of ['page', 'chat']) {
+      assert.ok(buildCss(withScope(scope), { imageDataUrl: PIXEL }).includes(`:root.${REVEALING} :is(.bg-background-win-alt, .bg-background, .bg-sidebar) { transition: background-color 0.3s ease; }`), `${scope}: the base fades`);
+    }
   });
 
   it('has nothing to offer a video in the conversation area', () => {

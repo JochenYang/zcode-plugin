@@ -1,6 +1,6 @@
 {
   "name": "appearance",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Background pictures or videos and colour skins for the ZCode desktop window, whole page or conversation area only, with tint, blur and rotation. ZCode gives plugins no way to restyle the app itself, so an external launcher (plugins/appearance/bin/launch.mjs) starts ZCode with its debugging channel and injects the styles; start ZCode from the launcher after quitting it completely. Settings live in ~/.zcode/appearance/config.json and change at once from the side-pane view, the /appearance command, or the file itself.",
   "author": {
     "name": "JochenYang"

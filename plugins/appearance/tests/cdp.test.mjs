@@ -73,8 +73,12 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), 'transparent');
     assert.equal(await session.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), '#fafafa');
     // Every base the window paints with has to go: the shell root's own (`bg-background-win-alt`)
-    // once stayed opaque and hid the picture behind everything but the start-up screen.
-    assert.equal(await session.evaluate(`getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor`), 'rgba(0, 0, 0, 0)');
+    // once stayed opaque and hid the picture behind everything but the start-up screen. It goes
+    // by fading, not at once: covered until now, the picture layer is drawn only from here on,
+    // and a window made see-through in one step showed what is behind it for those frames.
+    const baseAlpha = () => session.evaluate(`Number((/rgba\\(\\d+, \\d+, \\d+, ([\\d.]+)\\)/.exec(getComputedStyle(document.querySelector('.bg-background-win-alt')).backgroundColor) || [0, 1])[1])`);
+    assert.ok((await baseAlpha()) > 0, 'the base is still fading just after the word, not gone at once');
+    await until(baseAlpha, (alpha) => alpha === 0, { timeoutMs: 2000 });
     assert.equal(await session.evaluate(`getComputedStyle(document.querySelector('.bg-sidebar')).backgroundColor`), 'rgba(0, 0, 0, 0)');
     // The layers are laid out as intended: fixed, the whole viewport, the picture on the first.
     // (A selector missing its # once left these as two empty static divs, and nothing showed.)
@@ -204,7 +208,8 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     const { session } = sessions.get(target.id);
     try {
       await until(() => session.evaluate(`document.readyState === 'complete'`), Boolean);
-      await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
+      // This page names no theme: the word comes after the four seconds the script gives it.
+      await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 7000 });
       assert.match(await session.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(CARD)})).backgroundImage`), /^url\("data:image\/png;base64,/, 'the card carries the picture');
       // A newer plan, then a class change on the body (the window losing focus does that).
       assert.equal(await syncTarget(target, sessions, buildPlan(pageWith({ scope: 'chat', mask: 0.6 }), { imageDataUrl: PIXEL })), 'applied');
@@ -231,9 +236,11 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     // comes after the four seconds the script gives the theme.
     await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 7000 });
     assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
+    // The card's base fades to see-through like the window's does; read once it has.
+    await until(() => session.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(CARD)})).backgroundColor`), (colour) => colour === 'rgba(0, 0, 0, 0)', { timeoutMs: 2000 });
     // The card the app draws in the area carries the picture and no longer paints over it; the
     // area itself paints nothing. Where there is no such card, the area itself carries it.
-    const CARD = '[data-testid="conversation"] > * > .bg-background';
+    // (CARD is the one at the top of the file.)
     const chat = JSON.parse(await session.evaluate(`(() => {
       const card = document.querySelector(${JSON.stringify(CARD)});
       const probe = document.createElement('div');
