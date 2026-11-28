@@ -7,7 +7,7 @@ import http from 'node:http';
 import { after, before, describe, it } from 'node:test';
 import { CdpSession, findFreePort, listTargets } from '../src/cdp.mjs';
 import { closeAll, syncTarget } from '../src/apply.mjs';
-import { CHAT_ROOT, IMAGE_LAYER_ID, STYLE_ID, TINT_LAYER_ID, buildPlan } from '../src/css.mjs';
+import { CHAT_ROOT, IMAGE_LAYER_ID, SHOWN, STYLE_ID, TINT_LAYER_ID, buildPlan } from '../src/css.mjs';
 import { defaultConfig } from '../src/config.mjs';
 import { supervise } from '../src/launcher.mjs';
 import { PIXEL, findBrowser, startTestBrowser, until } from './helpers/browser.mjs';
@@ -17,6 +17,8 @@ const quiet = { info() {}, warn() {} };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const shellTarget = async (port) => (await listTargets(port)).find((target) => target.url.endsWith('/shell.html'));
 const pageWith = (extra) => ({ ...defaultConfig(), background: { ...defaultConfig().background, ...extra } });
+// The card the app draws in the conversation area: where the picture goes in that scope.
+const CARD = '[data-testid="conversation"] > * > .bg-background';
 
 describe('debugging channel against a real browser', { skip: BROWSER ? false : 'no Chrome or Edge found' }, () => {
   let world;
@@ -60,6 +62,13 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     await syncTarget(target, sessions, plan);
     const { session } = sessions.get(target.id);
     await until(() => session.evaluate(`document.readyState === 'complete' && !!document.getElementById(${JSON.stringify(STYLE_ID)})`), Boolean);
+    // Right after the stylesheet lands nothing is see-through yet: the page script waits for
+    // the app's colours, the theme and the picture (see the next test). Here the picture is a
+    // pixel, so only the theme is missing, and after a second the script gives up waiting for
+    // it: this page never names one.
+    assert.equal(await session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), false, 'not shown at once');
+    assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), '#fafafa', 'the app\'s own colour stays');
+    await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
 
     assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), 'transparent');
     assert.equal(await session.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), '#fafafa');
@@ -89,7 +98,7 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     // main thread is the app's while that screen is on); the shell's own animation, the app's
     // pop, is not touched. The screen is hidden in this page, so the names are what is read.
     const startup = JSON.parse(await session.evaluate(`JSON.stringify([getComputedStyle(document.querySelector('.startup-logo-shell')).animationName, getComputedStyle(document.querySelector('.startup-logo')).animationName, getComputedStyle(document.querySelector('.startup-logo')).transformOrigin, getComputedStyle(document.getElementById('loading')).transitionDuration, getComputedStyle(document.getElementById('root')).transitionDuration])`));
-    assert.deepEqual(startup, ['none', 'za-startup-breathe', '50% 50%', '0.36s', '0.3s']);
+    assert.deepEqual(startup, ['fixture-pop', 'za-startup-breathe', '50% 50%', '0.36s', '0.3s'], 'the shell keeps the animation the page gave it');
     // When the page says the first screen is ready, the moment is kept for whoever asks.
     await session.evaluate(`document.body.classList.add('zcode-startup-ready')`);
     await until(() => session.evaluate(`window.__zcodeAppearance.readyAt`), (value) => Number.isInteger(value) && value >= 0);
@@ -102,11 +111,125 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), null);
   });
 
+  it('keeps the app\'s own colours until the theme and the picture are known, then goes see-through with the right tint', async () => {
+    // A stylesheet that lands before the app has named its theme made the window see-through at
+    // once, under the light theme's tint (the fallback until the theme is known): a white flash
+    // at every start. A fresh page, as at a start.
+    const plan = buildPlan(pageWith({ media: ['pixel.png'], mask: 0.5 }), { imageDataUrl: PIXEL });
+    const opened = await world.openPage(world.pages.shell);
+    const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
+    assert.equal(await syncTarget(target, sessions, plan), 'applied');
+    const { session } = sessions.get(target.id);
+    try {
+      await until(() => session.evaluate(`document.readyState === 'complete' && !!document.getElementById(${JSON.stringify(STYLE_ID)})`), Boolean);
+      // The picture is a pixel and decodes at once, and the colours are read at once: only the
+      // theme is missing here, and a moment on nothing is see-through.
+      await sleep(300);
+      assert.equal(await session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), false, 'waits for the theme');
+      assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), '#fafafa', 'the app\'s own colour stays');
+      // The app names its theme (the class it puts on <html>): shown now, and the tint is mixed
+      // from the dark theme's base colour, read while our stylesheet was out of the document —
+      // not from the `transparent` our own rule writes.
+      await session.evaluate(`document.documentElement.classList.add('theme-zai-dark')`);
+      await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
+      assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), 'transparent');
+      assert.equal(await session.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), '#0a0a0a');
+      const tint = await session.evaluate(`(() => { const probe = document.createElement('div'); probe.style.background = 'color-mix(in oklab, #0a0a0a 50%, transparent)'; document.body.appendChild(probe); const wanted = getComputedStyle(probe).backgroundColor; const actual = getComputedStyle(document.getElementById('${TINT_LAYER_ID}')).backgroundColor; probe.remove(); return [actual, wanted]; })()`);
+      assert.equal(tint[0], tint[1]);
+    } finally {
+      // A second page hides the first; the video tests after this one need theirs visible.
+      await session.send('Page.close').catch(() => {});
+      sessions.delete(target.id);
+    }
+  });
+
+  it('reads the app\'s colours with the stylesheet out of the document, on the retries too', async () => {
+    // At a cold start the stylesheet lands before the app's own stylesheet is parsed: nothing
+    // to read from yet, and the page script tries again later. Reading with our stylesheet in,
+    // it read back the `transparent` our own rule writes, and the tint stayed invisible until
+    // the next theme change.
+    const plan = buildPlan(pageWith({ media: ['pixel.png'] }), { imageDataUrl: PIXEL });
+    const opened = await world.openPage(world.pages.shell);
+    const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
+    await syncTarget(target, sessions, plan).catch(() => {});
+    const live = sessions.get(target.id).session;
+    try {
+      await until(() => live.evaluate(`document.readyState === 'complete'`), Boolean);
+      // The app's colours are not there yet…
+      await live.evaluate(`window.__fixtureStyle = document.querySelector('style'); window.__fixtureStyle.remove(); true`);
+      assert.equal(await syncTarget(target, sessions, buildPlan(pageWith({ media: ['pixel.png'], mask: 0.4 }), { imageDataUrl: PIXEL })), 'applied');
+      // …and come a moment later, as the app's stylesheet does.
+      await sleep(100);
+      await live.evaluate(`document.head.appendChild(window.__fixtureStyle); true`);
+      await until(() => live.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), (value) => value === '#fafafa', { timeoutMs: 4000 });
+      assert.notEqual(await live.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), 'transparent');
+    } finally {
+      await live.send('Page.close').catch(() => {});
+      sessions.delete(target.id);
+    }
+  });
+
+  it('gives up waiting for colours that never come, and shows the picture under the fallback tint', async () => {
+    // A build that names its colours differently must not keep its window without the picture
+    // for good: after five seconds the tint uses the fallback for the theme.
+    const plan = buildPlan(pageWith({ media: ['pixel.png'] }), { imageDataUrl: PIXEL });
+    const opened = await world.openPage(world.pages.shell);
+    const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
+    await syncTarget(target, sessions, plan).catch(() => {});
+    const live = sessions.get(target.id).session;
+    try {
+      await until(() => live.evaluate(`document.readyState === 'complete'`), Boolean);
+      await live.evaluate(`document.querySelector('style').remove(); ['background', 'surface', 'panel', 'sidebar', 'card', 'popover'].forEach((name) => document.body.style.removeProperty('--za-orig-' + name)); true`);
+      assert.equal(await syncTarget(target, sessions, buildPlan(pageWith({ media: ['pixel.png'], mask: 0.3 }), { imageDataUrl: PIXEL })), 'applied');
+      await sleep(3000);
+      assert.equal(await live.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), false, 'not yet: the theme and picture waits are over, the colours one is not');
+      await until(() => live.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
+      assert.equal(await live.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), '', 'no colours were ever read');
+      const tint = await live.evaluate(`(() => { const probe = document.createElement('div'); probe.style.background = 'color-mix(in oklab, #f4f4f5 30%, transparent)'; document.body.appendChild(probe); const wanted = getComputedStyle(probe).backgroundColor; const actual = getComputedStyle(document.getElementById('${TINT_LAYER_ID}')).backgroundColor; probe.remove(); return [actual, wanted]; })()`);
+      assert.equal(tint[0], tint[1], 'the light fallback: this page names no theme');
+    } finally {
+      await live.send('Page.close').catch(() => {});
+      sessions.delete(target.id);
+    }
+  });
+
+  it('shows the picture in the conversation area on a page of its own, and keeps the newest plan when a class changes', async () => {
+    // Two things a page that had a page-scope plan first would hide: the conversation scope's
+    // rules wait for the page script's word too, and that scope has no layer to wait for; and
+    // the observer that re-reads the colours on a class change must re-insert the newest plan,
+    // not the first one the page was given.
+    const opened = await world.openPage(world.pages.shell);
+    const target = await until(() => listTargets(world.port), (list) => list.some((entry) => entry.id === opened.id)).then((list) => list.find((entry) => entry.id === opened.id));
+    assert.equal(await syncTarget(target, sessions, buildPlan(pageWith({ scope: 'chat', mask: 0.5 }), { imageDataUrl: PIXEL })), 'applied');
+    const { session } = sessions.get(target.id);
+    try {
+      await until(() => session.evaluate(`document.readyState === 'complete'`), Boolean);
+      await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
+      assert.match(await session.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(CARD)})).backgroundImage`), /^url\("data:image\/png;base64,/, 'the card carries the picture');
+      // A newer plan, then a class change on the body (the window losing focus does that).
+      assert.equal(await syncTarget(target, sessions, buildPlan(pageWith({ scope: 'chat', mask: 0.6 }), { imageDataUrl: PIXEL })), 'applied');
+      const before = await session.evaluate(`window.__zcodeAppearance.repaints`);
+      await session.evaluate(`document.body.classList.add('inactive')`);
+      await until(() => session.evaluate(`window.__zcodeAppearance.repaints`), (count) => count > before);
+      await sleep(120);
+      const tint = await session.evaluate(`(() => { const probe = document.createElement('div'); probe.style.background = 'color-mix(in oklab, #fafafa 60%, transparent)'; document.body.appendChild(probe); const newest = getComputedStyle(probe).backgroundColor; probe.style.background = 'color-mix(in oklab, #fafafa 50%, transparent)'; const older = getComputedStyle(probe).backgroundColor; const actual = getComputedStyle(document.querySelector(${JSON.stringify(CARD)}), '::before').backgroundColor; probe.remove(); return [actual, newest, older]; })()`);
+      assert.equal(tint[0], tint[1], 'the newest plan is in force after the class change');
+      assert.notEqual(tint[0], tint[2], 'not the one before it');
+      assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(STYLE_ID)}).textContent.includes('60%, transparent')`), true);
+    } finally {
+      await session.send('Page.close').catch(() => {});
+      sessions.delete(target.id);
+    }
+  });
+
   it('switches to the conversation area when the plan changes', async () => {
     await settled();
     const plan = buildPlan(pageWith({ scope: 'chat', mask: 0.5 }), { imageDataUrl: PIXEL });
     assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), 'applied');
     const { session } = sessions.get((await shellTarget(world.port)).id);
+    // The area's rules too wait for the page script's word; this page names no theme, so it
+    // comes after the second the script gives the theme.
+    await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
     assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
     // The card the app draws in the area carries the picture and no longer paints over it; the
     // area itself paints nothing. Where there is no such card, the area itself carries it.

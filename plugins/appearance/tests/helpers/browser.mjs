@@ -56,6 +56,9 @@ export async function startTestBrowser(browserPath) {
     .theme-zai-dark { --color-background: #0a0a0a; --color-brand: #ffffff; }
     body { margin: 0; } .bg-background { background-color: var(--color-background); }
     .bg-background-win-alt { background-color: var(--color-background-win-alt); min-height: 100vh; } .bg-sidebar { background-color: var(--color-sidebar); }
+    /* The app's own pop of the start-up shell, under a name of its own: the test reads that our
+       stylesheet leaves the shell's animation alone. */
+    .startup-logo-shell { animation: fixture-pop 0.72s forwards; } @keyframes fixture-pop { from { opacity: 0; } to { opacity: 1; } }
   </style></head><body>${body}</body></html>`;
   // The conversation area the way the app lays it out: a wrapper marked `conversation`, a scroll
   // box inside it, and in that the card the app paints with the base colour. (`chat-view` is the

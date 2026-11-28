@@ -198,7 +198,8 @@ export async function registeredZcode({ platform = process.platform, env = proce
 export async function isZcodeRunning({ env = process.env, platform = process.platform, run = execFileText } = {}) {
   if (platform !== 'win32') return (await run('pgrep', ['-x', 'ZCode'], { env })).trim() !== '';
   const out = await run(tasklistExe(env), ['/FI', 'IMAGENAME eq ZCode.exe', '/FO', 'CSV', '/NH'], { env });
-  return /^"ZCode\.exe"/m.test(out);
+  // The image name as the process was started: a copy named `zcode.exe` is listed in lower case.
+  return /^"zcode\.exe"/im.test(out);
 }
 
 // Where ZCode is and how that was found, asked in the order most likely to be right and quickest
@@ -422,13 +423,18 @@ function mtimeOf(target) {
 // going away is reported at once and then occasionally, and retried: the app opens it again
 // when it restarts. An instance this launcher started ends the loop through `shouldStop`; one
 // it attached to may simply be gone, so the loop also gives up after a minute of silence.
-export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 2000, once = false, giveUpAfterMs = 60000, wake = null, sessions = new Map(), listTargetsImpl = listTargets, firstPollMs = 100, onBrought = null }) {
+export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 2000, once = false, giveUpAfterMs = 60000, wake = null, sessions = new Map(), listTargetsImpl = listTargets, firstPollMs = 100, fastForMs = 10000, onBrought = null }) {
   let failures = 0;
   let failingSince = null;
+  const startedAt = Date.now();
   // How many times a window has been brought up to date. Until the first one, the loop comes
-  // back quickly: right after a start the window shows up a moment after the channel does, and
-  // waiting a whole interval for it was most of the time the background took to appear.
+  // back quickly, for the first seconds of the run: right after a start the window shows up a
+  // moment after the channel does, and waiting a whole interval for it was most of the time the
+  // background took to appear. Only for the first seconds: an app with no page to bring (a
+  // --attach to a channel that has none) would otherwise be asked ten times a second for good.
   let brought = 0;
+  // A window that will not take the stylesheet says so once in a while, not on every poll.
+  const lastWarn = new Map();
   for (;;) {
     try {
       const plan = await getPlan();
@@ -445,7 +451,11 @@ export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 20
           if (brought === 1) onBrought?.();
         } catch (err) {
           clean = false;
-          logger.warn(`窗口「${target.title || target.url}」：${err.message}`);
+          const now = Date.now();
+          if (now - (lastWarn.get(target.id) ?? -Infinity) >= 5000) {
+            lastWarn.set(target.id, now);
+            logger.warn(`窗口「${target.title || target.url}」：${err.message}`);
+          }
           sessions.get(target.id)?.session.close();
           sessions.delete(target.id);
         }
@@ -468,7 +478,8 @@ export async function supervise({ port, getPlan, shouldStop, logger, pollMs = 20
       }
     }
     if (shouldStop()) return { brought };
-    await pause(brought ? pollMs : firstPollMs, shouldStop, wake);
+    const quick = brought === 0 && Date.now() - startedAt < fastForMs;
+    await pause(quick ? firstPollMs : pollMs, shouldStop, wake);
   }
 }
 
@@ -479,7 +490,7 @@ function describe(config, file) {
     `背景：${background.enabled ? '开' : '关'}，范围 ${background.scope === 'page' ? '整页' : '会话区'}，遮罩 ${background.mask}，模糊 ${background.blur}px，每 ${background.rotateMinutes} 分钟换一张`,
   ];
   lines.push(background.media.length ? `媒体（${background.media.length} 个）：\n  ${background.media.join('\n  ')}` : '媒体：还没有设置');
-  lines.push(`皮肤：${skin.preset}${skin.custom ? '（自定义）' : ''}`);
+  lines.push(`皮肤：${skin.preset === 'custom' ? '自定义' : skin.preset}${skin.preset !== 'custom' && skin.custom ? '（保留着一套自定义颜色，未使用）' : ''}`);
   return lines.join('\n');
 }
 

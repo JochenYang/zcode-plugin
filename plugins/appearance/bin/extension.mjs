@@ -76,11 +76,13 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
       pick: picked,
     });
   };
-  // The folder of the first listed file that is there, for the file dialog to open in.
-  const firstListed = () => {
+  // The folder of the first listed file that is there, for the file dialog to open in. Asked
+  // with a timeout, as the view asks: a listed path on a share that is away must not hold the
+  // tool (a plain existsSync would wait for the share).
+  const firstListed = async () => {
     const { config } = loadConfig({ file });
-    const first = config.background.media.find((item) => fs.existsSync(item));
-    return first ? path.dirname(first) : null;
+    const first = (await mediaInfo(config)).find((item) => item.exists);
+    return first ? path.dirname(first.path) : null;
   };
   const answer = async () => {
     const view = await data();
@@ -102,7 +104,10 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
     },
   });
 
-  // The shape of the patch `set` takes: the same fields as the MCP tool, without the media lists.
+  // The shape of the patch `set` takes: the same fields as the MCP tool. The media list is part
+  // of it: the view sends the whole, reordered list as `setMedia` (up, down, dragged, "show this
+  // one"). With `additionalProperties: false` the field has to be named here, or a host that
+  // checks the shape would turn every reorder down.
   const number = (minimum, maximum) => ({ type: 'number', minimum, maximum });
   const colourSet = {
     type: 'object',
@@ -126,6 +131,7 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
               blur: { type: 'integer', minimum: 0 },
               rotateMinutes: { type: 'integer', minimum: 0 },
               skin: { type: 'string' },
+              setMedia: { type: 'array', items: { type: 'string' } },
               customSkin: { type: ['object', 'null'], properties: { light: colourSet, dark: colourSet }, additionalProperties: false },
             },
             additionalProperties: false,
@@ -171,11 +177,11 @@ export async function activate(ctx, { file = paths().config, statusFile = paths(
           // The answer of the dialog before, if the view has not taken it yet, stays until it does.
           // Not awaited: a dialog can stay open for as long as the user likes.
           Promise.resolve()
-            .then(() => pick({
+            .then(async () => pick({
               title: text.pick.replace(/…$/, ''),
               // Opens in the folder of a file already listed, when there is one, so the next
               // one is usually in sight.
-              initial: firstListed(),
+              initial: await firstListed(),
             }))
             .then(async (files) => {
               if (disposed) return;

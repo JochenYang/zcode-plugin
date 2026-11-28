@@ -120,6 +120,43 @@ describe('launcher loop against a real browser', { skip: BROWSER ? false : 'no C
     await until(() => readIn(world.port, 'document.visibilityState'), (state) => state === 'visible');
   });
 
+  it('asks quickly for the first seconds only when no window can be brought, and says so once in a while', async () => {
+    // A channel whose page will not take the stylesheet (a --attach to something that is not
+    // the app) would otherwise be asked ten times a second for good, with a warning each time.
+    home.write({ scope: 'page', mask: 0.72 });
+    const source = createPlanSource({ file: home.file, logger: quiet });
+    const warns = [];
+    let asks = 0;
+    let stop = false;
+    const loop = supervise({
+      port: world.port,
+      getPlan: source.getPlan,
+      shouldStop: () => stop,
+      logger: { info() {}, warn: (message) => warns.push(message) },
+      pollMs: 400,
+      firstPollMs: 20,
+      fastForMs: 300,
+      sessions,
+      listTargetsImpl: async () => {
+        asks += 1;
+        return [{ id: 'no-such-page', url: 'file:///nowhere', webSocketDebuggerUrl: 'ws://127.0.0.1:1/devtools/page/no-such-page' }];
+      },
+    });
+    await sleep(250);
+    const early = asks;
+    await sleep(500);
+    // The quick phase is over at 300 ms; a slow poll or two have gone by since.
+    const settled = asks;
+    await sleep(800);
+    const later = asks - settled;
+    stop = true;
+    await loop;
+    source.stop();
+    assert.ok(early >= 3, `asked quickly at first (${early} times in 250 ms)`);
+    assert.ok(later <= 3, `then at the usual interval (${later} times in 800 ms)`);
+    assert.equal(warns.length, 1, 'the window that would not take it is named once, not on every ask');
+  });
+
   it('follows a change to the file the moment it is written, not at the next tick', async () => {
     const source = createPlanSource({ file: home.file, logger: quiet });
     let stop = false;

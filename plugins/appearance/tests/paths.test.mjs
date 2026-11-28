@@ -54,4 +54,30 @@ describe('where the files are', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('leaves what is odd about the file system alone instead of failing the start', () => {
+    // The launcher, the server and the view all start through here; a folder of that name is
+    // somebody else's, and a folder that is a file cannot be moved into.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'appearance-paths-'));
+    process.env.ZCODE_APPEARANCE_HOME = dir;
+    try {
+      fs.mkdirSync(path.join(dir, 'appearance.log'));
+      fs.writeFileSync(path.join(dir, 'appearance.json'), '{"old": true}');
+      assert.deepEqual(bringAlong(), ['appearance.json'], 'the file moved, the folder of that name stayed');
+      assert.equal(fs.statSync(path.join(dir, 'appearance.log')).isDirectory(), true);
+      assert.equal(fs.readFileSync(path.join(dir, 'appearance', 'config.json'), 'utf8'), '{"old": true}');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'appearance-paths-'));
+    process.env.ZCODE_APPEARANCE_HOME = other;
+    try {
+      fs.writeFileSync(path.join(other, 'appearance'), 'a file where the folder should be');
+      fs.writeFileSync(path.join(other, 'appearance.json'), '{"old": true}');
+      assert.deepEqual(bringAlong(), [], 'nothing moved, nothing thrown');
+      assert.equal(fs.readFileSync(path.join(other, 'appearance'), 'utf8'), 'a file where the folder should be');
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
 });

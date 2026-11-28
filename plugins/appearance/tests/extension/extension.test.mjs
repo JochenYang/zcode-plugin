@@ -193,6 +193,25 @@ describe('view tools', () => {
     assert.equal(await call(host, 'set', { mask: 0.5 }).then((result) => result.data.skin.preset), 'kanagawa', 'the skin is untouched by a later change');
   }));
 
+  it('set: takes the whole, reordered list as setMedia, and the shape it declares names the field', () => inTempHome(async (dir) => {
+    // What the view sends for up, down, dragged and "show this one". The tool\'s shape says
+    // `additionalProperties: false`, so a host that checks the shape would turn the field down
+    // unless it is named there.
+    const file = seed(dir);
+    const host = hostFor();
+    await activate(host, { file, statusFile: path.join(dir, 'appearance.status.json'), pick: async () => [], open: () => {} });
+    const before = (await call(host, 'get')).data.media.map((item) => item.path);
+    assert.equal(before.length, 3);
+    const reversed = [...before].reverse();
+    const answer = await call(host, 'set', { setMedia: reversed });
+    assert.equal(answer.ok, true);
+    assert.deepEqual(answer.data.media.map((item) => item.path), reversed);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).background.media, reversed, 'saved in the new order');
+    const shape = tool(host, 'set').inputSchema;
+    assert.deepEqual(shape.properties.setMedia, { type: 'array', items: { type: 'string' } });
+    assert.equal(shape.additionalProperties, false);
+  }));
+
   it('set refuses a value out of range without touching the file', () => inTempHome(async (dir) => {
     const file = seed(dir);
     const before = fs.readFileSync(file, 'utf8');
@@ -322,6 +341,10 @@ describe('view tools', () => {
     const again = await call(host, 'pick', {});
     assert.equal(again.ok, false);
     assert.equal(again.message, '选择文件的窗口已经开着了。');
+    // The dialog opens a moment after the tool answers: the folder it starts in is asked of
+    // the listed files first (with a timeout, so a share that is away holds nothing).
+    for (let i = 0; i < 200 && !close; i += 1) await sleep(10);
+    assert.ok(close, 'the dialog opened');
     handle.dispose();
     close([late]);
     await sleep(20);

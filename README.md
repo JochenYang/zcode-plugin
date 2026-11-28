@@ -25,7 +25,7 @@
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 | `plugins/codegraph` | 0.2.1 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`，`lookup` 还能列 import 环与受改动影响的测试文件；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；桌面端另有输入框状态位与索引管理面板；零遥测、零外联、不执行项目代码 |
-| `plugins/appearance` | 0.2.0 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance/config.json`，`/appearance` 在对话里改 |
+| `plugins/appearance` | 0.2.1 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance/config.json`，`/appearance` 在对话里改 |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 
@@ -192,7 +192,7 @@ plugins/<plugin-name>/
 
 自定义背景与配色皮肤。ZCode 的插件接口碰不到应用外壳（插件只能在沙箱页面和几类入口里出现），所以它由三部分组成：一个外置启动器负责让背景出现，一个很小的 MCP server 负责在对话里改设置，一个扩展负责侧边栏里的面板。
 
-- **启动器**（`plugins/appearance/bin/launch.mjs`，零依赖，需要 Node 22+）在完全退出 ZCode 之后运行：带调试通道启动 ZCode，把样式注入每个窗口，然后留在后台——改配置即时生效（监听配置文件所在的目录，变了才读）、页面重载后自动补注入、按间隔轮换，ZCode 退出时一起退出。日常有两种启动方式：双击 `zcode-appearance.cmd`，或运行一次 `node plugins/appearance/bin/setup-launcher.mjs` 做一个带 ZCode 图标、名称自己定的启动器程序，固定到任务栏（macOS 是拖到程序坞的 `.app`，Linux 是应用列表里的条目）；ZCode 的位置自动找（配置 → 环境变量 → 正在运行的进程 → 系统的安装记录 → 常见目录）
+- **启动器**（`plugins/appearance/bin/launch.mjs`，零依赖，需要 Node 22+）在完全退出 ZCode 之后运行：带调试通道启动 ZCode，把样式注入每个窗口，然后留在后台——改配置即时生效（监听配置文件所在的目录，变了才读）、页面重载后自动补注入、按间隔轮换，ZCode 退出时一起退出。日常有两种启动方式：双击 `zcode-appearance.cmd`，或运行一次 `node plugins/appearance/bin/setup-launcher.mjs` 做一个带 ZCode 图标、名称自己定的启动器程序，固定到任务栏（macOS 是拖到程序坞的 `.app`，Linux 是应用列表里的条目）；ZCode 的位置自动找（配置 → 环境变量 → 正在运行的进程 → 常见目录 → 系统的安装记录）
 - **两种范围**：`page` 整页（背景铺在最底层，底色与侧栏透明，遮罩压在上面保证可读）或 `chat` 只换会话区（画在应用自己标记为 `data-testid="conversation"` 的会话区上，只有图片可以）；图片和视频都能用，可调遮罩、模糊（仅整页）、定时轮换
 - **配色皮肤**：`default` 保持应用原色，内置 `catppuccin` / `kanagawa` / `ayu` / `one-dark` / `nightfox` / `discord` / `sakura` / `amber` / `plum` / `graphite` 十套（取自这些编辑器主题和应用配色，文字与强调色的对比度都量过），或用 `custom` 给浅色、深色各五个颜色（底色、卡片、文字、强调色、边框），由它生成整套 `--color-*` 变量
 - 设置在 `~/.zcode/appearance/config.json`（`--edit` 打开），或在对话里用 `/appearance 只换会话区，遮罩 0.7`；工具是 `mcp__plugin_appearance_style__get_appearance` / `__set_appearance`，只读写这个文件，不碰 ZCode

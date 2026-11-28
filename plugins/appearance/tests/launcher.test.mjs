@@ -164,6 +164,8 @@ describe('finding ZCode', () => {
     assert.equal(await isZcodeRunning({ platform: 'win32', run: async () => 'INFO: No tasks are running which match the specified criteria.\r\n' }), false);
     // Another process with a name that begins the same way is not ZCode.
     assert.equal(await isZcodeRunning({ platform: 'win32', run: async () => '"ZCodeHelper.exe","777","Console","1","9,004 K"\r\n' }), false);
+    // A copy of the program started under a lower-case name is listed in lower case.
+    assert.equal(await isZcodeRunning({ platform: 'win32', run: async () => '"zcode.exe","18384","Console","1","412,356 K"\r\n' }), true, 'lower-case image name');
     assert.equal(await isZcodeRunning({ platform: 'linux', run: async (_file, args) => { assert.deepEqual(args, ['-x', 'ZCode']); return '4188\n'; } }), true);
     assert.equal(await isZcodeRunning({ platform: 'darwin', run: async () => '' }), false);
   });

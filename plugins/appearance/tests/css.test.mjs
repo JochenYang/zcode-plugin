@@ -9,6 +9,7 @@ import {
   IMAGE_LAYER_ID,
   TINT_LAYER_ID,
   CHAT_ROOT,
+  SHOWN,
   buildApplyScript,
   buildCheckScript,
   buildCss,
@@ -20,7 +21,7 @@ import {
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 const CLIP = 'file:///E:/Wallpapers/clip.webm';
 const PNG_BYTES = Buffer.from(PIXEL.split(',')[1], 'base64');
-const THEMES = ':root, .theme-zai-light, .theme-zai-dark';
+const THEMES = ':root.za-shown, .theme-zai-light.za-shown, .theme-zai-dark.za-shown';
 const withScope = (scope, extra = {}) => ({ ...defaultConfig(), background: { ...defaultConfig().background, scope, ...extra } });
 
 describe('stylesheet', () => {
@@ -71,8 +72,9 @@ describe('stylesheet', () => {
     assert.equal(CHAT_ROOT, '[data-testid="conversation"], [data-testid="chat-view"]');
     // On the card right inside the area when there is one, otherwise on the area itself. The
     // card paints with the base colour; with that left opaque it covered the picture completely.
-    const cardRule = '[data-testid="conversation"] > * > .bg-background';
-    const flatRule = '[data-testid="conversation"]:not(:has(> * > .bg-background))';
+    // All of it under the page script's word (za-shown): see the test below.
+    const cardRule = ':root.za-shown [data-testid="conversation"] > * > .bg-background';
+    const flatRule = ':root.za-shown [data-testid="conversation"]:not(:has(> * > .bg-background))';
     assert.ok(css.includes(`\n${cardRule} { position: relative;`), 'the card inside');
     assert.ok(css.includes(`\n${flatRule} { position: relative;`), 'or the area itself');
     // One rule per selector: `::before` and the rest appended to the list as a whole once landed
@@ -86,9 +88,26 @@ describe('stylesheet', () => {
     assert.equal(css.split(`${cardRule}::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--za-tint); pointer-events: none; }`).length - 1, 1);
     assert.equal(css.split("::before { content: ''; position: absolute; inset: 0; z-index: -1;").length - 1, 4, 'one for each of the four selectors');
     assert.ok(!css.includes('.bg-background, [data-testid="chat-view"] > * > .bg-background::before'), 'the pseudo-element is not stuck onto the last selector of a list');
-    assert.ok(css.includes('[data-testid="conversation"] { --color-background: transparent !important;') && css.includes('[data-testid="chat-view"] { --color-background: transparent !important;'), 'the base colour goes see-through inside the area');
+    assert.ok(css.includes(':root.za-shown [data-testid="conversation"] { --color-background: transparent !important;') && css.includes(':root.za-shown [data-testid="chat-view"] { --color-background: transparent !important;'), 'the base colour goes see-through inside the area');
     assert.ok(!css.includes(IMAGE_LAYER_ID));
     assert.ok(!/\.theme-zai-(light|dark)[^{]*\{[^}]*--color-background: transparent/.test(css), 'the rest of the window is left as it is');
+  });
+
+  it('makes nothing see-through before the page script says the colours, the theme and the picture are known', () => {
+    // The stylesheet lands early in the page (before the app has its theme class): made
+    // see-through at once, the window showed the light theme's tint over a transparent root
+    // for a moment — a white flash at every start.
+    for (const scope of ['page', 'chat']) {
+      const css = buildCss(withScope(scope), { imageDataUrl: PIXEL });
+      const seeThrough = css.split('\n').filter((line) => line.includes('transparent !important'));
+      assert.ok(seeThrough.length > 0, `${scope}: something goes see-through`);
+      assert.ok(seeThrough.every((line) => line.includes(`.${SHOWN}`)), `${scope}: and only under ${SHOWN}`);
+    }
+    const script = buildPlan(withScope('page'), { imageDataUrl: PIXEL }).script;
+    assert.ok(script.includes("classList.add(SHOWN)"), 'the page script gives the word');
+    assert.ok(script.includes("theme-zai-(light|dark)"), 'once the app has named its theme');
+    assert.ok(script.includes("picture.decode()"), 'and the picture is decoded');
+    assert.ok(script.includes('setTimeout(done, 3000)') && script.includes('Date.now() + 1000'), 'but not for good');
   });
 
   it('has nothing to offer a video in the conversation area', () => {

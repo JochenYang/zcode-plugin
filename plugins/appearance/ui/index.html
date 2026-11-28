@@ -1561,6 +1561,11 @@ html > body {
     event.preventDefault();
     const paths = view.media.map((item) => item.path);
     const from = paths.indexOf(dragged.dataset.path);
+    // The list may have been drawn again since the drag began, without the dragged file: nothing
+    // to move then (splice(-1) would have taken the last file instead).
+    if (from < 0) return endDrag();
+    const to = paths.indexOf(row.dataset.path);
+    if (to < 0) return endDrag();
     const [moved] = paths.splice(from, 1);
     paths.splice(paths.indexOf(row.dataset.path), 0, moved);
     endDrag();

@@ -20,6 +20,9 @@ import { resolveSkin } from './skins.mjs';
 export const STYLE_ID = 'zcode-appearance-style';
 export const IMAGE_LAYER_ID = 'zcode-appearance-background';
 export const TINT_LAYER_ID = 'zcode-appearance-tint';
+// The class the page script puts on <html> once the app's colours, the theme and the picture
+// are known; every rule that makes the window see-through waits for it (see backgroundRules).
+export const SHOWN = 'za-shown';
 // `conversation` is the hook of the session view in 4.0.10870 (checked on the running app).
 // `chat-view` is the name the app's own Markdown layout code looks up; it is kept as a second
 // name in case a build has that one instead.
@@ -68,6 +71,13 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
   // A video is an element, not a CSS background, so it has no place in the conversation area.
   if (config.background.scope === 'chat' && !imageDataUrl) return [];
   const percent = Math.round(config.background.mask * 100);
+  // Everything that makes the window see-through waits for `za-shown` on <html>, which the page
+  // script puts there once the app's colours, the theme and the picture are known (see install:
+  // reveal). Until then the window keeps the app's own colours. Without this, a stylesheet that
+  // lands early (350 ms into the page, since the start-up got faster: before the app has put its
+  // theme class on <html>) made the window see-through under the tint of the light theme, which
+  // is the fallback until the theme is known: a white flash at every start.
+  const shown = (selector) => `:root.${SHOWN} ${selector}`;
   // On <body>, not on the root: the app's colours are read from the body (see install), and a
   // var() is resolved where the custom property is declared, so the root cannot see them.
   // The same strength in both themes. A stronger one in the light theme was tried (the setting
@@ -78,7 +88,7 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
   if (config.background.scope === 'chat') {
     // `CHAT_ROOT` is a list of selectors, so every rule is written once per selector: anything
     // appended to the list as a whole would land on its last selector only.
-    const selectors = CHAT_ROOT.split(', ');
+    const selectors = CHAT_ROOT.split(', ').map(shown);
     // The picture goes on the card the app draws right inside the area when there is one (it is
     // rounded and clips, so the picture gets its corners), and otherwise on the area itself.
     const area = selectors.map((selector) => `${selector} { --color-background: transparent !important; background-color: transparent !important; }`);
@@ -122,7 +132,7 @@ function backgroundRules(config, { imageDataUrl, videoUrl }) {
     // even when a skin below gives them a colour. The base the shell root paints on Windows is
     // `bg-background-win-alt`; leaving that opaque covered the whole picture as soon as the app
     // mounted, so it showed on the start-up screen only.
-    `${THEME_SELECTORS} { --color-background: transparent !important; --color-background-win-alt: transparent !important; --color-sidebar: transparent !important; }`,
+    `${THEME_SELECTORS.split(', ').map((selector) => `${selector}.${SHOWN}`).join(', ')} { --color-background: transparent !important; --color-background-win-alt: transparent !important; --color-sidebar: transparent !important; }`,
   ];
 }
 
@@ -217,6 +227,8 @@ function install(payload) {
   const STYLE = 'zcode-appearance-style';
   const IMAGE = 'zcode-appearance-background';
   const TINT = 'zcode-appearance-tint';
+  // The same name as SHOWN above; this function is serialised and has nothing else in scope.
+  const SHOWN = 'za-shown';
   const ORIGIN = ['background', 'surface', 'panel', 'sidebar', 'card', 'popover'];
   const RETRIES = [200, 500, 1000, 2000, 4000];
   const state = (window.__zcodeAppearance = window.__zcodeAppearance || {});
@@ -294,6 +306,61 @@ function install(payload) {
     });
   }
 
+  // The window keeps the app's own colours until three things are known: the app's colours (the
+  // tint is mixed from them), the theme (the app puts `theme-zai-*` on <html> a moment after its
+  // scripts run; until then the tint would be the light one whatever the theme is), and, in page
+  // scope, the picture (an undecoded layer paints nothing). Then `za-shown` goes on <html>, and
+  // the rules that make the window see-through apply (see backgroundRules) — in the conversation
+  // scope too, whose rules wait for the same word. Each is waited for a while only: a build
+  // that names its theme or its colours differently, or a picture that will not decode, must not
+  // keep the app's colours for good. Shown once, it stays: a picture changed later swaps in
+  // place, as it always did.
+  function themed() {
+    return /(^|\s)theme-zai-(light|dark)(\s|$)/.test(document.documentElement.className);
+  }
+
+  function reveal() {
+    if (state.shown || !(payload.layers || payload.chatRoot)) return;
+    if (!captured && Date.now() < (state.captureUntil ?? Infinity)) return;
+    // The conversation scope has no layer: its picture is the card's background, and the card
+    // simply paints it once decoded; the window behind keeps the app's colours there.
+    if (payload.layers && !state.mediaReady) return;
+    if (!themed() && Date.now() < (state.revealAfter ?? Infinity)) return;
+    document.documentElement.classList.add(SHOWN);
+    state.shown = true;
+  }
+
+  function watchMedia() {
+    if (state.watchingMedia === payload.key) return;
+    state.watchingMedia = payload.key;
+    state.mediaReady = false;
+    // Only the plan that asked decides: a picture swapped out while it decoded must not open
+    // the door for the one that took its place.
+    const done = () => {
+      if (state.watchingMedia !== payload.key) return;
+      state.mediaReady = true;
+      reveal();
+    };
+    setTimeout(done, 3000);
+    const layer = document.getElementById(IMAGE);
+    if (!layer) return done();
+    if (layer.tagName === 'VIDEO') {
+      if (layer.readyState >= 2) return done();
+      layer.addEventListener('loadeddata', done, { once: true });
+      layer.addEventListener('error', done, { once: true });
+      return;
+    }
+    // The picture is the layer's background; the same image, decoded by the browser, says when.
+    // Only a data: picture of ours is decoded: the page could style the layer otherwise, and
+    // what the page styles are not ours to load.
+    const match = /^url\("(data:image\/[^"]*)"\)$/.exec(getComputedStyle(layer).backgroundImage);
+    if (!match) return done();
+    const picture = new Image();
+    picture.src = match[1];
+    if (picture.decode) picture.decode().then(done, done);
+    else picture.onload = picture.onerror = done;
+  }
+
   function repaint() {
     const previous = document.getElementById(STYLE);
     if (previous) previous.remove();
@@ -309,14 +376,28 @@ function install(payload) {
     // often the stylesheet was put in, and when it first was.
     state.repaints = (state.repaints ?? 0) + 1;
     state.appliedAt ??= Math.round(performance.now());
+    if (state.revealAfter === undefined) {
+      state.revealAfter = Date.now() + 1000;
+      state.captureUntil = Date.now() + 5000;
+      // Through the newest plan's reveal, like the observer's recapture: these timers outlive
+      // the plan that set them.
+      setTimeout(() => state.reveal?.(), 1000);
+      // The colours, too, are given up on after a while: a build that names them differently
+      // must not keep its window without the picture for good (the tint then uses the fallback).
+      setTimeout(() => state.reveal?.(), 5100);
+    }
+    watchMedia();
+    reveal();
     if (!captured && tries < RETRIES.length) {
       // A cold start runs this before the app's stylesheet is parsed: nothing to read from yet.
       const delay = RETRIES[tries];
       tries += 1;
+      // Through repaint(), which takes the stylesheet out before it reads: reading with it in,
+      // the colours read back were our own (`transparent`), and the tint stayed invisible until
+      // the next theme change.
       setTimeout(function retry() {
         if (state.key !== payload.key || captured) return;
-        captured = capture();
-        if (captured) repaint();
+        repaint();
       }, delay);
     }
     if (payload.chatRoot && !document.querySelector(payload.chatRoot)) return 'missing-root';
@@ -339,8 +420,9 @@ function install(payload) {
       noteReady();
       clearTimeout(repaintTimer);
       repaintTimer = setTimeout(() => {
-        captured = false;
-        repaint();
+        // The newest plan's: this observer is made once, by the first stylesheet the page got,
+        // and that plan's own repaint would put its stylesheet back after every later change.
+        state.recapture?.();
       }, 60);
     });
     for (const node of [document.documentElement, document.body]) {
@@ -349,6 +431,11 @@ function install(payload) {
   }
 
   function start() {
+    state.recapture = () => {
+      captured = false;
+      repaint();
+    };
+    state.reveal = reveal;
     const result = repaint();
     noteReady();
     watchTheme();
