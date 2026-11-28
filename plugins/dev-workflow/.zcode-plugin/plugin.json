@@ -1,6 +1,6 @@
 {
   "name": "dev-workflow",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Daily development workflow for ZCode: 8 flow skills (grill-me, change-plan, debug, test-changed, review, commit-review, release-check, doc-gen) with each hand-off step naming the subagent to dispatch, an opt-in one-question-at-a-time requirements interview that feeds change-plan, task-level plan files under .devflow and docs/plans, a gated multi-round review protocol, /handoff session contract persistence, a SessionStart repo snapshot, and 23 specialist subagents auto-installed into ~/.zcode/agents. Every subagent also carries the codegraph tools for locating code and call relations, so the codegraph plugin must be installed and enabled.",
   "author": {
     "name": "JochenYang"
