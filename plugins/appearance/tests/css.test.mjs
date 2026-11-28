@@ -107,7 +107,7 @@ describe('stylesheet', () => {
     assert.ok(script.includes("classList.add(SHOWN)"), 'the page script gives the word');
     assert.ok(script.includes("theme-zai-(light|dark)"), 'once the app has named its theme');
     assert.ok(script.includes("picture.decode()"), 'and the picture is decoded');
-    assert.ok(script.includes('setTimeout(done, 3000)') && script.includes('Date.now() + 1000'), 'but not for good');
+    assert.ok(script.includes('setTimeout(done, 3000)') && script.includes('Date.now() + 4000') && script.includes('Date.now() + 5000'), 'but not for good: the theme after four seconds, the colours after five');
   });
 
   it('has nothing to offer a video in the conversation area', () => {

@@ -400,6 +400,15 @@
     await tick(200);
     check('one drag of the tint slider sends the tint once, as a share', callCount('set') === setsBefore + 1 && JSON.stringify(callsOf('set').at(-1)?.args) === JSON.stringify({ mask: 0.5 }), JSON.stringify(callsOf('set').slice(setsBefore)));
     check('and nothing is said about it', $('appearance-status').textContent === '', $('appearance-status').textContent);
+    // Said with nothing: the empty status card takes no room and covers nothing — it used to
+    // be taken out of flow and land on the header's icon, which then looked chipped.
+    {
+      const status = $('appearance-status').getBoundingClientRect();
+      const tile = document.querySelector('.appearance-icon-tile').getBoundingClientRect();
+      const covers = status.left < tile.right && status.right > tile.left && status.top < tile.bottom && status.bottom > tile.top;
+      check('the empty status card takes no room', status.height === 0, `${status.width}x${status.height}`);
+      check('and covers nothing of the icon', !covers, `${status.left},${status.top} against ${tile.left},${tile.top}`);
+    }
     $('appearance-blur').value = '4';
     change($('appearance-blur'), 'input');
     change($('appearance-blur'));

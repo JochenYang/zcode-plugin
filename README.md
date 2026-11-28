@@ -25,7 +25,7 @@
 | `plugins/websearch` | 0.2.0 | 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，每个引擎可免 Key 用免费额度、也可填自己的 Key；另带静态网页正文读取 |
 | `plugins/model-speed` | 0.1.0 | 在输入框显示当前模型输出速度（tokens/s），按会话区分，零依赖 extension |
 | `plugins/codegraph` | 0.2.1 | 本地代码图谱：零依赖 MCP server，35 行语言的 tree-sitter 索引存进插件数据目录的 SQLite，`codegraph_status` / `codegraph_lookup` / `codegraph_map` 三个工具直接给出精确 `file:line`，`lookup` 还能列 import 环与受改动影响的测试文件；索引在会话打开时自动建立或刷新，`SessionStart` / `UserPromptSubmit` / `PostToolUse` 三个钩子告诉模型图谱何时就绪、何时该用它；桌面端另有输入框状态位与索引管理面板；零遥测、零外联、不执行项目代码 |
-| `plugins/appearance` | 0.2.1 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance/config.json`，`/appearance` 在对话里改 |
+| `plugins/appearance` | 0.2.2 | 自定义背景与配色皮肤：ZCode 的插件接口碰不到应用外壳，所以由外置启动器带调试通道启动 ZCode 并注入样式（图片或视频，整页或只换会话区，遮罩 / 模糊 / 定时轮换）；侧边栏有面板，设置在 `~/.zcode/appearance/config.json`，`/appearance` 在对话里改 |
 
 各插件互不依赖，可单独启用。`guardrails` 会阻断操作，独立成插件便于单独关闭。
 

@@ -64,11 +64,11 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     await until(() => session.evaluate(`document.readyState === 'complete' && !!document.getElementById(${JSON.stringify(STYLE_ID)})`), Boolean);
     // Right after the stylesheet lands nothing is see-through yet: the page script waits for
     // the app's colours, the theme and the picture (see the next test). Here the picture is a
-    // pixel, so only the theme is missing, and after a second the script gives up waiting for
-    // it: this page never names one.
+    // pixel, so only the theme is missing, and after four seconds the script gives up waiting
+    // for it: this page never names one.
     assert.equal(await session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), false, 'not shown at once');
     assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), '#fafafa', 'the app\'s own colour stays');
-    await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
+    await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 7000 });
 
     assert.equal(await session.evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--color-background')`), 'transparent');
     assert.equal(await session.evaluate(`document.body.style.getPropertyValue('--za-orig-background')`), '#fafafa');
@@ -228,8 +228,8 @@ describe('debugging channel against a real browser', { skip: BROWSER ? false : '
     assert.equal(await syncTarget(await shellTarget(world.port), sessions, plan), 'applied');
     const { session } = sessions.get((await shellTarget(world.port)).id);
     // The area's rules too wait for the page script's word; this page names no theme, so it
-    // comes after the second the script gives the theme.
-    await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 4000 });
+    // comes after the four seconds the script gives the theme.
+    await until(() => session.evaluate(`document.documentElement.classList.contains(${JSON.stringify(SHOWN)})`), Boolean, { timeoutMs: 7000 });
     assert.equal(await session.evaluate(`document.getElementById(${JSON.stringify(IMAGE_LAYER_ID)}) === null`), true);
     // The card the app draws in the area carries the picture and no longer paints over it; the
     // area itself paints nothing. Where there is no such card, the area itself carries it.

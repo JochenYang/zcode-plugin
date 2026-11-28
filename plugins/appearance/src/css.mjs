@@ -321,6 +321,7 @@ function install(payload) {
 
   function reveal() {
     if (state.shown || !(payload.layers || payload.chatRoot)) return;
+    if (themed()) state.themeAt ??= Math.round(performance.now());
     if (!captured && Date.now() < (state.captureUntil ?? Infinity)) return;
     // The conversation scope has no layer: its picture is the card's background, and the card
     // simply paints it once decoded; the window behind keeps the app's colours there.
@@ -328,6 +329,7 @@ function install(payload) {
     if (!themed() && Date.now() < (state.revealAfter ?? Infinity)) return;
     document.documentElement.classList.add(SHOWN);
     state.shown = true;
+    state.shownAt = Math.round(performance.now());
   }
 
   function watchMedia() {
@@ -377,11 +379,16 @@ function install(payload) {
     state.repaints = (state.repaints ?? 0) + 1;
     state.appliedAt ??= Math.round(performance.now());
     if (state.revealAfter === undefined) {
-      state.revealAfter = Date.now() + 1000;
+      // The theme is given four seconds: the app switches its class on when its settings have
+      // loaded, and on a real start that was later than one second after the stylesheet came
+      // (the window showed the picture under the light theme's tint for a moment, then turned
+      // dark). Until then the window keeps the app's own colours, which is what it shows
+      // without this plugin anyway.
+      state.revealAfter = Date.now() + 4000;
       state.captureUntil = Date.now() + 5000;
       // Through the newest plan's reveal, like the observer's recapture: these timers outlive
       // the plan that set them.
-      setTimeout(() => state.reveal?.(), 1000);
+      setTimeout(() => state.reveal?.(), 4000);
       // The colours, too, are given up on after a while: a build that names them differently
       // must not keep its window without the picture for good (the tint then uses the fallback).
       setTimeout(() => state.reveal?.(), 5100);

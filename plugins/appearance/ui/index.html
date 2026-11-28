@@ -575,9 +575,12 @@ html > body {
 }
 
 /* An empty message takes no room but stays in the page: a live region that is taken out and
-   put back is not reliably announced. */
+   put back is not reliably announced. It stays in flow, without the card's padding and border:
+   an empty <p> is then nothing tall, and paints nothing. Taken out of flow (position:
+   absolute, as it was) it landed at the top-left of the header, over the icon. */
 .appearance-message:empty {
-  position: absolute;
+  padding: 0;
+  border: 0;
 }
 
 .appearance-icon-tile {
