@@ -81,7 +81,7 @@
       "description_i18n": {
         "zh-CN": "ZCode 独立网页搜索：零依赖 MCP server，AnySearch / Exa / Parallel / Bing 自动回退，另带静态网页正文读取；所有引擎免 Key 可用。配置（引擎顺序、各引擎 Key）写在插件数据目录的 websearch.json——首次使用自动生成，装好后直接问模型「websearch 配置在哪」即可拿到具体路径。"
       },
-      "icon": "https://static.geluman.cn/icon/websearch.png"
+      "icon": "https://static.geluman.cn/icon/websearch.png?v=2"
     },
     {
       "name": "model-speed",
@@ -104,7 +104,7 @@
         "extension"
       ],
       "source": "./plugins/model-speed",
-      "icon": "https://static.geluman.cn/icon/model-speed.png"
+      "icon": "https://static.geluman.cn/icon/model-speed.png?v=2"
     },
     {
       "name": "codegraph",

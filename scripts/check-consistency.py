@@ -379,7 +379,11 @@ def check_marketplace_icons():
     """ZCode shows a community plugin's icon only from an HTTPS URL (a path into the plugin
     folder is ignored), and that file is put on the CDN by hand from the repository. So the
     two have to carry the same name, or the list points at a file nobody uploads: on
-    2026-11-27 three entries still named icon.png / dev-icon.png / guard-icon.png."""
+    2026-11-27 three entries still named icon.png / dev-icon.png / guard-icon.png.
+    A query string is allowed and is the way to replace an icon that keeps its name: the
+    CDN edge and the app both cache by URL (measured 2026-11-28: websearch.png and
+    model-speed.png, re-uploaded under the same names, stayed old for a day), so the
+    name stays and the URL changes."""
     bad = []
     for entry in load("marketplace.json")["plugins"]:
         name = entry["name"]
@@ -387,7 +391,8 @@ def check_marketplace_icons():
         if not isinstance(icon, str) or not icon.startswith("https://"):
             bad.append(f"{name}: icon is not an HTTPS URL")
             continue
-        if icon.rsplit("/", 1)[-1] != f"{name}.png":
+        file_name = icon.split("?", 1)[0].rsplit("/", 1)[-1]
+        if file_name != f"{name}.png":
             bad.append(f"{name}: icon {icon} is not named {name}.png")
         if not os.path.isfile(os.path.join(ROOT, "plugins", name, "assets", f"{name}.png")):
             bad.append(f"{name}: no plugins/{name}/assets/{name}.png to upload")
