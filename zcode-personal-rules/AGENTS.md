@@ -3,15 +3,25 @@
 > 适用于所有项目。更具体的规则优先：用户直接指示 > 工作区 `AGENTS.md` > 本文。冲突时按 **安全底线 > 证据与正确性 > 最小正确** 裁决。
 > 展开清单按需查阅 skill `agent-rules-reference` 的 `references/`；不可用时说明并降级。
 
-# Discuss Before Diverging
+# Discuss Before Diverging（先分类，再动手）
 
-- **Hard circuit breaker on reasoning & scouting**: When a request leaves ≥ 2 plausible product, scope, or architectural interpretations:
-  1. **Stop simulating branches in `<thought>`**: State each plausible fork and its core trade-off in 1 sentence — do NOT mentally design implementation details, edge cases, or speculative refactors for unchosen paths.
-  2. **Cap pre-alignment scouting to 1 pass**: Run at most ≤ 3 direct file reads or 1 parallel read-only subagent batch (`research` / `Explore`) to verify codebase facts before asking. *(Full parallel scouting for unambiguous tasks remains unrestricted.)*
-  3. **Zero unrequested scope**: Never invent hypothetical future requirements or bundle "while we're here" cleanups.
-- **Single-turn check-in (overrides `superpowers:brainstorming` multi-turn/no-menu rule)**: Unless the user explicitly asks for open brainstorming or an interactive design interview (e.g., `/grill-me`), share known codebase facts in 2–3 sentences and resolve ambiguity in **one** check-in (merging any model or execution-mode recommendation into the same check-in):
-  - **Finite choices (approaches, scope boundary, execution mode)**: Call the structured question tool (`ask_question` / `AskUserQuestion` / `AskQuestion`) with 2–4 concrete options, `(Recommended)` first.
-  - **Open intent ("what goal do you want?")**: Ask 1 concise plain-text question without steering options.
+## 第一句思想只做分类
+1. 能直接写出下一步动作（读哪、改哪、跑哪）→ 立即执行，不再想。
+2. 缺事实 → 读 / 跑，能并行的读取一次发齐，把「我猜」换成「我读」；不知道读哪 → 派 Explore 一次。缺决策 → 直接问，不先侦察，不在思想里展开方案。
+
+## 缺决策时一轮问完
+- 有限选择 → 结构化提问（`ask_question` / `AskUserQuestion` / `AskQuestion`），2–4 个选项，`(Recommended)` 放第一。
+- 意图不清 → 只问 1 个开放问题，不给选项。
+- 提问前 2–3 句写明已知事实；模型、执行方式等建议合并进同一问。
+
+## 思想预算（每次工具结果后刷新）
+- 查 / 改 ≤ 3 句，末句必须是工具调用或答案；设计 ≤ 5 句，产出是选项和每项 1 句取舍；排查一次一个可证伪假设，≤ 3 句后必须跑命令。
+- 出现「或者」「也可以」「是否应该」「maybe」「alternatively」= 预算用尽，立即行动或提问。
+
+## 默认快，命中风险清单才慢
+- 慢模式 = 「风险分级」清单命中 **或** 改动非平凡（碰共享代码、改默认值、失败不易察觉）：方案不确定先确认 → 实现 → 独立审查。
+- 快模式只省动手前的斟酌，不在思想里逐条过其余规则；不省：安全底线、证据要求、第三方接入审查、需显式授权的操作（commit / push 等）。
+- 不扩展未请求的范围；技术债一行带过，不顺手修。
 
 ## 表达
 
